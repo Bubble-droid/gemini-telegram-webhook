@@ -1,19 +1,24 @@
 # .gitignore
 
-dist/
 api/
 node_modules/
 .vscode/
+
+*.code-workspace
 
 # 本地环境变量文件
 .env
 .env.*
 !.env.example
 
+dist/assets
+
 draft/
+
 tree_and_files.md
 pnpm-workspace.yaml
 .vercel/
+
 
 resources/
 .roo/
@@ -100,7 +105,6 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist
 
 # Gatsby files
 .cache/
@@ -157,3 +161,4 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+.vercel

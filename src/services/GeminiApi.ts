@@ -96,7 +96,23 @@ export class GeminiApi {
     Log.info(
       `API 调用轮次: ${context.metrics.apiCallCount}, 空回复重试: ${context.metrics.emptyReplyRetryCount}, 客户端错误重试: ${context.metrics.errorRetryCount}`,
     );
-    Log.info('当前发送的 contents:', { contents: context.contents });
+    Log.info('当前发送的 contents:', {
+      // 为了日志输出，复制并修改 contents，避免影响原始数据
+      contents: context.contents.map((content) => ({
+        ...content,
+        parts: content.parts?.map((part) => {
+          if (part.inlineData && part.inlineData.data) {
+            // 对于包含 inlineData 的部分，替换 data 为占位符
+            return { ...part, inlineData: { ...part.inlineData, data: 'BASE64_ENCODED_DATA' } };
+          } else if (part.thoughtSignature) {
+            return { ...part, thoughtSignature: 'THOUGHT_SIGNATURE' };
+          } else if (part.thought) {
+            return { ...part, text: 'THOUGHT_TEXT' };
+          }
+          return part; // 否则返回原始部分
+        }),
+      })),
+    });
 
     // 轮换 API 密钥并获取当前使用的密钥
     const newApiKeys: string[][] = rotateArray<string[]>(context.apiKeys);
@@ -119,7 +135,25 @@ export class GeminiApi {
         ? context.metrics.totalUsageToken + response.usageMetadata.totalTokenCount
         : context.metrics.totalUsageToken;
 
-    Log.info(`Gemini API 响应: `, { response });
+    Log.info(`Gemini API 响应: `, {
+      response: {
+        ...response,
+        candidates: response.candidates?.map((candidate) => ({
+          ...candidate,
+          content: {
+            ...candidate.content,
+            parts: candidate.content?.parts?.map((part) => {
+              if (part.thought) {
+                return { ...part, text: 'THOUGHT_TEXT' };
+              } else if (part.thoughtSignature) {
+                return { ...part, thoughtSignature: 'THOUGHT_SIGNATURE' };
+              }
+              return part;
+            }),
+          },
+        })),
+      },
+    });
     return response;
   }
 

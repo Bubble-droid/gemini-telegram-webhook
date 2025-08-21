@@ -50,11 +50,7 @@ const handleUpdate = async (update: Update): Promise<void> => {
     const err = error as Error;
     Log.error('Error while handling update', { err, updateId: update_id });
     await sendErrorNotification(err, `Error while handling update ${{ chatId: chat.id, messageId: message_id }}`);
-    const regex = /You do not have permission to access the File .+? or it may not exist/g;
-    let errorMessage: string = error instanceof Error ? error.message : String(error);
-    if (regex.test(err.toString())) {
-      errorMessage = `*存储在 Gemini API 的历史文件可能已过期，请尝试使用命令 \`/clear@${botName}\` 清理上下文后再重新提问。*`;
-    }
+    const errorMessage: string = error instanceof Error ? error.message : String(error);
     const { messageId: errorMessageId } = await TelegramBot.sendMessage(message.chat.id, `❌ ${errorMessage}`, message_id);
     if (errorMessageId) {
       void scheduleDeletion({ chat_id: chat.id, message_id: errorMessageId }, 5 * 60_000);

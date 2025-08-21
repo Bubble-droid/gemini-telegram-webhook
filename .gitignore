@@ -1,0 +1,19 @@
+# .gitignore
+
+dist/
+api/
+node_modules/
+.vscode/
+
+# 本地环境变量文件
+.env
+.env.*
+!.env.example
+
+draft/
+tree_and_files.md
+pnpm-workspace.yaml
+.vercel/
+
+resources/
+.roo/

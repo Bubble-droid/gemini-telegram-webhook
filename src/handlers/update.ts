@@ -1,0 +1,65 @@
+// src/handlers/update.ts
+
+import type { Update } from '@/types';
+import { BotConfig, Log, TelegramBot } from '@/services';
+import { handleMention, handleCommand, handleNewMember, handleNormal } from '@/handlers/message';
+import { scheduleDeletion, sendErrorNotification } from '@/utils';
+
+/**
+ * @function handleUpdate
+ * @description 处理接收到的 Telegram 更新对象。
+ *              根据更新的类型（例如消息、编辑消息、回调查询等）将请求分发到相应的处理函数。
+ *              消息处理优先级：提及 > 带 @botName 的命令 > 新成员 > 普通消息。
+ * @param {Update} update - Telegram 更新对象，包含一个事件的所有信息。
+ * @returns {Promise<void>} 此函数不返回任何值，但会触发其他处理逻辑。
+ */
+const handleUpdate = async (update: Update): Promise<void> => {
+  Log.info('Handling Telegram update', { update });
+  const { botName, allowGroups } = BotConfig.load();
+  if (!update.message) return;
+  const { update_id, message } = update;
+  if (message.sticker) return;
+  const { message_id, chat } = message;
+  if (!allowGroups.includes(chat.id) || chat.type === 'private') return;
+  if (message.new_chat_members && message.new_chat_members.length > 0) return await handleNewMember(message);
+  const messageText = message.text || message.caption || null;
+  const messageEntities = message.entities || message.caption_entities || null;
+  if (!messageEntities || !messageText) return await handleNormal(message);
+  try {
+    for (const entity of messageEntities) {
+      if (entity.type === 'mention') {
+        const mentionedText = messageText.substring(entity.offset, entity.offset + entity.length);
+        if (mentionedText === `@${botName}`) {
+          return await handleMention(message);
+        }
+      }
+    }
+    for (const entity of messageEntities) {
+      if (entity.type === 'bot_command') {
+        const commandText = messageText.substring(entity.offset, entity.offset + entity.length);
+        const atIndex = commandText.indexOf('@');
+        if (atIndex !== -1) {
+          const mentionedTarget = commandText.slice(atIndex + 1);
+          if (mentionedTarget === botName) {
+            return await handleCommand(message);
+          }
+        }
+      }
+    }
+  } catch (error: unknown) {
+    const err = error as Error;
+    Log.error('Error while handling update', { err, updateId: update_id });
+    await sendErrorNotification(err, `Error while handling update ${{ chatId: chat.id, messageId: message_id }}`);
+    const regex = /You do not have permission to access the File .+? or it may not exist/g;
+    let errorMessage: string = error instanceof Error ? error.message : String(error);
+    if (regex.test(err.toString())) {
+      errorMessage = `*存储在 Gemini API 的历史文件可能已过期，请尝试使用命令 \`/clear@${botName}\` 清理上下文后再重新提问。*`;
+    }
+    const { messageId: errorMessageId } = await TelegramBot.sendMessage(message.chat.id, `❌ ${errorMessage}`, message_id);
+    if (errorMessageId) {
+      void scheduleDeletion({ chat_id: chat.id, message_id: errorMessageId }, 5 * 60_000);
+    }
+  }
+};
+
+export { handleUpdate };

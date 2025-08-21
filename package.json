@@ -1,0 +1,67 @@
+{
+  "$schema": "https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/package.json",
+  "name": "gemini-telegram-webhook",
+  "version": "1.0.0",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.x"
+  },
+  "files": [
+    "./dist/index.js",
+    "./api/index.js"
+  ],
+  "bin": {
+    "local": "./dist/index.js",
+    "vercel": "./api/index.js"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "exports": {
+    ".": "./src/server.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "clean": "rm -rf dist api",
+    "dev": "tsx --env-file=.env --watch ./src/server.ts",
+    "build:local": "pnpm clean && pnpm typecheck && pnpm lint && vite build --config vite.config.local.ts",
+    "build:vercel": "pnpm clean && pnpm typecheck && pnpm lint && vite build --config vite.config.vercel.ts",
+    "start": "node --env-file=.env dist/index.js",
+    "deploy:vercel": "pnpm build:vercel && vercel --prod",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint --fix",
+    "format": "prettier --write \"src/**/*.ts\""
+  },
+  "packageManager": "pnpm@10.14.0",
+  "dependencies": {
+    "@google/genai": "^1.14.0",
+    "cloudflare": "^4.5.0",
+    "fastify": "^5.5.0",
+    "tslog": "^4.9.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.33.0",
+    "@fastify/type-provider-typebox": "^5.2.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@types/node": "^24.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.39.1",
+    "@typescript-eslint/parser": "^8.39.1",
+    "@vercel/node": "^5.3.12",
+    "eslint": "^9.33.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "globals": "^16.3.0",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.4",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.39.1",
+    "vercel": "^44.7.3",
+    "vite": "^7.1.3"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": "./dist/index.js",
+      "./package.json": "./package.json"
+    }
+  }
+}

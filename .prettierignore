@@ -1,0 +1,7 @@
+# .prettierignore
+
+node_modules/
+dist/
+api/
+
+tree_and_files.md

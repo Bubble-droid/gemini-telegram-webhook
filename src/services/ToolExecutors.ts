@@ -1,0 +1,490 @@
+// src/configs/tool_executors.ts
+
+import { Log } from '@/services';
+import type {
+  GetCommitDetailsResult,
+  GetCurrentTimeResult,
+  GetFileContentsResult,
+  GetIssueCommentsResult,
+  GetReleaseDetailsResult,
+  GitHubBranch,
+  GitHubCodeSearchItem,
+  GitHubCommitDetails,
+  GitHubCommitSearchItem,
+  GitHubContentItem,
+  GitHubIssueComment,
+  GitHubIssueSearchItem,
+  GitHubRelease,
+  GitHubSearchResult,
+  GitHubTreeResponse,
+  ListDirContentsResult,
+  ListRepoBranchesResult,
+  ListRepoCommitsResult,
+  ListRepoReleasesResult,
+  ListRepoTreeResult,
+  SearchCommitsInRepoResult,
+  SearchFilesInRepoResult,
+  SearchIssuesInRepoResult,
+  ToolExecArgs,
+  ToolExecResponse,
+  ToolExecutorsType,
+} from '@/types';
+import { formatTime, makeGitHubApiRequest, makeRawFileRequest } from '@/utils';
+
+export const ToolExecutors: ToolExecutorsType = {
+  /**
+   * 执行 searchFilesInRepo 工具
+   * 通过关键词在指定 GitHub 仓库中搜索文件内容。
+   *
+   * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { keyword: 'resolve', owner: 'SagerNet', repo: 'sing-box', path: 'assets/', branch: 'main' }。
+   * @returns {Promise<>} 工具执行结果对象。
+   */
+  searchFilesInRepo: async (args: ToolExecArgs): Promise<ToolExecResponse<SearchFilesInRepoResult>> => {
+    Log.info('执行工具: searchFilesInRepo, 参数:', { args });
+    const { keyword, owner, repo, branch = 'main' } = args;
+    const urlPath: string = `search/code`;
+    const queryParams: string = `q=${encodeURIComponent(keyword)}+repo:${owner}/${repo}+in:file`;
+    const result = await makeGitHubApiRequest<GitHubSearchResult<GitHubCodeSearchItem>>({
+      method: 'GET',
+      urlPath,
+      queryParams,
+    });
+    if (result.success) {
+      const foundFiles: string[] = result.data.items.map((item) => `${item.repository.full_name}/refs/heads/${branch}/${item.path}`);
+      Log.info(`searchFilesInRepo 工具执行完毕，找到 ${foundFiles.length} 个文件。`);
+      return { success: true, data: { foundFiles } };
+    } else {
+      return result;
+    }
+  },
+
+  /**
+   * 新增工具: searchCommitsInRepo
+   * 通过关键词在指定 GitHub 仓库内搜索提交记录。
+   *
+   * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { keyword: 'fix', owner: 'SagerNet', repo: 'sing-box', branch: 'main', author: 'user', per_page: 10 }。
+   * @returns {Promise<>} 工具执行结果对象。
+   */
+  searchCommitsInRepo: async (args: ToolExecArgs): Promise<ToolExecResponse<SearchCommitsInRepoResult>> => {
+    Log.info('执行工具: searchCommitsInRepo, 参数:', { args });
+    const { keyword, owner, repo } = args;
+    const urlPath: string = `search/commits`;
+    const queryParams: string = `q=${encodeURIComponent(keyword)}+repo:${owner}/${repo}`;
+    const result = await makeGitHubApiRequest<GitHubSearchResult<GitHubCommitSearchItem>>({
+      method: 'GET',
+      urlPath,
+      queryParams,
+    });
+    if (result.success) {
+      const commits: SearchCommitsInRepoResult['commits'] = result.data.items.map((item) => ({
+        sha: item.sha,
+        message: item.commit.message,
+        author: item.commit.author.name,
+        date: item.commit.author.date,
+        url: item.html_url,
+        repository_full_name: item.repository?.full_name,
+      }));
+      Log.info(`searchCommitsInRepo 工具执行完毕，找到 ${commits.length} 条提交记录，总数 ${result.data.total_count}。`);
+      return { success: true, data: { commits, total_count: result.data.total_count } };
+    } else {
+      return result;
+    }
+  },
+
+  /**
+   * 执行 searchIssuesInRepo 工具
+   * 通过关键词在指定 GitHub 仓库中搜索 Issue。
+   *
+   * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { keyword: 'tun error', owner: 'SagerNet', repo: 'sing-box', state: 'all' }。
+   * @returns {Promise<>} 工具执行结果对象。
+   */
+  searchIssuesInRepo: async (args: ToolExecArgs): Promise<ToolExecResponse<SearchIssuesInRepoResult>> => {
+    Log.info('执行工具: searchIssuesInRepo, 参数:', { args });
+    const { keyword, owner, repo, state = 'open' } = args;
+    const urlPath = `search/issues`;
+    const queryParams = `q=${encodeURIComponent(keyword)}+repo:${owner}/${repo}+state:${state}+is:issue`;
+    const result = await makeGitHubApiRequest<GitHubSearchResult<GitHubIssueSearchItem>>({
+      method: 'GET',
+      urlPath,
+      queryParams,
+    });
+    if (result.success) {
+      const issues: SearchIssuesInRepoResult['issues'] = result.data.items.map((item) => ({
+        id: item.id,
+        number: item.number,
+        html_url: item.html_url,
+        title: item.title,
+        state: item.state,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        comments: item.comments,
+        author_login: item.user?.login || '未知', // 使用可选链操作符
+        labels: item.labels?.map((label) => label.name) || [], // 使用可选链操作符
+        body: item.body,
+      }));
+      Log.info(`searchIssuesInRepo 工具执行完毕，找到 ${issues.length} 个 Issue，总数 ${result.data.total_count}。`);
+      return { success: true, data: { issues, total_count: result.data.total_count } };
+    } else {
+      return result;
+    }
+  },
+
+  /**
+   * 执行 listRepoTree 工具
+   * 获取指定 GitHub 仓库的完整文件树（递归）。
+   *
+   * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'SagerNet', repo: 'sing-box', branch: 'dev-next' }。
+   * @returns {Promise<>} 工具执行结果对象。
+   */
+  listRepoTree: async (args: ToolExecArgs): Promise<ToolExecResponse<ListRepoTreeResult>> => {
+    Log.info('执行工具: listRepoTree, 参数:', { args });
+    const { owner, repo, branch = 'main' } = args;
+    const branchUrlPath = `repos/${owner}/${repo}/branches/${branch}`;
+    const branchResult = await makeGitHubApiRequest<GitHubBranch>({
+      method: 'GET',
+      urlPath: branchUrlPath,
+    });
+    if (!branchResult.success) {
+      return branchResult;
+    }
+    const treeSha = branchResult.data.commit.sha;
+    Log.info(`获取到分支 ${branch} 的 tree SHA: ${treeSha}`);
+    const treeUrlPath = `repos/${owner}/${repo}/git/trees/${treeSha}`;
+    const queryParams = `recursive=1`;
+    const treeResult = await makeGitHubApiRequest<GitHubTreeResponse>({
+      method: 'GET',
+      urlPath: treeUrlPath,
+      queryParams,
+    });
+    if (treeResult.success) {
+      // 过滤掉可能存在的 null 或 undefined item.path，并确保 name 不为空
+      const fileList: ListRepoTreeResult['fileList'] = treeResult.data.tree
+        .filter((item) => item.path) // 过滤掉 path 为空的项
+        .map((item) => ({
+          name: item.path.split('/').pop() || '', // 确保 name 不为空字符串
+          path: `${owner}/${repo}/refs/heads/${branch}/${item.path}`, // 构建完整的 GitHub 路径
+          type: item.type === 'blob' ? 'file' : 'tree',
+        }));
+      Log.info(`listRepoTree 工具执行完毕，找到 ${fileList.length} 个文件/目录。`);
+      return { success: true, data: { fileList } };
+    } else {
+      return treeResult;
+    }
+  },
+
+  /**
+   * 执行 listDirContents 工具
+   * 列出指定 GitHub 仓库路径下的文件和目录内容。
+   *
+   * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'SagerNet', repo: 'sing-box', path: 'docs/', branch: 'dev-next' }。
+   * @returns {Promise<>} 工具执行结果对象。
+   */
+  listDirContents: async (args: ToolExecArgs): Promise<ToolExecResponse<ListDirContentsResult>> => {
+    Log.info('执行工具: listDirContents, 参数:', { args });
+    const { owner, repo, path = '', branch = 'main' } = args;
+
+    // 确保 path 不以斜杠开头，如果 path 为空则不需要处理
+    const cleanedPath = path.startsWith('/') ? path.substring(1) : path;
+    const urlPath = `repos/${owner}/${repo}/contents/${cleanedPath}`;
+    const queryParams = `ref=${branch}`;
+    const result = await makeGitHubApiRequest<Array<GitHubContentItem>>({
+      method: 'GET',
+      urlPath,
+      queryParams,
+    });
+    if (result.success) {
+      const fileList: ListDirContentsResult['fileList'] = result.data.map((item) => ({
+        name: item.name,
+        path: `${owner}/${repo}/refs/heads/${branch}/${item.path}`, // 构建完整的文档路径
+        type: item.type,
+      }));
+      Log.info(`listDirContents 工具执行完毕，找到 ${fileList.length} 个文件/目录。`);
+      return { success: true, data: { fileList } };
+    } else {
+      return result;
+    }
+  },
+
+  /**
+   * 执行 listRepoCommits 工具
+   * 获取指定 GitHub 仓库的提交记录列表。
+   *
+   * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'SagerNet', repo: 'sing-box', branch: 'dev-next', path: 'docs/', per_page: 50, page: 1 }。
+   * @returns {Promise<>} 工具执行结果对象。
+   */
+  listRepoCommits: async (args: ToolExecArgs): Promise<ToolExecResponse<ListRepoCommitsResult>> => {
+    Log.info('执行工具: listRepoCommits, 参数:', { args });
+    const { owner, repo, per_page = 20, page = 1 } = args;
+    const urlPath = `repos/${owner}/${repo}/commits`;
+    const queryParams = `per_page=${per_page}&page=${page}`;
+    const result = await makeGitHubApiRequest<Array<GitHubCommitDetails>>({
+      method: 'GET',
+      urlPath,
+      queryParams,
+    });
+    if (result.success) {
+      const commits: ListRepoCommitsResult['commits'] = result.data.map((item) => ({
+        sha: item.sha,
+        message: item.commit.message,
+        author: item.commit.author.name,
+        date: item.commit.author.date,
+        url: item.html_url,
+      }));
+      Log.info(`listRepoCommits 工具执行完毕，找到 ${commits.length} 条提交记录。`);
+      return { success: true, data: { commits } };
+    } else {
+      return result;
+    }
+  },
+
+  /**
+   * 执行 listRepoReleases 工具
+   * 获取指定 GitHub 仓库的发布版本列表。
+   *
+   * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'SagerNet', repo: 'sing-box', per_page: 10, page: 1 }。
+   * @returns {Promise<>} 工具执行结果对象。
+   */
+  listRepoReleases: async (args: ToolExecArgs): Promise<ToolExecResponse<ListRepoReleasesResult>> => {
+    Log.info('执行工具: listRepoReleases, 参数:', { args });
+    const { owner, repo, per_page = 10, page = 1 } = args;
+    const urlPath = `repos/${owner}/${repo}/releases`;
+    const queryParams = `per_page=${per_page}&page=${page}`;
+    const result = await makeGitHubApiRequest<Array<GitHubRelease>>({
+      method: 'GET',
+      urlPath,
+      queryParams,
+    });
+    if (result.success) {
+      const releases: ListRepoReleasesResult['releases'] = result.data.map((item) => ({
+        id: item.id,
+        tag_name: item.tag_name,
+        name: item.name,
+        body: item.body,
+        author_login: item.author.login,
+        author_type: item.author.type,
+        published_at: item.published_at,
+        html_url: item.html_url,
+        prerelease: item.prerelease,
+        draft: item.draft,
+      }));
+      Log.info(`listRepoReleases 工具执行完毕，找到 ${releases.length} 个发布版本。`);
+      return { success: true, data: { releases } };
+    } else {
+      return result;
+    }
+  },
+
+  /**
+   * 执行 listRepoBranches 工具
+   * 获取指定 GitHub 仓库的所有分支列表。
+   *
+   * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'SagerNet', repo: 'sing-box' }。
+   * @returns {Promise<>} 工具执行结果对象。
+   */
+  listRepoBranches: async (args: ToolExecArgs): Promise<ToolExecResponse<ListRepoBranchesResult>> => {
+    Log.info('执行工具: listRepoBranches, 参数:', { args });
+    const { owner, repo } = args;
+    const urlPath: string = `repos/${owner}/${repo}/branches`;
+    const result = await makeGitHubApiRequest<Array<GitHubBranch>>({ method: 'GET', urlPath });
+    if (result.success) {
+      const branches: ListRepoBranchesResult['branches'] = result.data.map((item) => ({
+        name: item.name,
+        commit_sha: item.commit.sha,
+        commit_url: item.commit.url,
+        protected: item.protected,
+      }));
+      Log.info(`listRepoBranches 工具执行完毕，找到 ${branches.length} 个分支。`);
+      return { success: true, data: { branches } };
+    } else {
+      return result;
+    }
+  },
+
+  /**
+   * 执行 getFileContents 工具
+   * 用于获取 GitHub 仓库中指定文件的原始内容。
+   *
+   * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { filePaths: ['path1', 'path2'] }。
+   * @returns {Promise<>} 工具执行结果对象，包含文件内容或错误信息。
+   */
+  getFileContents: async (args: ToolExecArgs): Promise<ToolExecResponse<GetFileContentsResult>> => {
+    Log.info('执行工具: getFileContents, 参数:', { args });
+    const processedFiles: GetFileContentsResult['files'] = [];
+    for (const file of args.filePaths) {
+      if (typeof file === 'string') {
+        // 从路径中提取 repo/branch/file.ext 作为文档名称的简写
+        const fileNameParts = file.split('/');
+        // 至少需要 'owner', 'repo', 'refs', 'heads', 'branch', 'path' 这几部分
+        const repoName = fileNameParts[1] ?? '未知仓库';
+        const branchName = fileNameParts[4] ?? '未知分支';
+        const fileName = fileNameParts
+          .slice(5)
+          .join('_')
+          .replace(/\.[^/.]+$/, ''); // 移除文件后缀
+        const fileIdentifier = `${repoName}_${branchName}_${fileName}`;
+        const result = await makeRawFileRequest(file);
+
+        if (result.success) {
+          const assetContent = result.data;
+          const MAX_CHUNK_LENGTH = 1024; // 定义每个文本块的最大长度
+          const chunkedContent = [];
+
+          for (let i = 0; i < assetContent.length; i += MAX_CHUNK_LENGTH) {
+            chunkedContent.push({
+              text: assetContent.slice(i, i + MAX_CHUNK_LENGTH),
+            });
+          }
+
+          processedFiles.push({
+            path: file,
+            content: chunkedContent,
+            identifier: fileIdentifier,
+          }); // 明确断言类型
+        } else {
+          // 单个文件获取失败，但工具整体继续执行，将错误信息放入该文件结果中
+          processedFiles.push({
+            path: file,
+            error: result.error,
+            identifier: fileIdentifier,
+          }); // 明确断言类型
+        }
+      } else {
+        processedFiles.push({
+          path: String(file), // 尝试转换为字符串
+          error: '文件路径类型无效，期望字符串。',
+          identifier: 'invalid_file_path',
+        });
+      }
+    }
+    Log.info(`getFileContents 工具执行完毕，结果数量: ${processedFiles.length}`);
+    return { success: true, data: { files: processedFiles } };
+  },
+
+  /**
+   * 执行 getCommitDetails 工具
+   * 获取指定 GitHub 仓库提交的详细信息。
+   *
+   * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'SagerNet', repo: 'sing-box', commit_sha: '2464ced48c504eb0dee616c6d474813621779afc' }。
+   * @returns {Promise<>} 工具执行结果对象。
+   */
+  getCommitDetails: async (args: ToolExecArgs): Promise<ToolExecResponse<GetCommitDetailsResult>> => {
+    Log.info('执行工具: getCommitDetails, 参数:', { args });
+    const { owner, repo, commit_sha } = args;
+    const urlPath = `repos/${owner}/${repo}/commits/${commit_sha}`;
+    const result = await makeGitHubApiRequest<GitHubCommitDetails>({ method: 'GET', urlPath });
+    if (result.success) {
+      const data = result.data;
+      const commitDetails: GetCommitDetailsResult['commitDetails'] = {
+        sha: data.sha,
+        author: {
+          name: data.commit.author.name,
+          email: data.commit.author.email,
+          date: data.commit.author.date,
+        },
+        message: data.commit.message,
+        html_url: data.html_url,
+        stats: data.stats,
+        files: data.files.map((file) => ({
+          filename: file.filename,
+          status: file.status,
+          additions: file.additions,
+          deletions: file.deletions,
+          changes: file.changes,
+          patch: file.patch,
+        })),
+      };
+
+      Log.info(`getCommitDetails 工具执行完毕，获取到提交 ${commit_sha} 的关键详细信息。`);
+      return { success: true, data: { commitDetails } };
+    } else {
+      return result;
+    }
+  },
+
+  /**
+   * 执行 getIssueComments 工具
+   * 获取指定 GitHub Issue 的评论列表。
+   *
+   * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'SagerNet', repo: 'sing-box', issue_number: 3202, per_page: 30, page: 1 }。
+   * @returns {Promise<>} 工具执行结果对象。
+   */
+  getIssueComments: async (args: ToolExecArgs): Promise<ToolExecResponse<GetIssueCommentsResult>> => {
+    Log.info('执行工具: getIssueComments, 参数:', { args });
+    const { owner, repo, issue_number } = args;
+    const urlPath = `repos/${owner}/${repo}/issues/${issue_number}/comments`;
+    const result = await makeGitHubApiRequest<Array<GitHubIssueComment>>({
+      method: 'GET',
+      urlPath,
+    });
+    if (result.success) {
+      const comments: GetIssueCommentsResult['comments'] = result.data.map((item) => ({
+        id: item.id,
+        html_url: item.html_url,
+        user_login: item.user?.login || '未知', // 使用可选链操作符
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        body: item.body,
+      }));
+      Log.info(`getIssueComments 工具执行完毕，找到 ${comments.length} 条评论。`);
+      return { success: true, data: { comments } };
+    } else {
+      return result;
+    }
+  },
+
+  /**
+   * 执行 getReleaseDetails 工具
+   * 获取指定 GitHub 仓库发布版本的详细信息。可以通过 release ID 或 tag 名称查询。
+   *
+   * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'GUI-for-Cores', repo: 'GUI.for.SingBox', release_id: 227541695 } 或 { owner: 'GUI-for-Cores', repo: 'GUI.for.SingBox', tag_name: 'rolling-release-alpha' }。
+   * @returns {Promise<>} 工具执行结果对象。
+   */
+  getReleaseDetails: async (args: ToolExecArgs): Promise<ToolExecResponse<GetReleaseDetailsResult>> => {
+    Log.info('执行工具: getReleaseDetails, 参数:', { args });
+    const { owner, repo, release_id, tag_name } = args;
+    const urlPath = `repos/${owner}/${repo}/releases/${release_id ? release_id : `tags/${tag_name}`}`;
+    const releaseResult = await makeGitHubApiRequest<GitHubRelease>({
+      method: 'GET',
+      urlPath,
+    });
+    if (!releaseResult.success) {
+      return releaseResult; // 直接返回封装的错误
+    }
+    const releaseData = releaseResult.data;
+    const releaseDetails: GetReleaseDetailsResult['releaseDetails'] = {
+      id: releaseData.id,
+      tag_name: releaseData.tag_name,
+      name: releaseData.name,
+      body: releaseData.body,
+      author_login: releaseData.author?.login || '未知', // 使用可选链操作符
+      published_at: releaseData.published_at,
+      html_url: releaseData.html_url,
+      prerelease: releaseData.prerelease,
+      draft: releaseData.draft,
+      assets: releaseData.assets.map((asset) => ({
+        id: asset.id,
+        name: asset.name,
+        browser_download_url: asset.browser_download_url,
+        size: asset.size,
+        download_count: asset.download_count,
+        created_at: asset.created_at,
+        updated_at: asset.updated_at,
+      })),
+    };
+    Log.info(`getReleaseDetails 工具执行完毕，获取到发布版本 ${release_id || tag_name} 的详细信息。`);
+    return { success: true, data: { releaseDetails } };
+  },
+
+  /**
+   * 执行 getCurrentTime 工具
+   * 获取当前时间。
+   *
+   * @returns {} 工具执行结果对象，包含 currentTime 字段。
+   */
+  getCurrentTime: (): ToolExecResponse<GetCurrentTimeResult> => {
+    Log.info('执行工具: getCurrentTime');
+    const currentTime = formatTime(Date.now());
+    Log.info('getCurrentTime 工具执行完毕，当前时间:', { currentTime });
+    return { success: true, data: { currentTime } };
+  },
+};

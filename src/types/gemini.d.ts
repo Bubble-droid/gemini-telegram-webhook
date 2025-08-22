@@ -9,7 +9,7 @@ export interface ChatParams {
 
 export interface GenerateContentSuccessResponse {
   response: Content;
-  apiCallCount: number;
+  apiCallSuccessCount: number;
   totalUsageToken: number;
   usageToolCount: number;
   emptyReplyRetryCount: number; // 空回复重试次数
@@ -32,7 +32,7 @@ export interface ApiCallContext {
   config: GenerateContentConfig;
   contents: Content[];
   metrics: {
-    apiCallCount: number;
+    apiCallSuccessCount: number;
     totalUsageToken: number;
     usageToolCount: number;
     emptyReplyRetryCount: number; // 空回复重试次数

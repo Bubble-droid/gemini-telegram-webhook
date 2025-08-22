@@ -163,7 +163,7 @@ export class MentionHandler {
     const { messageId: thinkMessageId } = await TelegramBot.sendMessage(chatId, '✨ Thinking...', userMessageId);
     if (!thinkMessageId) {
       Log.error('Failed to send thinking message.');
-      throw new Error('Failed to send thinking message.');
+      throw new TelegramError('Failed to send thinking message.');
     }
     return thinkMessageId;
   }
@@ -244,7 +244,7 @@ export class MentionHandler {
 
     const {
       response,
-      apiCallCount,
+      apiCallSuccessCount,
       totalRetryCount,
       totalUsageToken,
       usageToolCount,
@@ -298,14 +298,14 @@ export class MentionHandler {
       // 理论上，GeminiApi 内部的空回复重试机制应该处理此情况。
       // 但作为防御性编程，如果模型最终只返回了工具调用而没有文本，或者返回了空文本，
       // 我们仍然需要一个用户友好的提示。
-      throw new GeminiError('Gemini API 未返回有效文本回复：模型可能只生成了工具调用或空内容。');
+      throw new GeminiError('Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。');
     }
 
     const fullText = `🤖 模型：\`${modelName}\`
 
 ${resTexts}
 
-*✨ 本次任务共成功调用 Gemini API ${apiCallCount} 次，${totalRetryCount} 次重试：空回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}*
+*✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}*
 
 *⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。*`;
 
@@ -402,13 +402,10 @@ ${resTexts}
       // 确保思考消息被正确处理（删除或安排删除）
       if (thinkMessageId) {
         const err = apiError instanceof GeminiError ? apiError : undefined;
-        // 如果错误是 GeminiError 且其中包含 hasToolThoughts，或者错误本身不是 GeminiError，我们无法判断是否有思考，
-        // 此时默认安排删除（更安全，避免消息残留）
-        if (err?.hasToolThoughts && hasResThought) {
-          void scheduleDeletion({ chat_id: chat.id, message_id: thinkMessageId }, 30 * 60_000);
-        } else {
-          // 如果没有思考内容，或者错误类型不是 GeminiError 且无法判断，直接删除
+        if (!err?.hasToolThoughts && !hasResThought) {
           await TelegramBot.deleteMessage(chat.id, thinkMessageId);
+        } else {
+          void scheduleDeletion({ chat_id: chat.id, message_id: thinkMessageId }, 30 * 60_000);
         }
       }
       throw apiError; // 重新抛出错误以便上层捕获

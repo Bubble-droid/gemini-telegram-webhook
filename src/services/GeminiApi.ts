@@ -12,8 +12,8 @@ import type { ChatParams, GenerateContentSuccessResponse, ApiCallContext, ToolEx
  * @description 封装与 Google Gemini API 的交互逻辑。
  */
 export class GeminiApi {
-  // 定义最大空回复和客户端错误重试次数，以及基础重试延迟
-  private static readonly MAX_RETRIES_COMMON: number = 3; // 空回复和客户端错误共用最大重试次数
+  // 定义最大无效回复和客户端错误重试次数，以及基础重试延迟
+  private static readonly MAX_RETRIES_COMMON: number = 3; // 无效回复和客户端错误共用最大重试次数
   private static readonly BASE_RETRY_DELAY_MS: number = 10_000; // 10 秒
 
   /**
@@ -72,7 +72,7 @@ export class GeminiApi {
       config,
       contents: [...initialContents], // 复制初始对话历史，避免副作用
       metrics: {
-        apiCallCount: 0,
+        apiCallSuccessCount: 0,
         totalUsageToken: 0,
         usageToolCount: 0,
         emptyReplyRetryCount: 0,
@@ -92,9 +92,8 @@ export class GeminiApi {
    * @throws {Error} 如果 API 调用失败，将抛出原始错误。
    */
   private static async _callGeminiApi(context: ApiCallContext): Promise<GenerateContentResponse> {
-    context.metrics.apiCallCount++;
     Log.info(
-      `API 调用轮次: ${context.metrics.apiCallCount}, 空回复重试: ${context.metrics.emptyReplyRetryCount}, 客户端错误重试: ${context.metrics.errorRetryCount}`,
+      `API 调用轮次: ${context.metrics.apiCallSuccessCount}, 无效回复重试: ${context.metrics.emptyReplyRetryCount}, 客户端错误重试: ${context.metrics.errorRetryCount}`,
     );
     Log.info('当前发送的 contents:', {
       // 为了日志输出，复制并修改 contents，避免影响原始数据
@@ -173,9 +172,8 @@ export class GeminiApi {
         Log.error(`Gemini API 客户端或网络错误 (尝试 ${attempt + 1}/${GeminiApi.MAX_RETRIES_COMMON}):`, { err });
 
         if (attempt < GeminiApi.MAX_RETRIES_COMMON) {
-          const delay = Math.floor(GeminiApi.BASE_RETRY_DELAY_MS * Math.pow(2, attempt) * (0.8 + Math.random() * 0.4));
+          const delay = Math.floor(GeminiApi.BASE_RETRY_DELAY_MS * Math.pow(2, attempt + 1) * (0.8 + Math.random() * 0.4));
           context.metrics.errorRetryCount++; // 递增客户端错误重试计数
-          context.metrics.totalRetryCount++; // 增加总重试计数
           // 注意：这里没有重置 errorRetryCount，它会持续累积
 
           if (context.thinkMessageId !== undefined) {
@@ -185,8 +183,8 @@ export class GeminiApi {
               `Gemini API 客户端错误，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${attempt + 1} 次重试...`,
             );
           }
-          Log.info(`Gemini API 客户端错误，进行第 ${attempt + 1} 次重试...`);
           await sleep(delay);
+          Log.info(`Gemini API 客户端错误，进行第 ${attempt + 1} 次重试...`);
         } else {
           // 达到最大客户端错误重试次数
           const finalError = new GeminiError(
@@ -314,13 +312,13 @@ export class GeminiApi {
         role: 'model',
         parts: textParts,
       },
-      totalRetryCount: context.metrics.totalRetryCount,
-      apiCallCount: context.metrics.apiCallCount,
+      totalRetryCount: context.metrics.emptyReplyRetryCount + context.metrics.errorRetryCount,
+      apiCallSuccessCount: context.metrics.apiCallSuccessCount,
       totalUsageToken: context.metrics.totalUsageToken,
       usageToolCount: context.metrics.usageToolCount,
       totalDurationSecond: context.metrics.totalDurationSecond,
       hasToolThoughts: context.metrics.hasToolThoughts,
-      emptyReplyRetryCount: context.metrics.emptyReplyRetryCount, // 单独返回空回复重试次数
+      emptyReplyRetryCount: context.metrics.emptyReplyRetryCount, // 单独返回无效回复重试次数
       errorRetryCount: context.metrics.errorRetryCount, // 单独返回客户端错误重试次数
     };
   }
@@ -380,14 +378,13 @@ export class GeminiApi {
 
       let candidate = response.candidates?.[0]; // 此时 response 保证已赋值
 
-      // 3. 内部循环：处理空回复重试
+      // 3. 内部循环：处理无效回复重试
       let currentEmptyReplyAttempt = 0;
       while (!candidate || !candidate.content || !candidate.content.parts) {
         if (currentEmptyReplyAttempt < GeminiApi.MAX_RETRIES_COMMON) {
-          const delay = Math.floor(GeminiApi.BASE_RETRY_DELAY_MS * Math.pow(2, currentEmptyReplyAttempt) * (0.8 + Math.random() * 0.4));
-          context.metrics.emptyReplyRetryCount++; // 递增全局空回复重试计数
-          context.metrics.totalRetryCount++; // 增加全局总重试计数
-          currentEmptyReplyAttempt++; // 递增当前空回复重试的局部计数
+          const delay = Math.floor(GeminiApi.BASE_RETRY_DELAY_MS * Math.pow(2, currentEmptyReplyAttempt + 1) * (0.8 + Math.random() * 0.4));
+          context.metrics.emptyReplyRetryCount++; // 递增全局无效回复重试计数
+          currentEmptyReplyAttempt++; // 递增当前无效回复重试的局部计数
 
           if (context.thinkMessageId !== undefined) {
             await TelegramBot.editMessageText(
@@ -397,7 +394,7 @@ export class GeminiApi {
             );
           }
           Log.warn(
-            `Gemini API 返回结果不包含有效的 candidate 或 content，尝试重试 (空回复重试 ${currentEmptyReplyAttempt}/${GeminiApi.MAX_RETRIES_COMMON})。`,
+            `Gemini API 返回结果不包含有效的 candidate 或 content，尝试重试 (无效回复重试 ${currentEmptyReplyAttempt}/${GeminiApi.MAX_RETRIES_COMMON})。`,
             { response },
           );
           await sleep(delay);
@@ -410,8 +407,8 @@ export class GeminiApi {
             throw error as GeminiError;
           }
         } else {
-          // 达到最大空回复重试次数
-          const errorMsg = `Gemini API 未返回有效结果，已达最大空回复重试次数 (${GeminiApi.MAX_RETRIES_COMMON})，请稍后再重新提问。`;
+          // 达到最大无效回复重试次数
+          const errorMsg = `Gemini API 未返回有效结果，已达最大无效回复重试次数 (${GeminiApi.MAX_RETRIES_COMMON})，请稍后再重新提问。`;
           Log.error(errorMsg);
           await GeminiApi._writeApiKeysToKv(context.apiKeys);
           throw new GeminiError(errorMsg, 'MAX_EMPTY_REPLY_RETRIES_REACHED', context.metrics.hasToolThoughts);
@@ -421,6 +418,8 @@ export class GeminiApi {
       // 如果代码执行到这里，说明已经成功获取到一个非空且有效的 candidate
       // 此时才算作一次实际的 API 调用轮次完成
       apiCallRoundCounter++;
+      currentEmptyReplyAttempt = 0;
+      context.metrics.apiCallSuccessCount++;
 
       const parts: Part[] = candidate.content.parts;
       const functionCalls = parts.filter((part) => part.functionCall);
@@ -449,6 +448,7 @@ export class GeminiApi {
           return {
             response: { role: 'model', parts: [{ text: '😥 抱歉，模型尝试使用工具但未能获取结果。' }] },
             ...context.metrics, // 返回当前已收集的指标
+            totalRetryCount: context.metrics.emptyReplyRetryCount + context.metrics.errorRetryCount,
             emptyReplyRetryCount: context.metrics.emptyReplyRetryCount,
             errorRetryCount: context.metrics.errorRetryCount,
           };
@@ -474,6 +474,7 @@ export class GeminiApi {
               parts: [{ text: `😥 抱歉，未能获取有效的文本回复。Finish Reason: ${finishReason || '未知'}` }],
             },
             ...context.metrics, // 返回当前已收集的指标
+            totalRetryCount: context.metrics.emptyReplyRetryCount + context.metrics.errorRetryCount,
             emptyReplyRetryCount: context.metrics.emptyReplyRetryCount,
             errorRetryCount: context.metrics.errorRetryCount,
           };

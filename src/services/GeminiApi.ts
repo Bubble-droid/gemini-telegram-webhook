@@ -31,7 +31,7 @@ export class GeminiApi {
     const systemPrompt = (await KvNamespace.read<string>(durableResourceId, systemPromptKeyName, 'text')) || 'You are a helpful assistant.';
 
     // 读取 API 密钥，如果不存在则抛出错误
-    const apiKeys = await KvNamespace.read<string[][]>(durableResourceId, geminiApiKeysKeyName, 'json');
+    const apiKeys = await KvNamespace.read<[string, string][]>(durableResourceId, geminiApiKeysKeyName, 'json');
     if (!apiKeys || apiKeys.length === 0) {
       Log.error('未找到有效的 Gemini API 密钥。', { durableResourceId, geminiApiKeysKeyName });
       // 初始化阶段，通常没有工具思考，所以 hasToolThoughts 为 false
@@ -114,7 +114,7 @@ export class GeminiApi {
     });
 
     // 轮换 API 密钥并获取当前使用的密钥
-    const newApiKeys: string[][] = rotateArray<string[]>(context.apiKeys);
+    const newApiKeys: [string, string][] = rotateArray<[string, string]>(context.apiKeys);
     const [apiKey, apiKeyId] = newApiKeys[0];
     const ai = new GoogleGenAI({ apiKey });
     Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
@@ -325,9 +325,9 @@ export class GeminiApi {
 
   /**
    * 将当前轮换后的 API 密钥组写入 KvNamespace。
-   * @param {string[][]} apiKeys - 当前的 API 密钥组。
+   * @param {[string, string][]} apiKeys - 当前的 API 密钥组。
    */
-  private static async _writeApiKeysToKv(apiKeys: string[][]): Promise<void> {
+  private static async _writeApiKeysToKv(apiKeys: [string, string][]): Promise<void> {
     const { durableResourceId, geminiApiKeysKeyName } = BotConfig.load();
     try {
       // 显式指定类型为 'json'，与读取时保持一致

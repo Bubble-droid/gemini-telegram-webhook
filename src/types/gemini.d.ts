@@ -27,7 +27,7 @@ export interface ApiCallContext {
   chatId: number;
   thinkMessageId: number | undefined; // 考虑到可能没有 thinkMessageId 的情况，设为可选
   systemPrompt: string;
-  apiKeys: string[][]; // 当前轮换后的 API 密钥组
+  apiKeys: [string, string][]; // 当前轮换后的 API 密钥组
   modelName: string;
   config: GenerateContentConfig;
   contents: Content[];

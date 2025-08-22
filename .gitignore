@@ -20,7 +20,7 @@ pnpm-workspace.yaml
 .vercel/
 
 
-resources/
+resources/gemini_api_keys.json
 .roo/
 
 # Logs

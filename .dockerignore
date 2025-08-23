@@ -17,11 +17,10 @@ draft/
 
 export_tree_and_files.sh
 tree_and_files.md
-pnpm-workspace.yaml
 .vercel/
 
 
-resources/gemini_api_keys.json
+resources
 .roo/
 
 # Logs

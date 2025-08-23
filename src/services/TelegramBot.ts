@@ -17,7 +17,7 @@ import type {
   GetFileParams,
   GetFileResult,
 } from '@/types';
-import { escapeHtml, markdownToHtml } from '@/utils';
+import { markdownToHtml } from '@/utils';
 
 /**
  * @class TelegramBot
@@ -108,13 +108,13 @@ export class TelegramBot {
   public static async sendMessage(
     chatId: number,
     text: string,
+    parseMode?: ParseMode,
     replyToMessageId?: number,
-    parseMode: ParseMode = 'HTML',
     isFormat: boolean = true,
-  ): Promise<{ ok: boolean; messageId?: number }> {
+  ): Promise<{ ok: boolean; messageId?: number; error?: TelegramError }> {
     const payload: SendMessageParams = {
       chat_id: chatId,
-      text: isFormat ? markdownToHtml(text) : escapeHtml(text),
+      text: isFormat ? markdownToHtml(text) : text,
       parse_mode: parseMode,
       link_preview_options: {
         is_disabled: true,
@@ -144,6 +144,7 @@ export class TelegramBot {
       });
       return {
         ok: false,
+        error: error as TelegramError,
       };
     }
   }
@@ -159,9 +160,9 @@ export class TelegramBot {
     chatId: number | string,
     messageId: number,
     text: string,
-    parseMode: ParseMode = 'HTML',
+    parseMode?: ParseMode,
     isFormat: boolean = true,
-  ): Promise<{ ok: boolean; messageId?: number }> {
+  ): Promise<{ ok: boolean; messageId?: number; error?: TelegramError }> {
     const payload: EditMessageTextParams = {
       chat_id: chatId,
       message_id: messageId,
@@ -185,7 +186,7 @@ export class TelegramBot {
         messageId,
         text: text.substring(0, 100) + '...',
       });
-      return { ok: false };
+      return { ok: false, error: error as TelegramError };
     }
   }
 
@@ -195,7 +196,7 @@ export class TelegramBot {
    * @param {number} messageId - 消息ID。
    * @returns {Promise<{ ok: boolean }>} 成功返回 `{ ok: true }`，失败返回 `{ ok: false }`。
    */
-  public static async deleteMessage(chatId: number | string, messageId: number): Promise<{ ok: boolean }> {
+  public static async deleteMessage(chatId: number | string, messageId: number): Promise<{ ok: boolean; error?: TelegramError }> {
     const payload: DeleteMessageParams = {
       chat_id: chatId,
       message_id: messageId,
@@ -210,7 +211,7 @@ export class TelegramBot {
         chatId,
         messageId,
       });
-      return { ok: false };
+      return { ok: false, error: error as TelegramError };
     }
   }
 
@@ -219,7 +220,7 @@ export class TelegramBot {
    * @param {number} chatId - 聊天 ID，用于指定命令范围。
    * @returns {Promise<{ ok: boolean }>} 成功返回 `{ ok: true }`，否则返回 `{ ok: false }`。
    */
-  public static async setBotCommands(chatId: number | string, userId: number): Promise<{ ok: boolean }> {
+  public static async setBotCommands(chatId: number | string, userId: number): Promise<{ ok: boolean; error?: TelegramError }> {
     const payload: SetBotCommandParams = {
       commands: botCommands.map((command) => ({
         command: command.name,
@@ -237,7 +238,7 @@ export class TelegramBot {
       return { ok: true };
     } catch (error: unknown) {
       Log.error('Error setting bot commands', { err: error as Error, chatId });
-      return { ok: false };
+      return { ok: false, error: error as TelegramError };
     }
   }
 
@@ -246,19 +247,19 @@ export class TelegramBot {
    * @param {string} fileId - 文件的唯一 ID。
    * @returns {Promise<File| undefined>} 文件信息对象，如果获取失败则返回 `undefined`。
    */
-  public static async getFile(fileId: string): Promise<File | undefined> {
+  public static async getFile(fileId: string): Promise<{ ok: boolean; data: File } | { ok: false; error: TelegramError }> {
     Log.info(`Getting file info for file_id: ${fileId}`);
     try {
       const result = await TelegramBot.sendRequest<GetFileParams, GetFileResult>('POST', 'getFile', {
         file_id: fileId,
       });
-      return result;
+      return { ok: true, data: result };
     } catch (error: unknown) {
       Log.error(`Error in getFile for file_id ${fileId}`, {
         err: error as Error,
         fileId,
       });
-      return undefined;
+      return { ok: false, error: error as TelegramError };
     }
   }
 }

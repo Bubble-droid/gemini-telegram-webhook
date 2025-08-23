@@ -27,7 +27,7 @@ const handleUpdate = async (update: Update): Promise<void> => {
   if (!messageEntities || !messageText) return await handleNormal(message);
   try {
     for (const entity of messageEntities) {
-      if (entity.type === 'mention') {
+      if (entity.type === 'mention' || entity.type === 'text_mention') {
         const mentionedText = messageText.substring(entity.offset, entity.offset + entity.length);
         if (mentionedText === `@${botName}`) {
           return await handleMention(message);
@@ -49,9 +49,9 @@ const handleUpdate = async (update: Update): Promise<void> => {
   } catch (error: unknown) {
     const err = error as Error;
     Log.error('Error while handling update', { err, updateId: update_id });
-    await sendErrorNotification(err, `Error while handling update ${{ chatId: chat.id, messageId: message_id }}`);
-    const errorMessage: string = error instanceof Error ? error.message : String(error);
-    const { messageId: errorMessageId } = await TelegramBot.sendMessage(message.chat.id, `❌ ${errorMessage}`, message_id);
+    await sendErrorNotification(err, `Error while handling update ${JSON.stringify({ chatId: chat.id, messageId: message_id })}`);
+    const errorMessage: string = err instanceof Error ? err.message : String(err);
+    const { messageId: errorMessageId } = await TelegramBot.sendMessage(message.chat.id, `❌ ${errorMessage}`, 'HTML', message_id);
     if (errorMessageId) {
       void scheduleDeletion({ chat_id: chat.id, message_id: errorMessageId }, 5 * 60_000);
     }

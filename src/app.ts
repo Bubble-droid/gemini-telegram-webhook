@@ -19,11 +19,7 @@ const buildApp = async (): Promise<FastifyInstance> => {
       stream: loggerAdapter,
     },
   });
-  if (process.env.VERCEL && process.env.VERCEL === '1') {
-    await app.register(createRoutes);
-  } else {
-    await createRoutes(app);
-  }
+  app.register(createRoutes);
   return app;
 };
 

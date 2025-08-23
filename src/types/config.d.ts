@@ -23,6 +23,8 @@ export interface Env {
   DURABLE_RESOURCE_NAMESPACE_ID: string;
   SYSTEM_PROMPT_KEY_NAME: string;
   GEMINI_API_KEYS_KEY_NAME: string;
+  START_REPLY_TEXT_KEY_NAME: string;
+  NEW_MEMBER_WELCOME_TEXT_KEY_NAME: string;
 
   RATE_LIMIT_NAMESPACE_ID: string;
   REQUEST_INTERVAL_SECOND?: string;
@@ -61,6 +63,8 @@ export interface Config {
   durableResourceId: string;
   systemPromptKeyName: string;
   geminiApiKeysKeyName: string;
+  startReplyTextKeyName: string;
+  newMemberWelcomeTextKeyName: string;
 
   rateLimitId: string;
   requestIntervalSecond: number;

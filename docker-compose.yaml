@@ -1,0 +1,12 @@
+name: gemini-telegram-webhook
+services:
+  gemini-telegram-webhook:
+    build: .
+    image: seamao/gemini-telegram-webhook:latest
+    container_name: gemini-telegram-webhook
+    # restart: always
+    ports:
+      - '39001:39001'
+    env_file:
+      - .env
+    # network_mode: 'host'

@@ -1,6 +1,7 @@
 // src/services/BotConfig.ts
 
 import { isIP } from 'node:net';
+import process from 'node:process';
 import type { Env, Config } from '@/types';
 import { ConfigError } from '@/services'; // 导入自定义错误类型
 
@@ -20,9 +21,13 @@ export class BotConfig {
   private static readonly DEFAULT_LOGGER_LEVEL: LoggerLevel = 'info';
   private static readonly DEFAULT_MODEL_NAME: string = 'gemini-2.5-flash';
   private static readonly DEFAULT_CONTEXT_EXPIRATION_DAY: number = 7;
-  private static readonly DEFAULT_MAX_CONTEXT_LENGTH: number = 6;
+  private static readonly DEFAULT_MAX_CONTEXT_LENGTH: number = 8;
   private static readonly DEFAULT_REQUEST_INTERVAL_SECOND: number = 30;
   private static readonly DEFAULT_MAX_API_CALL_ROUNDS: number = 12;
+  private static readonly DEFAULT_SYSTEM_PROMPT_KEY_NAME: string = 'system_prompt';
+  private static readonly DEFAULT_GEMINI_API_KEYS_KEY_NAME: string = 'gemini_api_keys';
+  private static readonly DEFAULT_START_REPLY_TEXT_KEY_NAME: string = 'start_reply_text';
+  private static readonly DEFAULT_NEW_MEMBER_WELCOME_TEXT_KEY_NAME: string = 'new_member_welcome_text';
 
   // 定义必填环境变量的键名列表。
   // 在加载配置时，会检查这些环境变量是否都已设置且非空。
@@ -154,8 +159,10 @@ export class BotConfig {
     const schedulerApiToken: string = ENV.SCHEDULER_API_TOKEN;
 
     const durableResourceId: string = ENV.DURABLE_RESOURCE_NAMESPACE_ID;
-    const systemPromptKeyName: string = ENV.SYSTEM_PROMPT_KEY_NAME;
-    const geminiApiKeysKeyName: string = ENV.GEMINI_API_KEYS_KEY_NAME;
+    const systemPromptKeyName: string = ENV.SYSTEM_PROMPT_KEY_NAME || BotConfig.DEFAULT_SYSTEM_PROMPT_KEY_NAME;
+    const geminiApiKeysKeyName: string = ENV.GEMINI_API_KEYS_KEY_NAME || BotConfig.DEFAULT_GEMINI_API_KEYS_KEY_NAME;
+    const startReplyTextKeyName: string = ENV.START_REPLY_TEXT_KEY_NAME || BotConfig.DEFAULT_START_REPLY_TEXT_KEY_NAME;
+    const newMemberWelcomeTextKeyName: string = ENV.NEW_MEMBER_WELCOME_TEXT_KEY_NAME || BotConfig.DEFAULT_NEW_MEMBER_WELCOME_TEXT_KEY_NAME;
 
     const rateLimitId: string = ENV.RATE_LIMIT_NAMESPACE_ID;
     const chatContextId: string = ENV.CHAT_CONTEXT_NAMESPACE_ID;
@@ -188,6 +195,8 @@ export class BotConfig {
       durableResourceId,
       systemPromptKeyName,
       geminiApiKeysKeyName,
+      startReplyTextKeyName,
+      newMemberWelcomeTextKeyName,
       rateLimitId,
       chatContextId,
       contextsExpirationSecond,

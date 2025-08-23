@@ -4,7 +4,7 @@ import { GoogleGenAI, FunctionCallingConfigMode, HarmCategory, HarmBlockThreshol
 import type { Content, GenerateContentConfig, GenerateContentResponse, Part } from '@google/genai';
 import { BotConfig, GeminiError, Log, TelegramBot, ToolExecutors } from '@/services';
 import { geminiTools } from '@/configs';
-import { KvNamespace, rotateArray, sleep } from '@/utils';
+import { escapeHtml, KvNamespace, rotateArray, sleep } from '@/utils';
 import type { ChatParams, GenerateContentSuccessResponse, ApiCallContext, ToolExecArgs } from '@/types';
 
 /**
@@ -233,7 +233,7 @@ export class GeminiApi {
           await TelegramBot.editMessageText(
             context.chatId,
             context.thinkMessageId,
-            `Thoughts:\n\n<blockquote expandable>${displayThoughtText}</blockquote>`,
+            `<b>Thoughts</b>:\n\n<blockquote expandable>${escapeHtml(displayThoughtText)}</blockquote>`,
             'HTML',
             false,
           );

@@ -8,9 +8,9 @@ import { downloadFileAsArrayBuffer } from './downloader';
 export const handleImage = async (image: Document): Promise<BlobImageUnion | void> => {
   const { botToken } = BotConfig.load();
   const { file_id, mime_type } = image;
-  const imageData = await TelegramBot.getFile(file_id);
-  if (imageData) {
-    const fileUrl = `https://api.telegram.org/file/bot${botToken}/${imageData.file_path}`;
+  const result = await TelegramBot.getFile(file_id);
+  if (result.ok) {
+    const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
     const imageArrayBuffer = await downloadFileAsArrayBuffer(fileUrl);
     const base64ImageData = Buffer.from(imageArrayBuffer).toString('base64');
     return { data: base64ImageData, mimeType: mime_type ? mime_type : 'image/jpeg' };

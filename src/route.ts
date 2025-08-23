@@ -49,23 +49,32 @@ const createRoutes = async (route: FastifyInstance): Promise<void> => {
     return reply.code(200).type('application/json').send({ code: 200, message: `It's worked` });
   });
 
+  const constantTimeEqual = (a: string = '', b: string = ''): boolean => {
+    if (a.length !== b.length) return false;
+    let res: number = 0;
+    for (let i: number = 0; i < a.length; i++) res |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return res === 0;
+  };
+
   // 定义 POST /webhook 路由，用于接收 Telegram 的 Webhook 更新
   route.post<{ Body: RequestBody; Headers: RequestHeaders }>('/webhook', {
     schema: routeSchema,
     // preHandler 钩子在路由处理函数执行前运行，用于身份验证等预处理逻辑
     preHandler: async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply | void> => {
       const { secretToken } = BotConfig.load();
-      Log.info('Webhook Request Headers', { headers: request.headers });
-      const secretTokenFromHeader = request.headers['x-telegram-bot-api-secret-token'] || '';
-      if (!secretTokenFromHeader || secretTokenFromHeader !== secretToken) {
-        Log.warn('Unauthorized webhook access attempt', { clientIp: request.ip });
+      const safeHeaders = { ...request.headers, 'x-telegram-bot-api-secret-token': '***' };
+      Log.info('Webhook Request Headers', { headers: safeHeaders });
+      const secretTokenFromHeader = (request.headers['x-telegram-bot-api-secret-token'] || '') as string;
+      if (!constantTimeEqual(secretTokenFromHeader, secretToken)) {
+        Log.warn('Unauthorized webhook access attempt', { clientIp: request.ip, userAgent: request.headers['user-agent'] });
         return reply.code(401).type('application/json').send({ code: 401, message: 'Bad Credentials' });
       }
     },
     handler: async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
       Log.info('Webhook Verification successful');
+      const update = request.body as Update;
       setImmediate(() => {
-        void handleUpdate(request.body as Update);
+        void handleUpdate(update);
       });
       return reply.code(202).type('application/json').send({ code: 202, message: `OK` });
     },

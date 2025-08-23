@@ -3,8 +3,11 @@
 import { BotConfig, TelegramBot, ChatContexts, Log, GeminiApi, GeminiError, TelegramError } from '@/services';
 import type { Message, GenerateContentSuccessResponse } from '@/types';
 import type { Content, Part } from '@google/genai'; // 确保 Part 类型导入
-import { rateLimiterCheck, scheduleDeletion, sleep } from '@/utils';
+import { escapeHtml, rateLimiterCheck, scheduleDeletion, sleep } from '@/utils';
 import { handleFile } from '@/handlers/file';
+import { sendFormattedMessage } from '@/utils/formatting';
+
+/**
 
 /**
  * 检查消息是否包含文件（文档或照片）
@@ -53,11 +56,6 @@ const extractMessageParts = async (message: Message, botName: string): Promise<P
  * @description 封装处理提及 Bot 消息或回复 Bot 消息的逻辑。
  */
 export class MentionHandler {
-  // Telegram 消息的最大字符长度限制
-  private static readonly MAX_TELEGRAM_MESSAGE_LENGTH: number = 4096;
-  // 分块发送时每个分块的字符长度
-  private static readonly CHUNK_SIZE: number = 2048;
-
   /**
    * 检查并处理速率限制。
    * @param {Message} message - Telegram 消息对象。
@@ -73,6 +71,7 @@ export class MentionHandler {
       const { messageId: rateLimitMessageId } = await TelegramBot.sendMessage(
         chat.id,
         `超出速率限制，请等待 ${checkResult.retryAfterSeconds} 秒后重试。`,
+        'HTML',
         userMessageId,
       );
       if (rateLimitMessageId) {
@@ -98,7 +97,7 @@ export class MentionHandler {
     userMessageId: number,
   ): Promise<number | null> {
     if (containsFile(message) || containsFile(replyToMessage)) {
-      const { messageId: uploadingMessageId } = await TelegramBot.sendMessage(chatId, '📄 File uploading...', userMessageId);
+      const { messageId: uploadingMessageId } = await TelegramBot.sendMessage(chatId, '📄 File uploading...', 'HTML', userMessageId);
       return uploadingMessageId || null;
     }
     return null;
@@ -160,63 +159,12 @@ export class MentionHandler {
    * @throws {Error} 如果发送失败。
    */
   private static async _sendThinkingMessage(chatId: number, userMessageId: number): Promise<number> {
-    const { messageId: thinkMessageId } = await TelegramBot.sendMessage(chatId, '✨ Thinking...', userMessageId);
+    const { messageId: thinkMessageId } = await TelegramBot.sendMessage(chatId, '✨ Thinking...', 'HTML', userMessageId);
     if (!thinkMessageId) {
       Log.error('Failed to send thinking message.');
       throw new TelegramError('Failed to send thinking message.');
     }
     return thinkMessageId;
-  }
-
-  /**
-   * 根据文本长度分块发送消息。
-   * 如果文本长度不超过 4096，则直接发送。
-   * 如果超过 4096，则按 2048 字符分块发送，并保持回复线程。
-   * @param {number} chatId - 聊天 ID。
-   * @param {string} fullText - 要发送的完整文本。
-   * @param {number} userMessageId - 用户原始消息的 ID，用于第一个分块的回复。
-   * @param {number} deletionDurationMs - 消息的删除持续时间（毫秒）。
-   * @throws {Error} 如果任何分块发送失败。
-   */
-  private static async _sendLongMessageInChunks(chatId: number, fullText: string, userMessageId: number, deletionDurationMs: number): Promise<void> {
-    if (fullText.length <= MentionHandler.MAX_TELEGRAM_MESSAGE_LENGTH) {
-      // 如果文本长度在 Telegram 单条消息限制内，直接发送
-      const { ok: sendOk, messageId: replyMessageId } = await TelegramBot.sendMessage(chatId, fullText, userMessageId);
-      if (!sendOk) {
-        throw new TelegramError('发送最终回复消息时发生未知错误。');
-      }
-      if (replyMessageId) {
-        void scheduleDeletion({ chat_id: chatId, message_id: replyMessageId }, deletionDurationMs);
-      }
-    } else {
-      // 文本超过限制，需要分块发送
-      const chunks: string[] = [];
-      for (let i = 0; i < fullText.length; i += MentionHandler.CHUNK_SIZE) {
-        chunks.push(fullText.substring(i, i + MentionHandler.CHUNK_SIZE));
-      }
-
-      let currentReplyToMessageId: number | undefined = userMessageId; // 第一个分块回复用户消息
-
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        const { ok: sendOk, messageId: sentMessageId } = await TelegramBot.sendMessage(chatId, chunk, currentReplyToMessageId, 'HTML', false);
-
-        if (!sendOk) {
-          Log.error(`发送第 ${i + 1} 个回复消息分块时发生未知错误。`, { chatId, chunkIndex: i });
-          throw new TelegramError(`发送第 ${i + 1} 个回复消息分块时发生未知错误。`);
-        }
-
-        if (sentMessageId) {
-          // 为每个分块安排删除
-          void scheduleDeletion({ chat_id: chatId, message_id: sentMessageId }, deletionDurationMs);
-          // 后续分块回复前一个发送的消息，以保持线程
-          currentReplyToMessageId = sentMessageId;
-        } else {
-          // 理论上不会发生，因为 sendOk 为 true 通常意味着 messageId 存在
-          Log.warn(`发送第 ${i + 1} 个分块后未获取到消息 ID。`, { chatId, chunkIndex: i });
-        }
-      }
-    }
   }
 
   /**
@@ -273,7 +221,7 @@ export class MentionHandler {
       await TelegramBot.editMessageText(
         chatId,
         thinkMessageId,
-        `*Thoughts*:\n\n<blockquote expandable>${displayThoughtText}</blockquote>`,
+        `<b>Thoughts</b>:\n\n<blockquote expandable>${escapeHtml(displayThoughtText)}</blockquote>`,
         'HTML',
         false,
       );
@@ -310,7 +258,12 @@ ${resTexts}
 *⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。*`;
 
     // 调用新的分块发送函数来处理回复消息
-    await MentionHandler._sendLongMessageInChunks(chatId, fullText, userMessageId, 24 * 60 * 60_000);
+    const { ok: sendOk, error: sendError } = await sendFormattedMessage(chatId, fullText, userMessageId);
+
+    if (!sendOk) {
+      const error = sendError ? sendError : new TelegramError('发送消息时发生未知错误');
+      throw error;
+    }
 
     // 更新聊天记录，保存用户提问和 Bot 回复
     // completeContentsBeforeCall 已经包含了历史记录和用户当前提问

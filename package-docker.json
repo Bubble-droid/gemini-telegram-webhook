@@ -1,0 +1,12 @@
+{
+  "name": "gemini-telegram-webhook",
+  "type": "module",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "dependencies": {
+    "@google/genai": "^1.14.0",
+    "cloudflare": "^4.5.0",
+    "fastify": "^5.5.0",
+    "tslog": "^4.9.3"
+  }
+}

@@ -1,21 +1,22 @@
+// src/handlers/file/document.ts
+
 import type { Document } from '@/types';
 import { type Blob } from '@google/genai';
 import { downloadFileAsArrayBuffer } from './downloader';
-import { AppError, BotConfig, TelegramBot } from '@/services';
+import { BotConfig, TelegramBot } from '@/services';
+
+const SUPPORTED_MIME_TYPES = ['application/json', 'application/yaml', 'text/javascript', 'text/plain', 'text/markdown', 'application/x-shellscript'];
 
 export const handleDocument = async (document: Document): Promise<Blob | void> => {
   const { botToken } = BotConfig.load();
   const { file_id, mime_type } = document;
-  const supportedMimeTypes = ['application/json', 'application/yaml', 'text/javascript', 'text/plain', 'text/markdown', 'application/x-shellscript'];
-  if (!supportedMimeTypes.includes(String(mime_type))) {
-    const errorMessage = `不支持的文件类型：${mime_type}\n` + `目前仅支持处理 ${supportedMimeTypes.join(', ')} 类型的文件。`;
-    throw new AppError(errorMessage, 'UNSUPPORTED_FILE_TYPE');
-  }
-  const documentData = await TelegramBot.getFile(file_id);
-  if (documentData) {
-    const fileUrl = `https://api.telegram.org/file/bot${botToken}/${documentData.file_path}`;
+  let generalMimeType: string | undefined;
+  if (!SUPPORTED_MIME_TYPES.includes(String(mime_type))) generalMimeType = 'text/plain';
+  const result = await TelegramBot.getFile(file_id);
+  if (result.ok) {
+    const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
     const documentArrayBuffer = await downloadFileAsArrayBuffer(fileUrl);
     const base64DocumentData = Buffer.from(documentArrayBuffer).toString('base64');
-    return { data: base64DocumentData, mimeType: mime_type };
+    return { data: base64DocumentData, mimeType: generalMimeType ? generalMimeType : mime_type ? mime_type : 'text/plain' };
   }
 };

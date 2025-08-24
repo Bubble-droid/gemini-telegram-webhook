@@ -17,7 +17,7 @@ export interface Env {
   CLOUDFLARE_API_TOKEN: string; // Cloudflare API Token (必填)
   CLOUDFLARE_ACCOUNT_ID: string; // Cloudflare Account ID (必填)
 
-  SCHEDULER_API_UEL: string;
+  SCHEDULER_API_URL: string;
   SCHEDULER_API_TOKEN: string;
 
   DURABLE_RESOURCE_NAMESPACE_ID: string;

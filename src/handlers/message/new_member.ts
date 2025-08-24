@@ -22,11 +22,11 @@ const handleNewMember = async (message: Message): Promise<void> => {
     const newMemberWelcomeText = await KvNamespace.read<string>(durableResourceId, newMemberWelcomeTextKeyName, 'text');
     const replaceText = newMemberWelcomeText
       ?.replace('NEW_MEMBER_MENTION', newMemberMention)
-      .replace('CHAT_TITLE ', chat.title as string)
+      .replace('CHAT_TITLE', chat.title as string)
       .replace('BOT_NAME', botName) as string;
-    const { messageId: welcomeMessageId } = await TelegramBot.sendMessage(chat.id, replaceText, 'HTML');
-    if (welcomeMessageId) {
-      void scheduleDeletion({ chat_id: chat.id, message_id: welcomeMessageId }, 10 * 60_000);
+    const welcomeResult = await TelegramBot.sendMessage(chat.id, replaceText, 'HTML');
+    if (welcomeResult.ok) {
+      void scheduleDeletion({ chat_id: chat.id, message_id: welcomeResult.messageId }, 10 * 60_000);
     }
   }
 };

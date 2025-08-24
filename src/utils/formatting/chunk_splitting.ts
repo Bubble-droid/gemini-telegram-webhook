@@ -21,12 +21,14 @@ export const splitFormattedText = (formattedText: string, parseMode: ParseMode |
   // 识别代码块的范围，以便在分割时避开
   const codeBlockRanges: CodeBlockRange[] = [];
   if (parseMode === 'HTML') {
+    // 匹配 <pre> 或 <pre><code ...> 整个块
     const preRegex = /<pre(?:[^>]*?)?>[\s\S]*?<\/pre>/g;
     let match: RegExpExecArray | null;
     while ((match = preRegex.exec(formattedText)) !== null) {
       codeBlockRanges.push({ start: match.index, end: match.index + match.length });
     }
   } else if (parseMode === 'MarkdownV2' || parseMode === 'Markdown') {
+    // 匹配 ```code``` 整个块
     const codeBlockRegex = /```[\s\S]*?```/g;
     let match: RegExpExecArray | null;
     while ((match = codeBlockRegex.exec(formattedText)) !== null) {
@@ -57,12 +59,13 @@ export const splitFormattedText = (formattedText: string, parseMode: ParseMode |
           endPos = currentBlockEnd;
         } else {
           // 代码块太长，必须在内部分割。尝试在代码块内部找换行符。
-          const searchStart = Math.max(currentPos, endPos - 200); // 在末尾 200 个字符内查找
+          // 在当前块的末尾 200 个字符内查找一个安全的分割点
+          const searchStart = Math.max(currentPos, endPos - 200);
           let safeSplitPoint = -1;
           for (let i = endPos - 1; i >= searchStart; i--) {
             if (formattedText[i] === '\n') {
               // 代码块内部主要按行分割
-              safeSplitPoint = i + 1;
+              safeSplitPoint = i + 1; // 分割点在换行符之后
               break;
             }
           }
@@ -70,14 +73,16 @@ export const splitFormattedText = (formattedText: string, parseMode: ParseMode |
             endPos = safeSplitPoint;
           }
           // 如果在窗口内没有找到换行符，就按 maxLength 硬分割 (可能破坏代码块格式)
+          // 这种情况下，`balanceChunkTags` 应该尝试修复。
         }
       } else {
         // 如果没有落在代码块内部，尝试在附近找换行符或空格作为安全分割点
-        const searchStart = Math.max(currentPos, endPos - 200); // 在末尾 200 个字符内查找
+        // 在当前块的末尾 200 个字符内查找一个安全的分割点
+        const searchStart = Math.max(currentPos, endPos - 200);
         let safeSplitPoint = -1;
         for (let i = endPos - 1; i >= searchStart; i--) {
           if (formattedText[i] === '\n' || formattedText[i] === ' ') {
-            safeSplitPoint = i + 1;
+            safeSplitPoint = i + 1; // 分割点在换行符或空格之后
             break;
           }
         }

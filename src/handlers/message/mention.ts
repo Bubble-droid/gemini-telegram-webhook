@@ -3,7 +3,8 @@
 import { BotConfig, TelegramBot, ChatContexts, Log, GeminiApi, GeminiError, TelegramError } from '@/services';
 import type { Message, GenerateContentSuccessResponse } from '@/types';
 import type { Content, Part } from '@google/genai'; // 确保 Part 类型导入
-import { escapeHtml, rateLimiterCheck, scheduleDeletion, sleep } from '@/utils';
+import { rateLimiterCheck, scheduleDeletion, sleep } from '@/utils';
+import { escapeHtml } from '@/utils/formatting';
 import { handleFile } from '@/handlers/file';
 import { sendFormattedMessage } from '@/utils/formatting';
 
@@ -68,14 +69,14 @@ export class MentionHandler {
 
     if (!checkResult.canProceed && from?.id !== adminId) {
       Log.info(`Rate limit exceeded for chat ${chat.id}. Retry after ${checkResult.retryAfterSeconds} seconds.`);
-      const { messageId: rateLimitMessageId } = await TelegramBot.sendMessage(
+      const rateLimitResult = await TelegramBot.sendMessage(
         chat.id,
         `超出速率限制，请等待 ${checkResult.retryAfterSeconds} 秒后重试。`,
         'HTML',
         userMessageId,
       );
-      if (rateLimitMessageId) {
-        void scheduleDeletion({ chat_id: chat.id, message_id: rateLimitMessageId }, checkResult.retryAfterSeconds * 1_000);
+      if (rateLimitResult.ok) {
+        void scheduleDeletion({ chat_id: chat.id, message_id: rateLimitResult.messageId }, checkResult.retryAfterSeconds * 1_000);
       }
       return true; // 表示已处理速率限制
     }
@@ -97,8 +98,8 @@ export class MentionHandler {
     userMessageId: number,
   ): Promise<number | null> {
     if (containsFile(message) || containsFile(replyToMessage)) {
-      const { messageId: uploadingMessageId } = await TelegramBot.sendMessage(chatId, '📄 File uploading...', 'HTML', userMessageId);
-      return uploadingMessageId || null;
+      const uploadingResult = await TelegramBot.sendMessage(chatId, '📄 File uploading...', 'HTML', userMessageId);
+      return uploadingResult.ok ? uploadingResult.messageId : null;
     }
     return null;
   }
@@ -121,8 +122,13 @@ export class MentionHandler {
     const historyChatContents = await ChatContexts.get(chatId, fromUserId as number);
     const completeContents: Content[] = [...historyChatContents];
 
+    let currentMessageCopy: Message = { ...currentMessage };
     // 处理被回复的消息（如果存在）
     if (currentMessage.reply_to_message) {
+      if (currentMessage.quote?.text) {
+        const quotedContents = `Quoted: "${currentMessage.quote.text}"\n\n${currentMessage.text || currentMessage.caption}`;
+        currentMessageCopy = { ...currentMessage, text: quotedContents };
+      }
       const replyToParts = await extractMessageParts(currentMessage.reply_to_message, botName);
       if (replyToParts.length > 0) {
         // 判断被回复消息的角色：如果是 Bot，则是 'model'；否则是其他用户，是 'user'。
@@ -135,7 +141,7 @@ export class MentionHandler {
     }
 
     // 处理当前消息，总是用户角色
-    const currentParts = await extractMessageParts(currentMessage, botName);
+    const currentParts = await extractMessageParts(currentMessageCopy, botName);
     if (currentParts.length > 0) {
       completeContents.push({
         role: 'user',
@@ -159,12 +165,12 @@ export class MentionHandler {
    * @throws {Error} 如果发送失败。
    */
   private static async _sendThinkingMessage(chatId: number, userMessageId: number): Promise<number> {
-    const { messageId: thinkMessageId } = await TelegramBot.sendMessage(chatId, '✨ Thinking...', 'HTML', userMessageId);
-    if (!thinkMessageId) {
+    const thinkingResult = await TelegramBot.sendMessage(chatId, '✨ Thinking...', 'HTML', userMessageId);
+    if (!thinkingResult.ok) {
       Log.error('Failed to send thinking message.');
       throw new TelegramError('Failed to send thinking message.');
     }
-    return thinkMessageId;
+    return thinkingResult.messageId;
   }
 
   /**

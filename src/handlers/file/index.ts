@@ -15,7 +15,7 @@ export * from './downloader';
  * @returns {Promise<Blob|null>} 处理后得到的数据，如果没有文件或处理失败则返回 null
  */
 export const handleFile = async (message: Message): Promise<Blob | void> => {
-  const { photo, document } = message;
+  const { document, photo } = message;
   if (photo || document?.mime_type === 'image/png' || document?.mime_type === 'image/jpeg') {
     const image = photo ? photo[photo.length - 1] : document;
     if (image) {

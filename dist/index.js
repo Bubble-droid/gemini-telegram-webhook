@@ -12,13 +12,17 @@ class BotConfig {
   static DEFAULT_LOGGER_LEVEL = "info";
   static DEFAULT_MODEL_NAME = "gemini-2.5-flash";
   static DEFAULT_CONTEXT_EXPIRATION_DAY = 7;
-  static DEFAULT_MAX_CONTEXT_LENGTH = 6;
+  static DEFAULT_MAX_CONTEXT_LENGTH = 8;
   static DEFAULT_REQUEST_INTERVAL_SECOND = 30;
   static DEFAULT_MAX_API_CALL_ROUNDS = 12;
+  static DEFAULT_SYSTEM_PROMPT_KEY_NAME = "system_prompt";
+  static DEFAULT_GEMINI_API_KEYS_KEY_NAME = "gemini_api_keys";
+  static DEFAULT_START_REPLY_TEXT_KEY_NAME = "start_reply_text";
+  static DEFAULT_NEW_MEMBER_WELCOME_TEXT_KEY_NAME = "new_member_welcome_text";
   static REQUIRED_ENV_VARS = [
     "CLOUDFLARE_API_TOKEN",
     "CLOUDFLARE_ACCOUNT_ID",
-    "SCHEDULER_API_UEL",
+    "SCHEDULER_API_URL",
     "SCHEDULER_API_TOKEN",
     "DURABLE_RESOURCE_NAMESPACE_ID",
     "SYSTEM_PROMPT_KEY_NAME",
@@ -83,11 +87,13 @@ class BotConfig {
     const maxApiCallRounds = Number(ENV.MAX_API_CALL_ROUNDS) || BotConfig.DEFAULT_MAX_API_CALL_ROUNDS;
     const cloudflareToken = ENV.CLOUDFLARE_API_TOKEN;
     const cloudflareAccountId = ENV.CLOUDFLARE_ACCOUNT_ID;
-    const schedulerApiUrl = ENV.SCHEDULER_API_UEL;
+    const schedulerApiUrl = ENV.SCHEDULER_API_URL;
     const schedulerApiToken = ENV.SCHEDULER_API_TOKEN;
     const durableResourceId = ENV.DURABLE_RESOURCE_NAMESPACE_ID;
-    const systemPromptKeyName = ENV.SYSTEM_PROMPT_KEY_NAME;
-    const geminiApiKeysKeyName = ENV.GEMINI_API_KEYS_KEY_NAME;
+    const systemPromptKeyName = ENV.SYSTEM_PROMPT_KEY_NAME || BotConfig.DEFAULT_SYSTEM_PROMPT_KEY_NAME;
+    const geminiApiKeysKeyName = ENV.GEMINI_API_KEYS_KEY_NAME || BotConfig.DEFAULT_GEMINI_API_KEYS_KEY_NAME;
+    const startReplyTextKeyName = ENV.START_REPLY_TEXT_KEY_NAME || BotConfig.DEFAULT_START_REPLY_TEXT_KEY_NAME;
+    const newMemberWelcomeTextKeyName = ENV.NEW_MEMBER_WELCOME_TEXT_KEY_NAME || BotConfig.DEFAULT_NEW_MEMBER_WELCOME_TEXT_KEY_NAME;
     const rateLimitId = ENV.RATE_LIMIT_NAMESPACE_ID;
     const chatContextId = ENV.CHAT_CONTEXT_NAMESPACE_ID;
     const contextsExpirationSecond = (Number(ENV.CONTEXT_EXPIRATION_DAY) || BotConfig.DEFAULT_CONTEXT_EXPIRATION_DAY) * 24 * 60 * 60;
@@ -113,6 +119,8 @@ class BotConfig {
       durableResourceId,
       systemPromptKeyName,
       geminiApiKeysKeyName,
+      startReplyTextKeyName,
+      newMemberWelcomeTextKeyName,
       rateLimitId,
       chatContextId,
       contextsExpirationSecond,
@@ -128,8 +136,741 @@ class BotConfig {
     };
   };
 }
-const escapeHtml = (text) => {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const escapeMarkdownV2Text = (str) => {
+  return str.replace(/([_*[\]()~`>#+-=|{}.!\\])/g, "\\$1");
+};
+const escapeMarkdownV2Code = (str) => {
+  return str.replace(/([`\\])/g, "\\$1");
+};
+const escapeMarkdownV2LinkUrl = (str) => {
+  return str.replace(/([)\\])/g, "\\$1");
+};
+const escapeHtml = (str) => {
+  return str.replace(/[<>&"]/g, (c) => {
+    switch (c) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      default:
+        return c;
+    }
+  });
+};
+const escapeMarkdownLegacyText = (str) => {
+  return str.replace(/([_*`[\\])/g, "\\$1");
+};
+const escapeMarkdownLegacyLinkUrl = (str) => {
+  return str;
+};
+const formatToMarkdownV2 = (markdownText) => {
+  let processedText = markdownText;
+  processedText = processedText.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    const escapedCode = escapeMarkdownV2Code(code);
+    return `\`\`\`${lang}
+${escapedCode}\`\`\``;
+  });
+  processedText = processedText.replace(/`(.*?)`/g, (match, code) => {
+    const escapedCode = escapeMarkdownV2Code(code);
+    return `\`${escapedCode}\``;
+  });
+  processedText = processedText.replace(/\[(.*?)\]\((.*?)\)/g, (match, text, url) => {
+    const escapedText = escapeMarkdownV2Text(text);
+    const escapedUrl = escapeMarkdownV2LinkUrl(url);
+    return `[${escapedText}](${escapedUrl})`;
+  });
+  processedText = processedText.replace(/\|\|(.*?)\|\|/g, (match, content) => {
+    const escapedContent = escapeMarkdownV2Text(content);
+    return `||${escapedContent}||`;
+  });
+  processedText = processedText.replace(/~~(.*?)~~/g, (match, content) => {
+    const escapedContent = escapeMarkdownV2Text(content);
+    return `~${escapedContent}~`;
+  });
+  processedText = processedText.replace(/\*\*(.*?)\*\*/g, (match, content) => {
+    const escapedContent = escapeMarkdownV2Text(content);
+    return `*${escapedContent}*`;
+  });
+  processedText = processedText.replace(/__(.*?)__/g, (match, content) => {
+    const escapedContent = escapeMarkdownV2Text(content);
+    return `__${escapedContent}__`;
+  });
+  processedText = processedText.replace(/(?<!_)_(?!_)(?!\s)(.*?)(?<!\s)_(?!_)/g, (match, content) => {
+    const escapedContent = escapeMarkdownV2Text(content);
+    return `_${escapedContent}_`;
+  });
+  processedText = processedText.replace(/^>>\s*(.*)$/gm, (match, content) => {
+    return `> ${content}`;
+  });
+  processedText = processedText.replace(/^>\s*(.*)$/gm, (match, content) => {
+    return `> ${content}`;
+  });
+  return processedText;
+};
+const formatToHtml = (markdownText) => {
+  let processedText = markdownText;
+  processedText = processedText.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    if (lang) {
+      return `<pre><code class="language-${escapeHtml(lang)}">${code}</code></pre>`;
+    }
+    return `<pre>${code}</pre>`;
+  });
+  processedText = processedText.replace(/`(.*?)`/g, (match, code) => {
+    const escapedCode = escapeHtml(code);
+    return `<code>${escapedCode}</code>`;
+  });
+  processedText = processedText.replace(/\[(.*?)\]\((.*?)\)/g, (match, text, url) => {
+    const escapedText = escapeHtml(text);
+    const escapedUrl = escapeHtml(url);
+    return `<a href="${escapedUrl}">${escapedText}</a>`;
+  });
+  processedText = processedText.replace(/\|\|(.*?)\|\|/g, (match, content) => {
+    const escapedContent = escapeHtml(content);
+    return `<span class="tg-spoiler">${escapedContent}</span>`;
+  });
+  processedText = processedText.replace(/~~(.*?)~~/g, (match, content) => {
+    const escapedContent = escapeHtml(content);
+    return `<s>${escapedContent}</s>`;
+  });
+  processedText = processedText.replace(/\*\*(.*?)\*\*/g, (match, content) => {
+    const escapedContent = escapeHtml(content);
+    return `<b>${escapedContent}</b>`;
+  });
+  processedText = processedText.replace(/__(.*?)__/g, (match, content) => {
+    const escapedContent = escapeHtml(content);
+    return `<u>${escapedContent}</u>`;
+  });
+  processedText = processedText.replace(/(?<!_)_(?!_)(?!\s)(.*?)(?<!\s)_(?!_)/g, (match, content) => {
+    const escapedContent = escapeHtml(content);
+    return `<i>${escapedContent}</i>`;
+  });
+  const lines = processedText.split("\n");
+  const finalLines = [];
+  let currentBlockquote = [];
+  let isExpandableBlockquote = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith(">> ")) {
+      if (currentBlockquote.length === 0) {
+        isExpandableBlockquote = true;
+      } else if (!isExpandableBlockquote) {
+        finalLines.push(`<blockquote>${escapeHtml(currentBlockquote.join("\n"))}</blockquote>`);
+        currentBlockquote = [];
+        isExpandableBlockquote = true;
+      }
+      currentBlockquote.push(line.substring(3));
+    } else if (line.startsWith("> ")) {
+      if (currentBlockquote.length === 0) {
+        isExpandableBlockquote = false;
+      } else if (isExpandableBlockquote) {
+        finalLines.push(`<blockquote expandable>${escapeHtml(currentBlockquote.join("\n"))}</blockquote>`);
+        currentBlockquote = [];
+        isExpandableBlockquote = false;
+      }
+      currentBlockquote.push(line.substring(2));
+    } else {
+      if (currentBlockquote.length > 0) {
+        const tag = isExpandableBlockquote ? "<blockquote expandable>" : "<blockquote>";
+        finalLines.push(`${tag}${escapeHtml(currentBlockquote.join("\n"))}</blockquote>`);
+        currentBlockquote = [];
+        isExpandableBlockquote = false;
+      }
+      finalLines.push(line);
+    }
+  }
+  if (currentBlockquote.length > 0) {
+    const tag = isExpandableBlockquote ? "<blockquote expandable>" : "<blockquote>";
+    finalLines.push(`${tag}${escapeHtml(currentBlockquote.join("\n"))}</blockquote>`);
+  }
+  processedText = finalLines.join("\n");
+  return processedText;
+};
+const formatToMarkdownLegacy = (markdownText) => {
+  let processedText = markdownText;
+  processedText = processedText.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    const escapedCode = escapeMarkdownLegacyText(code);
+    return `\`\`\`${lang}
+${escapedCode}\`\`\``;
+  });
+  processedText = processedText.replace(/`(.*?)`/g, (match, code) => {
+    const escapedCode = escapeMarkdownLegacyText(code);
+    return `\`${escapedCode}\``;
+  });
+  processedText = processedText.replace(/\[(.*?)\]\((.*?)\)/g, (match, text, url) => {
+    const linkText = escapeMarkdownLegacyText(text);
+    const linkUrl = escapeMarkdownLegacyLinkUrl(url);
+    return `[${linkText}](${linkUrl})`;
+  });
+  processedText = processedText.replace(/\*\*(.*?)\*\*/g, (match, content) => {
+    const innerContent = escapeMarkdownLegacyText(content);
+    return `*${innerContent}*`;
+  });
+  processedText = processedText.replace(/(?<!_)_(?!_)(?!\s)(.*?)(?<!\s)_(?!_)/g, (match, content) => {
+    const innerContent = escapeMarkdownLegacyText(content);
+    return `_${innerContent}_`;
+  });
+  processedText = processedText.replace(/__(.*?)__/g, (match, content) => {
+    return escapeMarkdownLegacyText(content);
+  });
+  processedText = processedText.replace(/~~(.*?)~~/g, (match, content) => {
+    return escapeMarkdownLegacyText(content);
+  });
+  processedText = processedText.replace(/\|\|(.*?)\|\|/g, (match, content) => {
+    return escapeMarkdownLegacyText(content);
+  });
+  processedText = processedText.replace(/^>>\s*(.*)$/gm, (match, content) => {
+    return escapeMarkdownLegacyText(content);
+  });
+  processedText = processedText.replace(/^>\s*(.*)$/gm, (match, content) => {
+    return escapeMarkdownLegacyText(content);
+  });
+  let finalResult = "";
+  let k = 0;
+  const legacySpecialChars = "_*`[";
+  const markersToSkip = ["```", "[", "`", "*", "_"];
+  while (k < processedText.length) {
+    let isMarkerStart = false;
+    for (const marker of markersToSkip) {
+      if (processedText.substring(k, k + marker.length) === marker) {
+        finalResult += processedText[k];
+        k++;
+        isMarkerStart = true;
+        break;
+      }
+    }
+    if (isMarkerStart) {
+      continue;
+    }
+    if (processedText[k] === "\\") {
+      finalResult += "\\\\";
+      k++;
+      continue;
+    }
+    if (legacySpecialChars.includes(processedText[k])) {
+      finalResult += "\\" + processedText[k];
+      k++;
+    } else {
+      finalResult += processedText[k];
+      k++;
+    }
+  }
+  return finalResult;
+};
+function formatText(text, parseMode) {
+  if (parseMode === null) {
+    return escapeHtml(text);
+  }
+  switch (parseMode) {
+    case "HTML":
+      return formatToHtml(text);
+    case "MarkdownV2":
+      return formatToMarkdownV2(text);
+    case "Markdown":
+      return formatToMarkdownLegacy(text);
+    default:
+      throw new TelegramError(`不支持的 parseMode: ${parseMode}`);
+  }
+}
+const getOpeningTagString = (type, parseMode) => {
+  if (parseMode === "HTML") {
+    switch (type) {
+      case "b":
+      case "strong":
+        return "<b>";
+      case "i":
+      case "em":
+        return "<i>";
+      case "u":
+      case "ins":
+        return "<u>";
+      case "s":
+      case "strike":
+      case "del":
+        return "<s>";
+      case "span":
+      case "tg-spoiler":
+        return '<span class="tg-spoiler">';
+      case "a":
+        return '<a href="">';
+      case "code":
+        return "<code>";
+      case "pre":
+        return "<pre>";
+      case "pre_code_lang":
+        return `<pre><code class="language-">`;
+      case "blockquote":
+        return "<blockquote>";
+      case "blockquote_expandable":
+        return "<blockquote expandable>";
+      case "tg-emoji":
+        return '<tg-emoji emoji-id="">';
+      default:
+        return "";
+    }
+  } else if (parseMode === "MarkdownV2") {
+    switch (type) {
+      case "mv2_bold":
+        return "*";
+      case "mv2_italic":
+        return "_";
+      case "mv2_underline":
+        return "__";
+      case "mv2_strikethrough":
+        return "~";
+      case "mv2_spoiler":
+        return "||";
+      case "mv2_code_inline":
+        return "`";
+      case "mv2_code_block":
+        return "```";
+      case "mv2_link":
+        return "[";
+      case "mv2_blockquote":
+      case "mv2_blockquote_expandable":
+        return "> ";
+      default:
+        return "";
+    }
+  } else if (parseMode === "Markdown") {
+    switch (type) {
+      case "legacy_bold":
+        return "*";
+      case "legacy_italic":
+        return "_";
+      case "legacy_code_inline":
+        return "`";
+      case "legacy_code_block":
+        return "```";
+      case "legacy_link":
+        return "[";
+      default:
+        return "";
+    }
+  }
+  return "";
+};
+const getClosingTagString = (type, parseMode) => {
+  if (parseMode === "HTML") {
+    switch (type) {
+      case "b":
+      case "strong":
+        return "</b>";
+      case "i":
+      case "em":
+        return "</i>";
+      case "u":
+      case "ins":
+        return "</u>";
+      case "s":
+      case "strike":
+      case "del":
+        return "</s>";
+      case "span":
+      case "tg-spoiler":
+        return "</span>";
+      case "a":
+        return "</a>";
+      case "code":
+        return "</code>";
+      case "pre":
+        return "</pre>";
+      case "pre_code_lang":
+        return "</code></pre>";
+      case "blockquote":
+      case "blockquote_expandable":
+        return "</blockquote>";
+      case "tg-emoji":
+        return "</tg-emoji>";
+      default:
+        return "";
+    }
+  } else if (parseMode === "MarkdownV2") {
+    switch (type) {
+      case "mv2_bold":
+        return "*";
+      case "mv2_italic":
+        return "_";
+      case "mv2_underline":
+        return "__";
+      case "mv2_strikethrough":
+        return "~";
+      case "mv2_spoiler":
+        return "||";
+      case "mv2_code_inline":
+        return "`";
+      case "mv2_code_block":
+        return "```";
+      case "mv2_link":
+        return ")";
+      case "mv2_blockquote":
+      case "mv2_blockquote_expandable":
+        return "";
+      default:
+        return "";
+    }
+  } else if (parseMode === "Markdown") {
+    switch (type) {
+      case "legacy_bold":
+        return "*";
+      case "legacy_italic":
+        return "_";
+      case "legacy_code_inline":
+        return "`";
+      case "legacy_code_block":
+        return "```";
+      case "legacy_link":
+        return ")";
+      default:
+        return "";
+    }
+  }
+  return "";
+};
+const balanceChunkTags = (chunk, parseMode, inheritedOpenTags) => {
+  if (parseMode === null) {
+    return { balancedChunk: chunk, nextInheritedOpenTags: [] };
+  }
+  const currentStack = [...inheritedOpenTags];
+  let processedChunk = "";
+  let i = 0;
+  let openingTagsString = "";
+  for (const tagType of inheritedOpenTags) {
+    const openStr = getOpeningTagString(tagType, parseMode);
+    if (openStr && !["> "].includes(openStr)) {
+      openingTagsString += openStr;
+    }
+  }
+  while (i < chunk.length) {
+    let matched = false;
+    if (parseMode === "HTML") {
+      const htmlTagMatch = chunk.substring(i).match(/^<(\/?[\w-]+)(?:\s+[^>]*)?>/);
+      if (htmlTagMatch) {
+        const fullMatch = htmlTagMatch[0];
+        const tagNameWithSlash = htmlTagMatch[1].toLowerCase();
+        const isClosing = tagNameWithSlash.startsWith("/");
+        const cleanTagName = isClosing ? tagNameWithSlash.substring(1) : tagNameWithSlash;
+        const supportedTags = [
+          "b",
+          "strong",
+          "i",
+          "em",
+          "u",
+          "ins",
+          "s",
+          "strike",
+          "del",
+          "span",
+          "tg-spoiler",
+          "a",
+          "code",
+          "pre",
+          "blockquote",
+          "blockquote_expandable",
+          "tg-emoji"
+        ];
+        if (supportedTags.includes(cleanTagName) || cleanTagName === "code" && currentStack.includes("pre")) {
+          if (isClosing) {
+            const stackIndex = currentStack.lastIndexOf(cleanTagName);
+            if (stackIndex !== -1) {
+              currentStack.splice(stackIndex, 1);
+            } else {
+              Log.warn(`HTML 格式中发现未匹配的闭合标签: </${cleanTagName}>`);
+            }
+          } else {
+            if (cleanTagName === "code" && currentStack[currentStack.length - 1] === "pre") {
+              currentStack.push("pre_code_lang");
+            } else {
+              currentStack.push(cleanTagName);
+            }
+          }
+          processedChunk += fullMatch;
+          i += fullMatch.length;
+          matched = true;
+        }
+      }
+      const entityRegexMatch = chunk.substring(i).match(/^&(\w+|#\d+|#x[0-9a-fA-F]+);/);
+      if (entityRegexMatch) {
+        const entityMatch = entityRegexMatch;
+        processedChunk += entityMatch;
+        i += entityMatch.length;
+        matched = true;
+      }
+    } else if (parseMode === "MarkdownV2" || parseMode === "Markdown") {
+      if (chunk[i] === "\\" && i + 1 < chunk.length) {
+        processedChunk += chunk.substring(i, i + 2);
+        i += 2;
+        matched = true;
+      } else {
+        const mv2MarkersMap = {
+          "```": "mv2_code_block",
+          "||": "mv2_spoiler",
+          __: "mv2_underline",
+          "*": "mv2_bold",
+          _: "mv2_italic",
+          "~": "mv2_strikethrough",
+          "`": "mv2_code_inline",
+          "[": "mv2_link",
+          ")": "mv2_link_end",
+          "> ": "mv2_blockquote"
+        };
+        const legacyMarkersMap = {
+          "```": "legacy_code_block",
+          "*": "legacy_bold",
+          _: "legacy_italic",
+          "`": "legacy_code_inline",
+          "[": "legacy_link",
+          ")": "legacy_link_end"
+        };
+        const currentMarkers = parseMode === "MarkdownV2" ? mv2MarkersMap : legacyMarkersMap;
+        let markerFound = false;
+        const multiCharMarkers = parseMode === "MarkdownV2" ? ["```", "||", "__"] : ["```"];
+        for (const marker of multiCharMarkers) {
+          if (currentMarkers[marker] && chunk.substring(i, i + marker.length) === marker) {
+            const type = currentMarkers[marker];
+            const top = currentStack.length > 0 ? currentStack[currentStack.length - 1] : null;
+            if (top === type) {
+              currentStack.pop();
+            } else {
+              currentStack.push(type);
+            }
+            processedChunk += marker;
+            i += marker.length;
+            matched = true;
+            markerFound = true;
+            break;
+          }
+        }
+        if (markerFound) continue;
+        const singleCharMarkers = parseMode === "MarkdownV2" ? ["`", "*", "_", "[", ")", "~"] : ["`", "*", "_", "[", ")"];
+        for (const marker of singleCharMarkers) {
+          if (currentMarkers[marker] && chunk[i] === marker) {
+            if (marker === "_" && chunk.substring(i, i + 2) === "__") {
+              continue;
+            }
+            const type = currentMarkers[marker];
+            const top = currentStack.length > 0 ? currentStack[currentStack.length - 1] : null;
+            if (marker === ")") {
+              if (top === "mv2_link" || top === "legacy_link") {
+                currentStack.pop();
+              } else {
+                Log.warn(`${parseMode} 格式中发现未匹配的链接闭合标记: )`);
+              }
+            } else if (marker === "[") {
+              currentStack.push(type);
+            } else if (marker === "`" || marker === "*" || marker === "_" || parseMode === "MarkdownV2" && marker === "~") {
+              if (top === type) {
+                currentStack.pop();
+              } else {
+                currentStack.push(type);
+              }
+            }
+            processedChunk += marker;
+            i += marker.length;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched && chunk.substring(i).startsWith("> ")) {
+          const isNewlineBefore = i === 0 || chunk[i - 1] === "\n";
+          if (isNewlineBefore) {
+            const topTag = currentStack.length > 0 ? currentStack[currentStack.length - 1] : null;
+            if (topTag !== "mv2_blockquote" && topTag !== "mv2_blockquote_expandable") {
+              currentStack.push("mv2_blockquote");
+            }
+            processedChunk += "> ";
+            i += 2;
+            matched = true;
+          }
+        } else if (!matched && currentStack.length > 0 && (currentStack[currentStack.length - 1] === "mv2_blockquote" || currentStack[currentStack.length - 1] === "mv2_blockquote_expandable") && (i === 0 || chunk[i - 1] === "\n")) {
+          currentStack.pop();
+        }
+      }
+    }
+    if (!matched) {
+      processedChunk += chunk[i];
+      i++;
+    }
+  }
+  let closingTagsString = "";
+  for (let j = currentStack.length - 1; j >= 0; j--) {
+    const tagType = currentStack[j];
+    if (tagType !== "mv2_blockquote" && tagType !== "mv2_blockquote_expandable") {
+      const closeStr = getClosingTagString(tagType, parseMode);
+      closingTagsString += closeStr;
+    }
+  }
+  const nextInheritedOpenTags = [...currentStack];
+  return {
+    balancedChunk: openingTagsString + processedChunk + closingTagsString,
+    nextInheritedOpenTags
+  };
+};
+const splitFormattedText = (formattedText, parseMode) => {
+  const maxLength = 4e3;
+  const chunks = [];
+  let currentPos = 0;
+  const codeBlockRanges = [];
+  if (parseMode === "HTML") {
+    const preRegex = /<pre(?:[^>]*?)?>[\s\S]*?<\/pre>/g;
+    let match;
+    while ((match = preRegex.exec(formattedText)) !== null) {
+      codeBlockRanges.push({ start: match.index, end: match.index + match.length });
+    }
+  } else if (parseMode === "MarkdownV2" || parseMode === "Markdown") {
+    const codeBlockRegex = /```[\s\S]*?```/g;
+    let match;
+    while ((match = codeBlockRegex.exec(formattedText)) !== null) {
+      codeBlockRanges.push({ start: match.index, end: match.index + match.length });
+    }
+  }
+  while (currentPos < formattedText.length) {
+    let endPos = Math.min(currentPos + maxLength, formattedText.length);
+    if (endPos < formattedText.length) {
+      let isInCodeBlock = false;
+      let currentBlockEnd = -1;
+      for (const range of codeBlockRanges) {
+        if (endPos > range.start && endPos < range.end) {
+          isInCodeBlock = true;
+          currentBlockEnd = range.end;
+          break;
+        }
+      }
+      if (isInCodeBlock) {
+        if (currentBlockEnd - currentPos <= maxLength) {
+          endPos = currentBlockEnd;
+        } else {
+          const searchStart = Math.max(currentPos, endPos - 200);
+          let safeSplitPoint = -1;
+          for (let i = endPos - 1; i >= searchStart; i--) {
+            if (formattedText[i] === "\n") {
+              safeSplitPoint = i + 1;
+              break;
+            }
+          }
+          if (safeSplitPoint !== -1) {
+            endPos = safeSplitPoint;
+          }
+        }
+      } else {
+        const searchStart = Math.max(currentPos, endPos - 200);
+        let safeSplitPoint = -1;
+        for (let i = endPos - 1; i >= searchStart; i--) {
+          if (formattedText[i] === "\n" || formattedText[i] === " ") {
+            safeSplitPoint = i + 1;
+            break;
+          }
+        }
+        if (safeSplitPoint !== -1) {
+          endPos = safeSplitPoint;
+        }
+      }
+    }
+    const chunk = formattedText.substring(currentPos, endPos);
+    chunks.push(chunk);
+    currentPos = endPos;
+  }
+  return chunks;
+};
+const scheduleTask = async (action, params, delayMs) => {
+  const { schedulerApiUrl, schedulerApiToken } = BotConfig.load();
+  const name = `${action}-${secureHex(8)}`;
+  const encoded = Buffer.from(schedulerApiToken, "utf-8").toString("base64");
+  try {
+    await fetch(schedulerApiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${encoded}`
+      },
+      body: JSON.stringify({ action, params, delayMs })
+    });
+    Log.info(`Registering scheduled task with name: ${name}, execute after ${delayMs / 1e3} s`, {
+      params
+    });
+  } catch (error) {
+    Log.error(`Failed to register scheduled task with name: ${name}`, {
+      params,
+      err: error instanceof Error ? error.message : String(error)
+    });
+  }
+};
+const scheduleDeletion = (params, delayMs) => {
+  void scheduleTask("deleteMessage", params, delayMs);
+};
+const sendFormattedMessage = async (chatId, standardMarkdownText, replyToMessageId) => {
+  const modesToTry = ["HTML", "MarkdownV2", "Markdown", null];
+  let lastMessageId = void 0;
+  let lastError = null;
+  let currentReplyTo = replyToMessageId;
+  let originalTextSentLength = 0;
+  try {
+    for (const mode of modesToTry) {
+      Log.info(`尝试使用 ${mode === null ? "纯文本" : mode} 格式处理剩余文本...`);
+      const remainingOriginalText = standardMarkdownText.substring(originalTextSentLength);
+      if (remainingOriginalText.length === 0) {
+        Log.info(`剩余原始文本已发送完毕.`);
+        if (lastMessageId) {
+          return { ok: true, messageId: lastMessageId };
+        } else {
+          return { ok: true, messageId: void 0 };
+        }
+      }
+      let formattedText;
+      try {
+        formattedText = formatText(remainingOriginalText, mode);
+      } catch (e) {
+        Log.error(`格式化剩余文本为 ${mode === null ? "纯文本" : mode} 失败:`, { err: e });
+        lastError = e;
+        continue;
+      }
+      const rawChunks = splitFormattedText(formattedText, mode);
+      Log.info(`格式化后的剩余文本被分割成 ${rawChunks.length} 块.`);
+      let modeSuccessForRemaining = true;
+      let chunkIndex = 0;
+      let inheritedOpenTags = [];
+      while (chunkIndex < rawChunks.length) {
+        const rawChunk = rawChunks[chunkIndex];
+        const { balancedChunk, nextInheritedOpenTags } = balanceChunkTags(rawChunk, mode, inheritedOpenTags);
+        inheritedOpenTags = nextInheritedOpenTags;
+        Log.info(
+          `发送第 ${originalTextSentLength + chunkIndex + 1} 条消息 (当前块 ${chunkIndex + 1}/${rawChunks.length}, 长度: ${balancedChunk.length})...`
+        );
+        if (balancedChunk.trim().length === 0) {
+          Log.info(`跳过发送空消息块 (格式: ${mode === null ? "纯文本" : mode}).`);
+          originalTextSentLength += rawChunk.length;
+          chunkIndex++;
+          lastError = null;
+          continue;
+        }
+        const sendResult = await TelegramBot.sendMessage(chatId, balancedChunk, mode === null ? void 0 : mode, currentReplyTo, false);
+        if (sendResult.ok) {
+          Log.info(`消息块发送成功 (格式: ${mode === null ? "纯文本" : mode}).`);
+          void scheduleDeletion({ chat_id: chatId, message_id: sendResult.messageId }, 24 * 60 * 6e4);
+          lastMessageId = sendResult.messageId;
+          currentReplyTo = sendResult.messageId;
+          originalTextSentLength += rawChunk.length;
+          chunkIndex++;
+          lastError = null;
+        } else {
+          Log.error(`消息块发送失败 (格式: ${mode === null ? "纯文本" : mode}).`);
+          lastError = sendResult.error;
+          modeSuccessForRemaining = false;
+          break;
+        }
+      }
+      if (modeSuccessForRemaining) {
+        Log.info(`${mode === null ? "纯文本" : mode} 格式成功发送了所有剩余文本.`);
+        return { ok: true, messageId: lastMessageId };
+      }
+      inheritedOpenTags = [];
+    }
+  } catch (error) {
+    lastError = error;
+  }
+  Log.error("所有格式化模式发送均失败.");
+  return { ok: false, error: lastError || new TelegramError("所有格式化模式发送失败") };
 };
 const markdownToHtml = (markdownText) => {
   let htmlText = markdownText;
@@ -138,35 +879,67 @@ const markdownToHtml = (markdownText) => {
     INLINE_CODE: /`([^`]+?)`/g,
     LINK: /\[([^\]]+?)\]\(([^)]+?)\)/g,
     BOLD_ASTERISK: /\*\*(?!\s)(.*?)(?<!\s)\*\*/g,
-    BOLD_UNDERSCORE: /__(?!\s)(.*?)(?<!\s)__/g,
+    UNDERLINE_UNDERSCORE: /__(?!\s)(.*?)(?<!\s)__/g,
     ITALIC_ASTERISK: /\*(?!\s)(.*?)(?<!\s)\*/g,
     ITALIC_UNDERSCORE: /_(?!\s)(.*?)(?<!\s)_/g,
     STRIKETHROUGH: /~(?!\s)(.*?)(?<!\s)~/g,
     SPOILER: /\|\|(?!\s)(.*?)(?<!\s)\|\|/g,
-    BLOCKQUOTE: /^> (.*(?:\n> .*)*)/gm,
-    EXPANDABLE_BLOCKQUOTE: /^>> (.*(?:\n>> .*)*)/gm
+    BLOCKQUOTE_LINE: /^(>>|>)\s*(.*)$/gm
   };
   try {
     htmlText = htmlText.replace(REGEX.CODE_BLOCK, (_, lang, code) => {
-      const languageClass = lang ? `language-${lang}` : "";
-      return `<pre><code class="${languageClass}">${escapeHtml(code.trim())}</code></pre>`;
+      const languageClass = lang ? `language-${escapeHtml(lang)}` : "";
+      return `<pre><code class="${languageClass}">${code}</code></pre>`;
     });
     htmlText = htmlText.replace(REGEX.INLINE_CODE, (_, code) => `<code>${escapeHtml(code)}</code>`);
-    htmlText = htmlText.replace(REGEX.LINK, '<a href="$2">$1</a>');
-    htmlText = htmlText.replace(REGEX.BOLD_ASTERISK, "<b>$1</b>");
-    htmlText = htmlText.replace(REGEX.BOLD_UNDERSCORE, "<u>$1</u>");
-    htmlText = htmlText.replace(REGEX.ITALIC_ASTERISK, "<i>$1</i>");
-    htmlText = htmlText.replace(REGEX.ITALIC_UNDERSCORE, "<i>$1</i>");
-    htmlText = htmlText.replace(REGEX.STRIKETHROUGH, "<s>$1</s>");
-    htmlText = htmlText.replace(REGEX.SPOILER, "<tg-spoiler>$1</tg-spoiler>");
-    htmlText = htmlText.replace(REGEX.EXPANDABLE_BLOCKQUOTE, (match) => {
-      const content = match.replace(/^>> /gm, "").trim();
-      return `<blockquote expandable>${content}</blockquote>`;
+    htmlText = htmlText.replace(REGEX.LINK, (_, text, url) => {
+      const escapedText = escapeHtml(text);
+      const escapedUrl = escapeHtml(url);
+      return `<a href="${escapedUrl}">${escapedText}</a>`;
     });
-    htmlText = htmlText.replace(REGEX.BLOCKQUOTE, (match) => {
-      const content = match.replace(/^> /gm, "").trim();
-      return `<blockquote>${content}</blockquote>`;
-    });
+    htmlText = htmlText.replace(REGEX.BOLD_ASTERISK, (_, content) => `<b>${escapeHtml(content)}</b>`);
+    htmlText = htmlText.replace(REGEX.UNDERLINE_UNDERSCORE, (_, content) => `<u>${escapeHtml(content)}</u>`);
+    htmlText = htmlText.replace(REGEX.ITALIC_ASTERISK, (_, content) => `<i>${escapeHtml(content)}</i>`);
+    htmlText = htmlText.replace(REGEX.ITALIC_UNDERSCORE, (_, content) => `<i>${escapeHtml(content)}</i>`);
+    htmlText = htmlText.replace(REGEX.STRIKETHROUGH, (_, content) => `<s>${escapeHtml(content)}</s>`);
+    htmlText = htmlText.replace(REGEX.SPOILER, (_, content) => `<span class="tg-spoiler">${escapeHtml(content)}</span>`);
+    const lines = htmlText.split("\n");
+    const finalLines = [];
+    let currentBlockquote = [];
+    let isExpandableBlockquote = null;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const match = line.match(/^(>>|>)\s*(.*)$/);
+      if (match) {
+        const type = match[1];
+        const content = match[2];
+        if (currentBlockquote.length === 0) {
+          isExpandableBlockquote = type === ">>";
+          currentBlockquote.push(content);
+        } else if (type === ">>" && isExpandableBlockquote || type === ">" && !isExpandableBlockquote) {
+          currentBlockquote.push(content);
+        } else {
+          const tag = isExpandableBlockquote ? "<blockquote expandable>" : "<blockquote>";
+          finalLines.push(`${tag}${escapeHtml(currentBlockquote.join("\n"))}</blockquote>`);
+          currentBlockquote = [];
+          isExpandableBlockquote = type === ">>";
+          currentBlockquote.push(content);
+        }
+      } else {
+        if (currentBlockquote.length > 0) {
+          const tag = isExpandableBlockquote ? "<blockquote expandable>" : "<blockquote>";
+          finalLines.push(`${tag}${escapeHtml(currentBlockquote.join("\n"))}</blockquote>`);
+          currentBlockquote = [];
+          isExpandableBlockquote = null;
+        }
+        finalLines.push(line);
+      }
+    }
+    if (currentBlockquote.length > 0) {
+      const tag = isExpandableBlockquote ? "<blockquote expandable>" : "<blockquote>";
+      finalLines.push(`${tag}${escapeHtml(currentBlockquote.join("\n"))}</blockquote>`);
+    }
+    htmlText = finalLines.join("\n");
     return htmlText;
   } catch (error) {
     Log.error("格式化文本为 HTML 格式时发生错误:", { err: error });
@@ -185,30 +958,38 @@ const formatTime = (time = Date.now()) => {
     hour12: false,
     timeZone: "Asia/Shanghai"
   });
-  const parts = formatter.formatToParts(timeDate);
-  const tf = {};
-  parts.forEach(({ type, value }) => {
-    if (type !== "literal") tf[type] = value;
-  });
-  return `${tf.year}-${tf.month}-${tf.day} ${tf.hour}:${tf.minute}:${tf.second} UTC+8`;
+  const parts = formatter.formatToParts(timeDate).reduce(
+    (acc, { type, value }) => {
+      if (type !== "literal") {
+        acc[type] = value;
+      }
+      return acc;
+    },
+    {}
+  );
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} UTC+8`;
 };
 const secureHex = (length = 16) => {
+  if (length < 0) {
+    throw new Error("secureHex: length 必须是非负数。");
+  }
   const byteLength = Math.ceil(length / 2);
   return randomBytes(byteLength).toString("hex").slice(0, length);
 };
 const sleep = async (delayMs) => {
+  if (delayMs < 0) {
+    throw new Error("sleep: delayMs 必须是非负数。");
+  }
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 };
 const rotateArray = (arr, steps = 1, direction = "left") => {
   const len = arr.length;
   if (len === 0) return [];
-  const k = Math.abs(steps) % len;
-  if (k === 0) return Array.from(arr);
-  if (steps < 0) {
-    direction = direction === "left" ? "right" : "left";
+  let actualSteps = Math.abs(steps) % len;
+  if (direction === "right" || steps < 0) {
+    actualSteps = (len - actualSteps) % len;
   }
-  const effectiveLeft = direction === "left" ? k : len - k;
-  return arr.slice(effectiveLeft).concat(arr.slice(0, effectiveLeft));
+  return arr.slice(actualSteps).concat(arr.slice(0, actualSteps));
 };
 const sendErrorNotification = async (error, context = "") => {
   const { adminId } = BotConfig.load();
@@ -304,32 +1085,6 @@ const makeRawFileRequest = async (rawPath) => {
       error: `获取原始文件时发生网络错误 - ${errorMessage || "未知错误"}`
     };
   }
-};
-const scheduleTask = async (action, params, delayMs) => {
-  const { schedulerApiUrl, schedulerApiToken } = BotConfig.load();
-  const name = `${action}-${secureHex(8)}`;
-  const encoded = Buffer.from(schedulerApiToken, "utf-8").toString("base64");
-  try {
-    await fetch(schedulerApiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Basic ${encoded}`
-      },
-      body: JSON.stringify({ action, params, delayMs })
-    });
-    Log.info(`Registering scheduled task with name: ${name}, execute after ${delayMs / 1e3} s`, {
-      params
-    });
-  } catch (error) {
-    Log.error(`Failed to register scheduled task with name: ${name}`, {
-      params,
-      err: error instanceof Error ? error.message : String(error)
-    });
-  }
-};
-const scheduleDeletion = (params, delayMs) => {
-  void scheduleTask("deleteMessage", params, delayMs);
 };
 class KvNamespace {
   static callCloudflareApi = async (action, params) => {
@@ -509,12 +1264,12 @@ const botCommands = [
     description: "开始使用",
     action: async (chatId, messageId) => {
       Log.info("Executing /start command.");
-      const { modelName, durableResourceId } = BotConfig.load();
-      const startReplyText = await KvNamespace.read(durableResourceId, "start_reply_text", "text");
+      const { modelName, durableResourceId, startReplyTextKeyName } = BotConfig.load();
+      const startReplyText = await KvNamespace.read(durableResourceId, startReplyTextKeyName, "text");
       const replaceText = startReplyText?.replace("MODEL_NAME", modelName);
-      const { messageId: startMessageId } = await TelegramBot.sendMessage(chatId, replaceText, "HTML", messageId);
-      if (startMessageId) {
-        void scheduleDeletion({ chat_id: chatId, message_id: startMessageId }, 3 * 6e4);
+      const startResult = await TelegramBot.sendMessage(chatId, replaceText, "HTML", messageId);
+      if (startResult.ok) {
+        void scheduleDeletion({ chat_id: chatId, message_id: startResult.messageId }, 3 * 6e4);
       }
       void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 6e4);
     }
@@ -524,16 +1279,16 @@ const botCommands = [
     description: "清理对话上下文",
     action: async (chatId, messageId, userId) => {
       Log.info("Executing /clear command.");
-      const { messageId: clearingMessageId } = await TelegramBot.sendMessage(chatId, "🗑 Clearing...", "HTML", messageId);
+      const clearingResult = await TelegramBot.sendMessage(chatId, "🗑 Clearing...", "HTML", messageId);
       await ChatContexts.clear(chatId, userId);
-      await sleep(3e3);
-      if (clearingMessageId) {
-        await TelegramBot.deleteMessage(chatId, clearingMessageId);
+      if (clearingResult.ok) {
+        await sleep(3e3);
+        await TelegramBot.deleteMessage(chatId, clearingResult.messageId);
       }
       const clearedText = "✅ 已成功清除你和我的历史对话";
-      const { messageId: clearedMessageId } = await TelegramBot.sendMessage(chatId, clearedText, "HTML", messageId);
-      if (clearedMessageId) {
-        void scheduleDeletion({ chat_id: chatId, message_id: clearedMessageId }, 3 * 6e4);
+      const clearedResult = await TelegramBot.sendMessage(chatId, clearedText, "HTML", messageId);
+      if (clearedResult.ok) {
+        void scheduleDeletion({ chat_id: chatId, message_id: clearedResult.messageId }, 3 * 6e4);
       }
       void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 6e4);
     }
@@ -545,12 +1300,12 @@ const botCommands = [
       Log.info("Executing /tools command.");
       const toolList = geminiTools[0].functionDeclarations?.map((tool) => `  * **${tool.name}**: ${tool.description}
 `).join("\n").trim();
-      const toolsText = `🛠 模型可用工具列表：
+      const toolsText = `🛠 我可以使用以下工具：
 
 ${toolList}`;
-      const { messageId: toolsMessageId } = await TelegramBot.sendMessage(chatId, toolsText, "HTML", messageId);
-      if (toolsMessageId) {
-        void scheduleDeletion({ chat_id: chatId, message_id: toolsMessageId }, 10 * 6e4);
+      const toolsResult = await TelegramBot.sendMessage(chatId, toolsText, "HTML", messageId);
+      if (toolsResult.ok) {
+        void scheduleDeletion({ chat_id: chatId, message_id: toolsResult.messageId }, 10 * 6e4);
       }
       void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 10 * 6e4);
     }
@@ -1101,7 +1856,7 @@ ${strArr.slice(strArr.length - 2e3).join("")}`.trim();
             context.thinkMessageId,
             `<b>Thoughts</b>:
 
-<blockquote expandable>${displayThoughtText}</blockquote>`,
+<blockquote expandable>${escapeHtml(displayThoughtText)}</blockquote>`,
             "HTML",
             false
           );
@@ -1507,7 +2262,7 @@ class TelegramBot {
     const payload = {
       chat_id: chatId,
       message_id: messageId,
-      text: isFormat ? markdownToHtml(text) : escapeHtml(text),
+      text: isFormat ? markdownToHtml(text) : text,
       parse_mode: parseMode,
       link_preview_options: {
         is_disabled: true
@@ -1975,22 +2730,30 @@ const handleImage = async (image) => {
     return { data: base64ImageData, mimeType: mime_type ? mime_type : "image/jpeg" };
   }
 };
-const SUPPORTED_MIME_TYPES = ["application/json", "application/yaml", "text/javascript", "text/plain", "text/markdown", "application/x-shellscript"];
+const SUPPORTED_MIME_TYPES = [
+  "application/json",
+  "application/yaml",
+  "text/javascript",
+  "text/plain",
+  "text/markdown",
+  "application/x-shellscript",
+  "application/pdf"
+];
 const handleDocument = async (document) => {
   const { botToken } = BotConfig.load();
   const { file_id, mime_type } = document;
-  let generalMimeType;
-  if (!SUPPORTED_MIME_TYPES.includes(String(mime_type))) generalMimeType = "text/plain";
+  let universalTextType;
+  if (!SUPPORTED_MIME_TYPES.includes(String(mime_type))) universalTextType = "text/plain";
   const result = await TelegramBot.getFile(file_id);
   if (result.ok) {
     const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
     const documentArrayBuffer = await downloadFileAsArrayBuffer(fileUrl);
     const base64DocumentData = Buffer.from(documentArrayBuffer).toString("base64");
-    return { data: base64DocumentData, mimeType: generalMimeType ? generalMimeType : mime_type ? mime_type : "text/plain" };
+    return { data: base64DocumentData, mimeType: universalTextType ? universalTextType : mime_type ? mime_type : "text/plain" };
   }
 };
 const handleFile = async (message) => {
-  const { photo, document } = message;
+  const { document, photo } = message;
   if (photo || document?.mime_type === "image/png" || document?.mime_type === "image/jpeg") {
     const image = photo ? photo[photo.length - 1] : document;
     if (image) {
@@ -2001,741 +2764,6 @@ const handleFile = async (message) => {
     const documentData = await handleDocument(document);
     if (documentData) return documentData;
   }
-};
-const formatToMarkdownV2 = (markdownText) => {
-  const escapeMarkdownV2General = (str) => {
-    return str.replace(/([_*[\]()~`>#+-=|{}.!\\])/g, "\\$1");
-  };
-  const escapeMarkdownV2Code = (str) => {
-    return str.replace(/([`\\])/g, "\\$1");
-  };
-  const escapeMarkdownV2LinkUrl = (str) => {
-    return str.replace(/([)\\])/g, "\\$1");
-  };
-  let processedText = markdownText;
-  processedText = processedText.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-    const escapedCode = escapeMarkdownV2Code(code);
-    return `\`\`\`${lang}
-${escapedCode}\`\`\``;
-  });
-  processedText = processedText.replace(/`(.*?)`/g, (match, code) => {
-    const escapedCode = escapeMarkdownV2Code(code);
-    return `\`${escapedCode}\``;
-  });
-  processedText = processedText.replace(/\[(.*?)\]\((.*?)\)/g, (match, text, url) => {
-    const escapedText = escapeMarkdownV2General(text);
-    const escapedUrl = escapeMarkdownV2LinkUrl(url);
-    return `[${escapedText}](${escapedUrl})`;
-  });
-  processedText = processedText.replace(/~~(.*?)~~/g, (match, content) => {
-    const escapedContent = escapeMarkdownV2General(content);
-    return `~~${escapedContent}~~`;
-  });
-  processedText = processedText.replace(/\*\*(.*?)\*\*/g, (match, content) => {
-    const escapedContent = escapeMarkdownV2General(content);
-    return `*${escapedContent}*`;
-  });
-  processedText = processedText.replace(/__(.*?)__/g, (match, content) => {
-    const escapedContent = escapeMarkdownV2General(content);
-    return `*${escapedContent}*`;
-  });
-  processedText = processedText.replace(/(?<!\*)\*(?!\*)(?!\s)(.*?)(?<!\s)\*(?!\*)/g, (match, content) => {
-    const escapedContent = escapeMarkdownV2General(content);
-    return `\\*${escapedContent}\\*`;
-  });
-  processedText = processedText.replace(/(?<!_)_(?!_)(?!\s)(.*?)(?<!\s)_(?!_)/g, (match, content) => {
-    const escapedContent = escapeMarkdownV2General(content);
-    return `_${escapedContent}_`;
-  });
-  const lines = processedText.split("\n");
-  const processedLines = lines.map((line) => {
-    if (line.startsWith("> ")) {
-      return "> " + escapeMarkdownV2General(line.substring(2));
-    }
-    return line;
-  });
-  processedText = processedLines.join("\n");
-  let finalResult = "";
-  let k = 0;
-  const mv2SpecialChars = "_*[]()~`>#+-=|{}.!\\";
-  const markersToSkip = ["```", "~~", "||", "[", "(", "> "];
-  while (k < processedText.length) {
-    let isMarker = false;
-    for (const marker of markersToSkip) {
-      if (processedText.substring(k, k + marker.length) === marker) {
-        finalResult += marker;
-        k += marker.length;
-        isMarker = true;
-        break;
-      }
-    }
-    if (isMarker) continue;
-    if (processedText[k] === "]" || processedText[k] === ")") {
-      finalResult += processedText[k];
-      k++;
-      continue;
-    }
-    const char = processedText[k];
-    if (mv2SpecialChars.includes(char)) {
-      finalResult += "\\" + char;
-      k++;
-    } else {
-      finalResult += char;
-      k++;
-    }
-  }
-  return finalResult;
-};
-const formatToHTML = (markdownText) => {
-  const escapeHTML = (str) => {
-    return str.replace(/[<>&]/g, (c) => {
-      switch (c) {
-        case "<":
-          return "&lt;";
-        case ">":
-          return "&gt;";
-        case "&":
-          return "&amp;";
-        default:
-          return c;
-      }
-    });
-  };
-  let processedText = markdownText;
-  processedText = processedText.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-    if (lang) {
-      return `<pre><code class="language-${lang}">${code}</code></pre>`;
-    }
-    return `<pre>${code}</pre>`;
-  });
-  processedText = processedText.replace(/`(.*?)`/g, (match, code) => {
-    const escapedCode = escapeHTML(code);
-    return `<code>${escapedCode}</code>`;
-  });
-  processedText = processedText.replace(/\[(.*?)\]\((.*?)\)/g, (match, text, url) => {
-    const escapedText = escapeHTML(text);
-    const escapedUrl = escapeHTML(url);
-    return `<a href="${escapedUrl}">${escapedText}</a>`;
-  });
-  processedText = processedText.replace(/~~(.*?)~~/g, (match, content) => {
-    const escapedContent = escapeHTML(content);
-    return `<s>${escapedContent}</s>`;
-  });
-  processedText = processedText.replace(/\*\*(.*?)\*\*/g, (match, content) => {
-    const escapedContent = escapeHTML(content);
-    return `<b>${escapedContent}</b>`;
-  });
-  processedText = processedText.replace(/__(.*?)__/g, (match, content) => {
-    const escapedContent = escapeHTML(content);
-    return `<b>${escapedContent}</b>`;
-  });
-  processedText = processedText.replace(/(?<!\*)\*(?!\*)(?!\s)(.*?)(?<!\s)\*(?!\*)/g, (match, content) => {
-    const escapedContent = escapeHTML(content);
-    return `<i>${escapedContent}</i>`;
-  });
-  const lines = processedText.split("\n");
-  const finalLines = [];
-  let currentBlockquote = [];
-  for (const line of lines) {
-    if (line.startsWith("> ")) {
-      currentBlockquote.push(line.substring(2));
-    } else {
-      if (currentBlockquote.length > 0) {
-        finalLines.push(`<blockquote>${escapeHTML(currentBlockquote.join("\n"))}</blockquote>`);
-        currentBlockquote = [];
-      }
-      finalLines.push(line);
-    }
-  }
-  if (currentBlockquote.length > 0) {
-    finalLines.push(`<blockquote>${escapeHTML(currentBlockquote.join("\n"))}</blockquote>`);
-  }
-  processedText = finalLines.join("\n");
-  let finalResult = "";
-  let k = 0;
-  let inTag = false;
-  while (k < processedText.length) {
-    const char = processedText[k];
-    if (char === "<") {
-      inTag = true;
-      finalResult += char;
-    } else if (char === ">") {
-      inTag = false;
-      finalResult += char;
-    } else if (inTag) {
-      finalResult += char;
-    } else {
-      finalResult += escapeHTML(char);
-    }
-    k++;
-  }
-  return finalResult;
-};
-const formatToMarkdownLegacy = (markdownText) => {
-  const escapeMarkdownLegacyCode = (str) => {
-    return str.replace(/([`\\])/g, "\\$1");
-  };
-  let processedText = markdownText;
-  processedText = processedText.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-    const escapedCode = escapeMarkdownLegacyCode(code);
-    return `\`\`\`${lang}
-${escapedCode}\`\`\``;
-  });
-  processedText = processedText.replace(/`(.*?)`/g, (match, code) => {
-    const escapedCode = escapeMarkdownLegacyCode(code);
-    return `\`${escapedCode}\``;
-  });
-  processedText = processedText.replace(/\[(.*?)\]\((.*?)\)/g, (match, text, url) => {
-    const linkText = text;
-    const linkUrl = url;
-    return `[${linkText}](${linkUrl})`;
-  });
-  processedText = processedText.replace(/\*\*(.*?)\*\*/g, (match, content) => {
-    const innerContent = content;
-    return `*${innerContent}*`;
-  });
-  processedText = processedText.replace(/__(.*?)__/g, (match, content) => {
-    const innerContent = content;
-    return `*${innerContent}*`;
-  });
-  processedText = processedText.replace(/(?<!\*)\*(?!\*)(?!\s)(.*?)(?<!\s)\*(?!\*)/g, (match, content) => {
-    const innerContent = content;
-    return `\\*${innerContent}\\*`;
-  });
-  processedText = processedText.replace(/(?<!_)_(?!_)(?!\s)(.*?)(?<!\s)_(?!_)/g, (match, content) => {
-    const innerContent = content;
-    return `_${innerContent}_`;
-  });
-  let finalResult = "";
-  let k = 0;
-  const legacySpecialChars = "_*`[";
-  const markersToSkip = ["```", "[", "("];
-  while (k < processedText.length) {
-    let isMarker = false;
-    for (const marker of markersToSkip) {
-      if (processedText.substring(k, k + marker.length) === marker) {
-        finalResult += marker;
-        k += marker.length;
-        isMarker = true;
-        break;
-      }
-    }
-    if (isMarker) continue;
-    if (processedText[k] === "]" || processedText[k] === ")") {
-      finalResult += processedText[k];
-      k++;
-      continue;
-    }
-    const char = processedText[k];
-    if (legacySpecialChars.includes(char)) {
-      finalResult += "\\" + char;
-      k++;
-    } else if (char === "\\") {
-      finalResult += "\\" + char;
-      k++;
-    } else {
-      finalResult += char;
-      k++;
-    }
-  }
-  return finalResult;
-};
-function formatText(text, parseMode) {
-  if (parseMode === null) {
-    return text;
-  }
-  switch (parseMode) {
-    case "HTML":
-      return formatToHTML(text);
-    case "MarkdownV2":
-      return formatToMarkdownV2(text);
-    case "Markdown":
-      return formatToMarkdownLegacy(text);
-    default:
-      throw new TelegramError(`不支持的 parseMode: ${parseMode}`);
-  }
-}
-const getOpeningTagString = (type, parseMode) => {
-  if (parseMode === "HTML") {
-    switch (type) {
-      case "b":
-      case "strong":
-        return "<b>";
-      case "i":
-      case "em":
-        return "<i>";
-      case "u":
-      case "ins":
-        return "<u>";
-      case "s":
-      case "strike":
-      case "del":
-        return "<s>";
-      case "span":
-      case "tg-spoiler":
-        return '<span class="tg-spoiler">';
-      case "a":
-        return '<a href="">';
-      case "code":
-        return "<code>";
-      case "pre":
-        return "<pre>";
-      case "blockquote":
-        return "<blockquote>";
-      case "blockquote_expandable":
-        return "<blockquote expandable>";
-      default:
-        return "";
-    }
-  } else if (parseMode === "MarkdownV2") {
-    switch (type) {
-      case "mv2_bold":
-        return "*";
-      case "mv2_italic":
-        return "_";
-      case "mv2_underline":
-        return "__";
-      case "mv2_strikethrough":
-        return "~~";
-      case "mv2_spoiler":
-        return "||";
-      case "mv2_code_inline":
-        return "`";
-      case "mv2_code_block":
-        return "```";
-      case "mv2_link":
-        return "[";
-      case "mv2_blockquote":
-        return "> ";
-      case "mv2_blockquote_expandable":
-        return "> ";
-      default:
-        return "";
-    }
-  } else if (parseMode === "Markdown") {
-    switch (type) {
-      case "legacy_bold":
-        return "*";
-      case "legacy_italic":
-        return "_";
-      case "legacy_code_inline":
-        return "`";
-      case "legacy_code_block":
-        return "```";
-      case "legacy_link":
-        return "[";
-      default:
-        return "";
-    }
-  }
-  return "";
-};
-const getClosingTagString = (type, parseMode) => {
-  if (parseMode === "HTML") {
-    switch (type) {
-      case "b":
-      case "strong":
-        return "</b>";
-      case "i":
-      case "em":
-        return "</i>";
-      case "u":
-      case "ins":
-        return "</u>";
-      case "s":
-      case "strike":
-      case "del":
-        return "</s>";
-      case "span":
-      case "tg-spoiler":
-        return "</span>";
-      case "a":
-        return "</a>";
-      case "code":
-        return "</code>";
-      case "pre":
-        return "</pre>";
-      case "blockquote":
-      case "blockquote_expandable":
-        return "</blockquote>";
-      default:
-        return "";
-    }
-  } else if (parseMode === "MarkdownV2") {
-    switch (type) {
-      case "mv2_bold":
-        return "*";
-      case "mv2_italic":
-        return "_";
-      case "mv2_underline":
-        return "__";
-      case "mv2_strikethrough":
-        return "~~";
-      case "mv2_spoiler":
-        return "||";
-      case "mv2_code_inline":
-        return "`";
-      case "mv2_code_block":
-        return "```";
-      case "mv2_link":
-        return ")";
-      case "mv2_blockquote":
-      case "mv2_blockquote_expandable":
-        return "";
-      default:
-        return "";
-    }
-  } else if (parseMode === "Markdown") {
-    switch (type) {
-      case "legacy_bold":
-        return "*";
-      case "legacy_italic":
-        return "_";
-      case "legacy_code_inline":
-        return "`";
-      case "legacy_code_block":
-        return "```";
-      case "legacy_link":
-        return ")";
-      default:
-        return "";
-    }
-  }
-  return "";
-};
-const balanceChunkTags = (chunk, parseMode, inheritedOpenTags) => {
-  if (parseMode === null) {
-    return { balancedChunk: chunk, nextInheritedOpenTags: [] };
-  }
-  const currentStack = [...inheritedOpenTags];
-  let processedChunk = "";
-  let i = 0;
-  let openingTagsString = "";
-  for (const tagType of inheritedOpenTags) {
-    const openStr = getOpeningTagString(tagType, parseMode);
-    if (openStr && !["> "].includes(openStr)) {
-      openingTagsString += openStr;
-    }
-  }
-  while (i < chunk.length) {
-    let matched = false;
-    if (parseMode === "HTML") {
-      const htmlTagMatch = chunk.substring(i).match(/^<(\/?\w+)(?:\s+[^>]*)?>/);
-      if (htmlTagMatch) {
-        const fullMatch = htmlTagMatch[0];
-        const tagName = htmlTagMatch[1].toLowerCase();
-        const isClosing = tagName.startsWith("/");
-        const cleanTagName = isClosing ? tagName.substring(1) : tagName;
-        const supportedTags = [
-          "b",
-          "strong",
-          "i",
-          "em",
-          "u",
-          "ins",
-          "s",
-          "strike",
-          "del",
-          "span",
-          "tg-spoiler",
-          "a",
-          "code",
-          "pre",
-          "blockquote",
-          "blockquote_expandable"
-        ];
-        if (supportedTags.includes(cleanTagName)) {
-          if (isClosing) {
-            const stackIndex = currentStack.lastIndexOf(cleanTagName);
-            if (stackIndex !== -1) {
-              currentStack.splice(stackIndex, 1);
-            } else {
-              Log.warn(`HTML 格式中发现未匹配的闭合标签: </${cleanTagName}>`);
-            }
-          } else {
-            if (cleanTagName === "a" || cleanTagName === "pre" || cleanTagName === "code" || cleanTagName === "blockquote" || cleanTagName === "blockquote_expandable") {
-              currentStack.push(cleanTagName);
-            } else {
-              currentStack.push(cleanTagName);
-            }
-          }
-          processedChunk += fullMatch;
-          i += fullMatch.length;
-          matched = true;
-        }
-      }
-      const entityRegexMatch = chunk.substring(i).match(/^&(\w+|#\d+|#x[0-9a-fA-F]+);/);
-      if (entityRegexMatch) {
-        const entityMatch = entityRegexMatch[0];
-        processedChunk += entityMatch;
-        i += entityMatch.length;
-        matched = true;
-      }
-    } else if (parseMode === "MarkdownV2" || parseMode === "Markdown") {
-      if (chunk[i] === "\\" && i + 1 < chunk.length) {
-        processedChunk += chunk.substring(i, i + 2);
-        i += 2;
-        matched = true;
-      } else {
-        const mv2Markers = {
-          "~~": "mv2_strikethrough",
-          "||": "mv2_spoiler",
-          "**": "mv2_bold",
-          __: "mv2_underline",
-          "`": "mv2_code_inline",
-          "*": "mv2_bold_italic_star",
-          _: "mv2_bold_italic_underscore",
-          "```": "mv2_code_block",
-          "[": "mv2_link",
-          ")": "mv2_link_end",
-          "> ": "mv2_blockquote"
-        };
-        const legacyMarkers = {
-          "*": "legacy_bold",
-          _: "legacy_italic",
-          "`": "legacy_code_inline",
-          "```": "legacy_code_block",
-          "[": "legacy_link",
-          ")": "legacy_link_end"
-        };
-        const currentMarkers = parseMode === "MarkdownV2" ? mv2Markers : legacyMarkers;
-        let markerFound = false;
-        for (const marker of ["```", "~~", "||", "**", "__"]) {
-          if (parseMode === "MarkdownV2" && mv2Markers[marker] && chunk.substring(i, i + marker.length) === marker) {
-            const type = mv2Markers[marker];
-            const top = currentStack.length > 0 ? currentStack[currentStack.length - 1] : null;
-            if (top === type) {
-              currentStack.pop();
-            } else {
-              currentStack.push(type);
-            }
-            processedChunk += marker;
-            i += marker.length;
-            matched = true;
-            markerFound = true;
-            break;
-          }
-          if (parseMode === "Markdown" && legacyMarkers[marker] && chunk.substring(i, i + marker.length) === marker) {
-            const type = legacyMarkers[marker];
-            const top = currentStack.length > 0 ? currentStack[currentStack.length - 1] : null;
-            if (top === type) {
-              currentStack.pop();
-            } else {
-              currentStack.push(type);
-            }
-            processedChunk += marker;
-            i += marker.length;
-            matched = true;
-            markerFound = true;
-            break;
-          }
-        }
-        if (markerFound) continue;
-        for (const marker of ["`", "*", "_", "[", ")"]) {
-          if (currentMarkers[marker] && chunk[i] === marker) {
-            if (marker === "*" && chunk.substring(i, i + 2) === "**" || marker === "_" && chunk.substring(i, i + 2) === "__" || marker === "`" && chunk.substring(i, i + 3) === "```") {
-              continue;
-            }
-            const type = currentMarkers[marker];
-            const top = currentStack.length > 0 ? currentStack[currentStack.length - 1] : null;
-            if (marker === ")") {
-              if (top === "mv2_link" || top === "legacy_link") {
-                currentStack.pop();
-              }
-            } else if (marker === "[") {
-              currentStack.push(type);
-            } else if (marker === "`") {
-              if (top === type) {
-                currentStack.pop();
-              } else {
-                currentStack.push(type);
-              }
-            } else if (marker === "*" || marker === "_") {
-              if (top === type) {
-                currentStack.pop();
-              } else {
-                currentStack.push(type);
-              }
-            }
-            processedChunk += marker;
-            i += marker.length;
-            matched = true;
-            break;
-          }
-        }
-        if (!matched && chunk.substring(i).startsWith("> ") && (i === 0 || chunk[i - 1] === "\n")) {
-          if (currentStack.length === 0 || currentStack[currentStack.length - 1] !== "mv2_blockquote" && currentStack[currentStack.length - 1] !== "mv2_blockquote_expandable") {
-            currentStack.push("mv2_blockquote");
-          }
-          processedChunk += "> ";
-          i += 2;
-          matched = true;
-        } else if (!matched && currentStack.length > 0 && (currentStack[currentStack.length - 1] === "mv2_blockquote" || currentStack[currentStack.length - 1] === "mv2_blockquote_expandable") && (i === 0 || chunk[i - 1] === "\n")) {
-          currentStack.pop();
-        }
-      }
-    }
-    if (!matched) {
-      processedChunk += chunk[i];
-      i++;
-    }
-  }
-  let closingTagsString = "";
-  for (let j = currentStack.length - 1; j >= 0; j--) {
-    const tagType = currentStack[j];
-    const closeStr = getClosingTagString(tagType, parseMode);
-    closingTagsString += closeStr;
-  }
-  const nextInheritedOpenTags = [...currentStack];
-  return {
-    balancedChunk: openingTagsString + chunk + closingTagsString,
-    nextInheritedOpenTags
-  };
-};
-const splitFormattedText = (formattedText, parseMode) => {
-  const maxLength = 4e3;
-  const chunks = [];
-  let currentPos = 0;
-  const codeBlockRanges = [];
-  if (parseMode === "HTML") {
-    const preRegex = /<pre(?:[^>]*?)?>[\s\S]*?<\/pre>/g;
-    let match;
-    while ((match = preRegex.exec(formattedText)) !== null) {
-      codeBlockRanges.push({ start: match.index, end: match.index + match.length });
-    }
-  } else if (parseMode === "MarkdownV2" || parseMode === "Markdown") {
-    const codeBlockRegex = /```[\s\S]*?```/g;
-    let match;
-    while ((match = codeBlockRegex.exec(formattedText)) !== null) {
-      codeBlockRanges.push({ start: match.index, end: match.index + match.length });
-    }
-  }
-  while (currentPos < formattedText.length) {
-    let endPos = Math.min(currentPos + maxLength, formattedText.length);
-    if (endPos < formattedText.length) {
-      let isInCodeBlock = false;
-      let currentBlockEnd = -1;
-      for (const range of codeBlockRanges) {
-        if (endPos > range.start && endPos < range.end) {
-          isInCodeBlock = true;
-          currentBlockEnd = range.end;
-          break;
-        }
-      }
-      if (isInCodeBlock) {
-        if (currentBlockEnd - currentPos <= maxLength) {
-          endPos = currentBlockEnd;
-        } else {
-          const searchStart = Math.max(currentPos, endPos - 200);
-          let safeSplitPoint = -1;
-          for (let i = endPos - 1; i >= searchStart; i--) {
-            if (formattedText[i] === "\n") {
-              safeSplitPoint = i + 1;
-              break;
-            }
-          }
-          if (safeSplitPoint !== -1) {
-            endPos = safeSplitPoint;
-          }
-        }
-      } else {
-        const searchStart = Math.max(currentPos, endPos - 200);
-        let safeSplitPoint = -1;
-        for (let i = endPos - 1; i >= searchStart; i--) {
-          if (formattedText[i] === "\n" || formattedText[i] === " ") {
-            safeSplitPoint = i + 1;
-            break;
-          }
-        }
-        if (safeSplitPoint !== -1) {
-          endPos = safeSplitPoint;
-        }
-      }
-    }
-    const chunk = formattedText.substring(currentPos, endPos);
-    chunks.push(chunk);
-    currentPos = endPos;
-  }
-  return chunks;
-};
-const sendFormattedMessage = async (chatId, standardMarkdownText, replyToMessageId) => {
-  const modesToTry = ["HTML", "MarkdownV2", "Markdown", null];
-  let lastMessageId = void 0;
-  let lastError = null;
-  let currentReplyTo = replyToMessageId;
-  let originalTextSentLength = 0;
-  try {
-    for (const mode of modesToTry) {
-      Log.info(`尝试使用 ${mode === null ? "纯文本" : mode} 格式处理剩余文本...`);
-      const remainingOriginalText = standardMarkdownText.substring(originalTextSentLength);
-      if (remainingOriginalText.length === 0) {
-        Log.info(`剩余原始文本已发送完毕.`);
-        if (lastMessageId) {
-          return { ok: true, messageId: lastMessageId };
-        } else {
-          return { ok: true, messageId: void 0 };
-        }
-      }
-      let formattedText;
-      try {
-        formattedText = formatText(remainingOriginalText, mode);
-      } catch (e) {
-        Log.error(`格式化剩余文本为 ${mode === null ? "纯文本" : mode} 失败:`, { err: e });
-        lastError = e;
-        continue;
-      }
-      const rawChunks = splitFormattedText(formattedText, mode);
-      Log.info(`格式化后的剩余文本被分割成 ${rawChunks.length} 块.`);
-      let modeSuccessForRemaining = true;
-      let chunkIndex = 0;
-      let inheritedOpenTags = [];
-      while (chunkIndex < rawChunks.length) {
-        const rawChunk = rawChunks[chunkIndex];
-        const { balancedChunk, nextInheritedOpenTags } = balanceChunkTags(rawChunk, mode, inheritedOpenTags);
-        inheritedOpenTags = nextInheritedOpenTags;
-        Log.info(
-          `发送第 ${originalTextSentLength + chunkIndex + 1} 条消息 (当前块 ${chunkIndex + 1}/${rawChunks.length}, 长度: ${balancedChunk.length})...`
-        );
-        if (balancedChunk.trim().length === 0) {
-          Log.info(`跳过发送空消息块 (格式: ${mode === null ? "纯文本" : mode}).`);
-          originalTextSentLength += rawChunk.length;
-          chunkIndex++;
-          lastError = null;
-          continue;
-        }
-        const { messageId: sentMessageId, error: sendError } = await TelegramBot.sendMessage(
-          chatId,
-          balancedChunk,
-          mode === null ? void 0 : mode,
-          currentReplyTo,
-          false
-        );
-        if (sentMessageId) {
-          Log.info(`消息块发送成功 (格式: ${mode === null ? "纯文本" : mode}).`);
-          void scheduleDeletion({ chat_id: chatId, message_id: sentMessageId }, 24 * 60 * 6e4);
-          lastMessageId = sentMessageId;
-          currentReplyTo = sentMessageId;
-          originalTextSentLength += rawChunk.length;
-          chunkIndex++;
-          lastError = null;
-        } else {
-          Log.error(`消息块发送失败 (格式: ${mode === null ? "纯文本" : mode}).`);
-          lastError = sendError;
-          modeSuccessForRemaining = false;
-          break;
-        }
-      }
-      if (modeSuccessForRemaining) {
-        Log.info(`${mode === null ? "纯文本" : mode} 格式成功发送了所有剩余文本.`);
-        return { ok: true, messageId: lastMessageId };
-      }
-      inheritedOpenTags = [];
-    }
-  } catch (error) {
-    lastError = error;
-  }
-  Log.error("所有格式化模式发送均失败.");
-  return { ok: false, error: lastError || new TelegramError("所有格式化模式发送失败") };
 };
 const containsFile = (message) => {
   return message ? message.document || message.photo ? true : false : false;
@@ -2763,14 +2791,14 @@ class MentionHandler {
     const checkResult = await rateLimiterCheck(chat.id);
     if (!checkResult.canProceed && from?.id !== adminId) {
       Log.info(`Rate limit exceeded for chat ${chat.id}. Retry after ${checkResult.retryAfterSeconds} seconds.`);
-      const { messageId: rateLimitMessageId } = await TelegramBot.sendMessage(
+      const rateLimitResult = await TelegramBot.sendMessage(
         chat.id,
         `超出速率限制，请等待 ${checkResult.retryAfterSeconds} 秒后重试。`,
-        void 0,
+        "HTML",
         userMessageId
       );
-      if (rateLimitMessageId) {
-        void scheduleDeletion({ chat_id: chat.id, message_id: rateLimitMessageId }, checkResult.retryAfterSeconds * 1e3);
+      if (rateLimitResult.ok) {
+        void scheduleDeletion({ chat_id: chat.id, message_id: rateLimitResult.messageId }, checkResult.retryAfterSeconds * 1e3);
       }
       return true;
     }
@@ -2778,15 +2806,22 @@ class MentionHandler {
   }
   static async _sendFileUploadMessage(message, replyToMessage, chatId, userMessageId) {
     if (containsFile(message) || containsFile(replyToMessage)) {
-      const { messageId: uploadingMessageId } = await TelegramBot.sendMessage(chatId, "📄 File uploading...", void 0, userMessageId);
-      return uploadingMessageId || null;
+      const uploadingResult = await TelegramBot.sendMessage(chatId, "📄 File uploading...", "HTML", userMessageId);
+      return uploadingResult.ok ? uploadingResult.messageId : null;
     }
     return null;
   }
   static async _buildCompleteContents(chatId, fromUserId, currentMessage, botName) {
     const historyChatContents = await ChatContexts.get(chatId, fromUserId);
     const completeContents = [...historyChatContents];
+    let currentMessageCopy = { ...currentMessage };
     if (currentMessage.reply_to_message) {
+      if (currentMessage.quote?.text) {
+        const quotedContents = `Quoted: "${currentMessage.quote.text}"
+
+${currentMessage.text || currentMessage.caption}`;
+        currentMessageCopy = { ...currentMessage, text: quotedContents };
+      }
       const replyToParts = await extractMessageParts(currentMessage.reply_to_message, botName);
       if (replyToParts.length > 0) {
         const replyRole = currentMessage.reply_to_message.from?.username === botName ? "model" : "user";
@@ -2796,7 +2831,7 @@ class MentionHandler {
         });
       }
     }
-    const currentParts = await extractMessageParts(currentMessage, botName);
+    const currentParts = await extractMessageParts(currentMessageCopy, botName);
     if (currentParts.length > 0) {
       completeContents.push({
         role: "user",
@@ -2809,12 +2844,12 @@ class MentionHandler {
     return completeContents;
   }
   static async _sendThinkingMessage(chatId, userMessageId) {
-    const { messageId: thinkMessageId } = await TelegramBot.sendMessage(chatId, "✨ Thinking...", void 0, userMessageId);
-    if (!thinkMessageId) {
+    const thinkingResult = await TelegramBot.sendMessage(chatId, "✨ Thinking...", "HTML", userMessageId);
+    if (!thinkingResult.ok) {
       Log.error("Failed to send thinking message.");
       throw new TelegramError("Failed to send thinking message.");
     }
-    return thinkMessageId;
+    return thinkingResult.messageId;
   }
   static async _processGeminiResponse(geminiResponse, chatId, userMessageId, thinkMessageId, modelName, fromUserId, completeContentsBeforeCall) {
     let hasDisplayedThoughts = false;
@@ -2849,7 +2884,7 @@ ${strArr.slice(strArr.length - 2e3).join("")}`.trim();
         thinkMessageId,
         `<b>Thoughts</b>:
 
-<blockquote expandable>${displayThoughtText}</blockquote>`,
+<blockquote expandable>${escapeHtml(displayThoughtText)}</blockquote>`,
         "HTML",
         false
       );
@@ -2946,7 +2981,7 @@ ${resTexts}
 }
 const handleMention = MentionHandler.handleMention;
 const handleNewMember = async (message) => {
-  const { botName, durableResourceId } = BotConfig.load();
+  const { botName, durableResourceId, newMemberWelcomeTextKeyName } = BotConfig.load();
   const { chat, new_chat_members } = message;
   const newMemberIds = new_chat_members?.map((member) => member.id);
   Log.info("Handling new chat member message", { chatId: chat.id, newMemberIds: newMemberIds.join(", ") });
@@ -2954,11 +2989,11 @@ const handleNewMember = async (message) => {
     const { id: newMemberId, first_name, last_name = "" } = newMember;
     const newMemberFullName = `${first_name} ${last_name}`;
     const newMemberMention = `[${newMemberFullName}](tg://user?id=${newMemberId})`;
-    const newMemberWelcomeText = await KvNamespace.read(durableResourceId, "new_member_welcome_text", "text");
-    const replaceText = newMemberWelcomeText?.replace("NEW_MEMBER_MENTION", newMemberMention).replace("CHAT_TITLE ", chat.title).replace("BOT_NAME", botName);
-    const { messageId: welcomeMessageId } = await TelegramBot.sendMessage(chat.id, replaceText, "HTML");
-    if (welcomeMessageId) {
-      void scheduleDeletion({ chat_id: chat.id, message_id: welcomeMessageId }, 10 * 6e4);
+    const newMemberWelcomeText = await KvNamespace.read(durableResourceId, newMemberWelcomeTextKeyName, "text");
+    const replaceText = newMemberWelcomeText?.replace("NEW_MEMBER_MENTION", newMemberMention).replace("CHAT_TITLE", chat.title).replace("BOT_NAME", botName);
+    const welcomeResult = await TelegramBot.sendMessage(chat.id, replaceText, "HTML");
+    if (welcomeResult.ok) {
+      void scheduleDeletion({ chat_id: chat.id, message_id: welcomeResult.messageId }, 10 * 6e4);
     }
   }
 };
@@ -2969,9 +3004,11 @@ const handleNormal = async (message) => {
   if (!reply_to_message.from || reply_to_message.from.username !== botName) return;
   Log.info("Handling normal message.", { chatId: chat.id, messageId: message_id });
   let cleanMessage = { ...message };
-  if (reply_to_message.text && reply_to_message.text.startsWith("🤖 模型：")) {
-    const cleanMessageTexts = reply_to_message.text.replace(/^🤖 模型：.*?\n+/g, "").replace(/✨ 本次任务[\s\S]*$/m, "");
-    cleanMessage = { ...message, reply_to_message: { ...reply_to_message, text: cleanMessageTexts } };
+  if (reply_to_message.text) {
+    if (reply_to_message.text.includes("🤖 模型：") || reply_to_message.text.includes("✨ 本次任务")) {
+      const cleanMessageTexts = reply_to_message.text.replace(/^🤖 模型：.*?\n+/g, "").replace(/✨ 本次任务[\s\S]*$/m, "");
+      cleanMessage = { ...message, reply_to_message: { ...reply_to_message, text: cleanMessageTexts } };
+    }
   }
   return await handleMention(cleanMessage, true);
 };
@@ -2989,7 +3026,7 @@ const handleUpdate = async (update) => {
   if (!messageEntities || !messageText) return await handleNormal(message);
   try {
     for (const entity of messageEntities) {
-      if (entity.type === "mention") {
+      if (entity.type === "mention" || entity.type === "text_mention") {
         const mentionedText = messageText.substring(entity.offset, entity.offset + entity.length);
         if (mentionedText === `@${botName}`) {
           return await handleMention(message);
@@ -3013,9 +3050,9 @@ const handleUpdate = async (update) => {
     Log.error("Error while handling update", { err, updateId: update_id });
     await sendErrorNotification(err, `Error while handling update ${JSON.stringify({ chatId: chat.id, messageId: message_id })}`);
     const errorMessage = err instanceof Error ? err.message : String(err);
-    const { messageId: errorMessageId } = await TelegramBot.sendMessage(message.chat.id, `❌ ${errorMessage}`, "HTML", message_id);
-    if (errorMessageId) {
-      void scheduleDeletion({ chat_id: chat.id, message_id: errorMessageId }, 5 * 6e4);
+    const errorResult = await TelegramBot.sendMessage(message.chat.id, `❌ ${errorMessage}`, "HTML", message_id);
+    if (errorResult.ok) {
+      void scheduleDeletion({ chat_id: chat.id, message_id: errorResult.messageId }, 5 * 6e4);
     }
   }
 };
@@ -3051,21 +3088,31 @@ const createRoutes = async (route) => {
   route.get("/", (request, reply) => {
     return reply.code(200).type("application/json").send({ code: 200, message: `It's worked` });
   });
+  const constantTimeEqual = (a = "", b = "") => {
+    if (a.length !== b.length) return false;
+    let res = 0;
+    for (let i = 0; i < a.length; i++) res |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return res === 0;
+  };
   route.post("/webhook", {
     schema: routeSchema,
     preHandler: async (request, reply) => {
       const { secretToken } = BotConfig.load();
-      Log.info("Webhook Request Headers", { headers: request.headers });
+      const safeHeaders = { ...request.headers, "x-telegram-bot-api-secret-token": "***" };
+      Log.info("Webhook Request Headers", { headers: safeHeaders });
       const secretTokenFromHeader = request.headers["x-telegram-bot-api-secret-token"] || "";
-      if (!secretTokenFromHeader || secretTokenFromHeader !== secretToken) {
-        Log.warn("Unauthorized webhook access attempt", { clientIp: request.ip });
+      if (!constantTimeEqual(secretTokenFromHeader, secretToken)) {
+        Log.warn("Unauthorized webhook access attempt", { clientIp: request.ip, userAgent: request.headers["user-agent"] });
         return reply.code(401).type("application/json").send({ code: 401, message: "Bad Credentials" });
       }
     },
     handler: async (request, reply) => {
       Log.info("Webhook Verification successful");
-      reply.code(202).type("application/json").send({ code: 202, message: `OK` });
-      return void handleUpdate(request.body);
+      const update = request.body;
+      setImmediate(() => {
+        void handleUpdate(update);
+      });
+      return reply.code(202).type("application/json").send({ code: 202, message: `OK` });
     }
   });
   route.setNotFoundHandler((request, reply) => {

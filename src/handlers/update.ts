@@ -51,9 +51,9 @@ const handleUpdate = async (update: Update): Promise<void> => {
     Log.error('Error while handling update', { err, updateId: update_id });
     await sendErrorNotification(err, `Error while handling update ${JSON.stringify({ chatId: chat.id, messageId: message_id })}`);
     const errorMessage: string = err instanceof Error ? err.message : String(err);
-    const { messageId: errorMessageId } = await TelegramBot.sendMessage(message.chat.id, `❌ ${errorMessage}`, 'HTML', message_id);
-    if (errorMessageId) {
-      void scheduleDeletion({ chat_id: chat.id, message_id: errorMessageId }, 5 * 60_000);
+    const errorResult = await TelegramBot.sendMessage(message.chat.id, `❌ ${errorMessage}`, 'HTML', message_id);
+    if (errorResult.ok) {
+      void scheduleDeletion({ chat_id: chat.id, message_id: errorResult.messageId }, 5 * 60_000);
     }
   }
 };

@@ -34,7 +34,7 @@ export class BotConfig {
   private static readonly REQUIRED_ENV_VARS: (keyof Env)[] = [
     'CLOUDFLARE_API_TOKEN',
     'CLOUDFLARE_ACCOUNT_ID',
-    'SCHEDULER_API_UEL',
+    'SCHEDULER_API_URL',
     'SCHEDULER_API_TOKEN',
     'DURABLE_RESOURCE_NAMESPACE_ID',
     'SYSTEM_PROMPT_KEY_NAME',
@@ -155,7 +155,7 @@ export class BotConfig {
     const cloudflareToken: string = ENV.CLOUDFLARE_API_TOKEN;
     const cloudflareAccountId: string = ENV.CLOUDFLARE_ACCOUNT_ID;
 
-    const schedulerApiUrl: string = ENV.SCHEDULER_API_UEL;
+    const schedulerApiUrl: string = ENV.SCHEDULER_API_URL;
     const schedulerApiToken: string = ENV.SCHEDULER_API_TOKEN;
 
     const durableResourceId: string = ENV.DURABLE_RESOURCE_NAMESPACE_ID;

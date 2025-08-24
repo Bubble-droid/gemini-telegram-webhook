@@ -111,7 +111,7 @@ export class TelegramBot {
     parseMode?: ParseMode,
     replyToMessageId?: number,
     isFormat: boolean = true,
-  ): Promise<{ ok: boolean; messageId?: number; error?: TelegramError }> {
+  ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
     const payload: SendMessageParams = {
       chat_id: chatId,
       text: isFormat ? markdownToHtml(text) : text,
@@ -162,7 +162,7 @@ export class TelegramBot {
     text: string,
     parseMode?: ParseMode,
     isFormat: boolean = true,
-  ): Promise<{ ok: boolean; messageId?: number; error?: TelegramError }> {
+  ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
     const payload: EditMessageTextParams = {
       chat_id: chatId,
       message_id: messageId,
@@ -196,7 +196,7 @@ export class TelegramBot {
    * @param {number} messageId - 消息ID。
    * @returns {Promise<{ ok: boolean }>} 成功返回 `{ ok: true }`，失败返回 `{ ok: false }`。
    */
-  public static async deleteMessage(chatId: number | string, messageId: number): Promise<{ ok: boolean; error?: TelegramError }> {
+  public static async deleteMessage(chatId: number | string, messageId: number): Promise<{ ok: true } | { ok: false; error: TelegramError }> {
     const payload: DeleteMessageParams = {
       chat_id: chatId,
       message_id: messageId,
@@ -220,7 +220,7 @@ export class TelegramBot {
    * @param {number} chatId - 聊天 ID，用于指定命令范围。
    * @returns {Promise<{ ok: boolean }>} 成功返回 `{ ok: true }`，否则返回 `{ ok: false }`。
    */
-  public static async setBotCommands(chatId: number | string, userId: number): Promise<{ ok: boolean; error?: TelegramError }> {
+  public static async setBotCommands(chatId: number | string, userId: number): Promise<{ ok: true } | { ok: false; error: TelegramError }> {
     const payload: SetBotCommandParams = {
       commands: botCommands.map((command) => ({
         command: command.name,
@@ -247,7 +247,7 @@ export class TelegramBot {
    * @param {string} fileId - 文件的唯一 ID。
    * @returns {Promise<File| undefined>} 文件信息对象，如果获取失败则返回 `undefined`。
    */
-  public static async getFile(fileId: string): Promise<{ ok: boolean; data: File } | { ok: false; error: TelegramError }> {
+  public static async getFile(fileId: string): Promise<{ ok: true; data: File } | { ok: false; error: TelegramError }> {
     Log.info(`Getting file info for file_id: ${fileId}`);
     try {
       const result = await TelegramBot.sendRequest<GetFileParams, GetFileResult>('POST', 'getFile', {

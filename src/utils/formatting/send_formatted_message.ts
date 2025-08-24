@@ -90,19 +90,13 @@ export const sendFormattedMessage = async (
           continue;
         }
 
-        const { messageId: sentMessageId, error: sendError } = await TelegramBot.sendMessage(
-          chatId,
-          balancedChunk,
-          mode === null ? undefined : mode,
-          currentReplyTo,
-          false,
-        );
+        const sendResult = await TelegramBot.sendMessage(chatId, balancedChunk, mode === null ? undefined : mode, currentReplyTo, false);
 
-        if (sentMessageId) {
+        if (sendResult.ok) {
           Log.info(`消息块发送成功 (格式: ${mode === null ? '纯文本' : mode}).`);
-          void scheduleDeletion({ chat_id: chatId, message_id: sentMessageId }, 24 * 60 * 60_000);
-          lastMessageId = sentMessageId; // 更新最后一条消息 ID
-          currentReplyTo = sentMessageId; // 下一块回复当前块
+          void scheduleDeletion({ chat_id: chatId, message_id: sendResult.messageId }, 24 * 60 * 60_000);
+          lastMessageId = sendResult.messageId; // 更新最后一条消息 ID
+          currentReplyTo = sendResult.messageId; // 下一块回复当前块
           // 成功发送当前块，更新已发送的原始文本长度 (估算值)
           originalTextSentLength += rawChunk.length; // 使用原始块长度估算
 
@@ -110,7 +104,7 @@ export const sendFormattedMessage = async (
           lastError = null; // 清除错误状态
         } else {
           Log.error(`消息块发送失败 (格式: ${mode === null ? '纯文本' : mode}).`);
-          lastError = sendError as TelegramError; // 记录当前块的错误
+          lastError = sendResult.error; // 记录当前块的错误
           modeSuccessForRemaining = false; // 当前模式未能成功发送所有剩余块
           // 当前模式失败，跳出块循环，尝试下一个模式处理从失败点开始的剩余原始文本
           break;

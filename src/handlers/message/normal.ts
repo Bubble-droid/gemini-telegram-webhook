@@ -19,9 +19,11 @@ const handleNormal = async (message: Message): Promise<void> => {
   if (!reply_to_message.from || reply_to_message.from.username !== botName) return;
   Log.info('Handling normal message.', { chatId: chat.id, messageId: message_id });
   let cleanMessage: Message = { ...message };
-  if (reply_to_message.text && reply_to_message.text.startsWith('🤖 模型：')) {
-    const cleanMessageTexts = reply_to_message.text.replace(/^🤖 模型：.*?\n+/g, '').replace(/✨ 本次任务[\s\S]*$/m, '');
-    cleanMessage = { ...message, reply_to_message: { ...reply_to_message, text: cleanMessageTexts } };
+  if (reply_to_message.text) {
+    if (reply_to_message.text.includes('🤖 模型：') || reply_to_message.text.includes('✨ 本次任务')) {
+      const cleanMessageTexts = reply_to_message.text.replace(/^🤖 模型：.*?\n+/g, '').replace(/✨ 本次任务[\s\S]*$/m, '');
+      cleanMessage = { ...message, reply_to_message: { ...reply_to_message, text: cleanMessageTexts } };
+    }
   }
   return await handleMention(cleanMessage, true);
 };

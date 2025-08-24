@@ -4,7 +4,8 @@ import { GoogleGenAI, FunctionCallingConfigMode, HarmCategory, HarmBlockThreshol
 import type { Content, GenerateContentConfig, GenerateContentResponse, Part } from '@google/genai';
 import { BotConfig, GeminiError, Log, TelegramBot, ToolExecutors } from '@/services';
 import { geminiTools } from '@/configs';
-import { escapeHtml, KvNamespace, rotateArray, sleep } from '@/utils';
+import { KvNamespace, rotateArray, sleep } from '@/utils';
+import { escapeHtml } from '@/utils/formatting';
 import type { ChatParams, GenerateContentSuccessResponse, ApiCallContext, ToolExecArgs } from '@/types';
 
 /**

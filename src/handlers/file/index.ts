@@ -16,12 +16,9 @@ export * from './downloader';
  */
 export const handleFile = async (message: Message): Promise<Blob | void> => {
   const { document, photo } = message;
-  if (photo || document?.mime_type === 'image/png' || document?.mime_type === 'image/jpeg') {
-    const image = photo ? photo[photo.length - 1] : document;
-    if (image) {
-      const imageData = await handleImage(image);
-      if (imageData) return imageData;
-    }
+  if (photo) {
+    const imageData = await handleImage(photo);
+    if (imageData) return imageData;
   } else if (document) {
     const documentData = await handleDocument(document);
     if (documentData) return documentData;

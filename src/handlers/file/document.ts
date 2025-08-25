@@ -13,6 +13,9 @@ const SUPPORTED_MIME_TYPES = [
   'text/markdown',
   'application/x-shellscript',
   'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
 ];
 
 export const handleDocument = async (document: Document): Promise<Blob | void> => {

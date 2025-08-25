@@ -66,7 +66,7 @@ const createRoutes = async (route: FastifyInstance): Promise<void> => {
       Log.info('Webhook Request Headers', { headers: safeHeaders });
       const secretTokenFromHeader = (request.headers['x-telegram-bot-api-secret-token'] || '') as string;
       if (!constantTimeEqual(secretTokenFromHeader, secretToken)) {
-        Log.warn('Unauthorized webhook access attempt', { clientIp: request.ip, userAgent: request.headers['user-agent'] });
+        Log.warn('Unauthorized webhook access attempt', { clientIp: request.headers['x-real-ip'], userAgent: request.headers['user-agent'] });
         return reply.code(401).type('application/json').send({ code: 401, message: 'Bad Credentials' });
       }
     },

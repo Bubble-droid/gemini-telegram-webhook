@@ -1194,6 +1194,54 @@ const rateLimiterCheck = async (chatId) => {
     return { canProceed: false, retryAfterSeconds: DEFAULT_RETRY_SECONDS };
   }
 };
+const MEDIA_GROUP_COLLECTION_TIMEOUT_MS = 3e3;
+const activeMediaGroups = /* @__PURE__ */ new Map();
+const getAggregatedMediaGroup = async (message) => {
+  const { media_group_id, message_id, caption, text } = message;
+  if (!media_group_id) {
+    Log.info(`[MediaGroupManager] Message ${message_id} is not part of a media group.`);
+    return { messages: [message], caption: caption || text };
+  }
+  if (activeMediaGroups.has(media_group_id)) {
+    const entry2 = activeMediaGroups.get(media_group_id);
+    Log.info(`[MediaGroupManager] Message ${message_id}: Media group ${media_group_id} already active. Adding message.`);
+    entry2.messages.push(message);
+    if (!entry2.caption && (caption || text)) {
+      entry2.caption = caption || text;
+    }
+    if (entry2.timeoutId) {
+      clearTimeout(entry2.timeoutId);
+    }
+    entry2.timeoutId = setTimeout(() => {
+      Log.info(`[MediaGroupManager] Media group ${media_group_id} collection timeout reached. Resolving with ${entry2.messages.length} messages.`);
+      activeMediaGroups.delete(media_group_id);
+      entry2.resolve({ messages: entry2.messages, caption: entry2.caption });
+    }, MEDIA_GROUP_COLLECTION_TIMEOUT_MS);
+    return entry2.promise;
+  }
+  Log.info(`[MediaGroupManager] Message ${message_id}: Initiating collection for media group ${media_group_id}.`);
+  let resolveFn;
+  let rejectFn;
+  const groupPromise = new Promise((resolve, reject) => {
+    resolveFn = resolve;
+    rejectFn = reject;
+  });
+  const entry = {
+    messages: [message],
+    caption: caption || text,
+    timeoutId: null,
+    resolve: resolveFn,
+    reject: rejectFn,
+    promise: groupPromise
+  };
+  activeMediaGroups.set(media_group_id, entry);
+  entry.timeoutId = setTimeout(() => {
+    Log.info(`[MediaGroupManager] Media group ${media_group_id} collection timeout reached. Resolving with ${entry.messages.length} messages.`);
+    activeMediaGroups.delete(media_group_id);
+    entry.resolve({ messages: entry.messages, caption: entry.caption });
+  }, MEDIA_GROUP_COLLECTION_TIMEOUT_MS);
+  return groupPromise;
+};
 class ChatContexts {
   static get = async (chatId, userId) => {
     const { chatContextId } = BotConfig.load();
@@ -2303,6 +2351,24 @@ class TelegramBot {
       return { ok: false, error };
     }
   }
+  static async deleteMessages(chatId, messageIds) {
+    const payload = {
+      chat_id: chatId,
+      message_ids: messageIds
+    };
+    try {
+      await TelegramBot.sendRequest("POST", "deleteMessages", payload);
+      Log.info("Telegram message deleted successfully.", { chatId, messageIds });
+      return { ok: true };
+    } catch (error) {
+      Log.error("Error deleting Telegram message", {
+        err: error,
+        chatId,
+        messageIds
+      });
+      return { ok: false, error };
+    }
+  }
   static async setBotCommands(chatId, userId) {
     const payload = {
       commands: botCommands.map((command) => ({
@@ -2335,6 +2401,24 @@ class TelegramBot {
       Log.error(`Error in getFile for file_id ${fileId}`, {
         err: error,
         fileId
+      });
+      return { ok: false, error };
+    }
+  }
+  static async getChatMember(chatId, userId) {
+    Log.info(`Getting chat member info for chat_id: ${chatId}, user_id: ${userId}`);
+    const payload = {
+      chat_id: chatId,
+      user_id: userId
+    };
+    try {
+      const result = await TelegramBot.sendRequest("POST", "getChatMember", payload);
+      return { ok: true, data: result };
+    } catch (error) {
+      Log.error(`Error in getChatMember for chat_id ${chatId}, user_id ${userId}`, {
+        err: error,
+        chatId,
+        userId
       });
       return { ok: false, error };
     }
@@ -2721,13 +2805,13 @@ const downloadFileAsArrayBuffer = async (url) => {
 };
 const handleImage = async (image) => {
   const { botToken } = BotConfig.load();
-  const { file_id, mime_type } = image;
+  const { file_id } = image[image.length - 1];
   const result = await TelegramBot.getFile(file_id);
   if (result.ok) {
     const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
     const imageArrayBuffer = await downloadFileAsArrayBuffer(fileUrl);
     const base64ImageData = Buffer.from(imageArrayBuffer).toString("base64");
-    return { data: base64ImageData, mimeType: mime_type ? mime_type : "image/jpeg" };
+    return { data: base64ImageData, mimeType: "image/jpeg" };
   }
 };
 const SUPPORTED_MIME_TYPES = [
@@ -2737,7 +2821,10 @@ const SUPPORTED_MIME_TYPES = [
   "text/plain",
   "text/markdown",
   "application/x-shellscript",
-  "application/pdf"
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp"
 ];
 const handleDocument = async (document) => {
   const { botToken } = BotConfig.load();
@@ -2754,35 +2841,42 @@ const handleDocument = async (document) => {
 };
 const handleFile = async (message) => {
   const { document, photo } = message;
-  if (photo || document?.mime_type === "image/png" || document?.mime_type === "image/jpeg") {
-    const image = photo ? photo[photo.length - 1] : document;
-    if (image) {
-      const imageData = await handleImage(image);
-      if (imageData) return imageData;
-    }
+  if (photo) {
+    const imageData = await handleImage(photo);
+    if (imageData) return imageData;
   } else if (document) {
     const documentData = await handleDocument(document);
     if (documentData) return documentData;
   }
 };
 const containsFile = (message) => {
-  return message ? message.document || message.photo ? true : false : false;
+  return message ? !!message.document || !!message.photo : false;
 };
-const extractMessageParts = async (message, botName) => {
+const extractMessageParts = async (messages, botName, consolidatedCaption = void 0) => {
   const parts = [];
-  let messageText = message.text || message.caption || "";
-  messageText = messageText.replace(`@${botName}`, "").trim();
-  if (containsFile(message)) {
-    const fileData = await handleFile(message);
-    if (fileData) {
-      parts.push({ inlineData: fileData });
+  let messageText = consolidatedCaption || "";
+  let hasFile = false;
+  for (const message of messages) {
+    if (containsFile(message)) {
+      hasFile = true;
+      const fileData = await handleFile(message);
+      if (fileData) {
+        parts.push({ inlineData: fileData });
+      }
     }
-    if (!messageText) {
-      if (message.document) messageText = "分析这个文件";
-      else if (message.photo) messageText = "分析这张图片";
+    if (!messageText && (message.text || message.caption)) {
+      messageText = message.text || message.caption || "";
     }
   }
-  parts.push({ text: messageText ? messageText : "你好！" });
+  messageText = messageText.replace(new RegExp(`@${botName}`, "g"), "").trim();
+  if (hasFile && !messageText) {
+    messageText = "分析这些文件";
+  }
+  if (messageText) {
+    parts.push({ text: messageText });
+  } else if (!hasFile) {
+    parts.push({ text: "你好！" });
+  }
   return parts;
 };
 class MentionHandler {
@@ -2804,34 +2898,40 @@ class MentionHandler {
     }
     return false;
   }
-  static async _sendFileUploadMessage(message, replyToMessage, chatId, userMessageId) {
-    if (containsFile(message) || containsFile(replyToMessage)) {
-      const uploadingResult = await TelegramBot.sendMessage(chatId, "📄 File uploading...", "HTML", userMessageId);
-      return uploadingResult.ok ? uploadingResult.messageId : null;
-    }
-    return null;
+  static async _sendFileUploadMessage(chatId, userMessageId) {
+    const uploadingResult = await TelegramBot.sendMessage(chatId, "📄 File uploading...", "HTML", userMessageId);
+    return uploadingResult.ok ? uploadingResult.messageId : null;
   }
-  static async _buildCompleteContents(chatId, fromUserId, currentMessage, botName) {
+  static async _buildCompleteContents(chatId, fromUserId, currentAggregatedMessage, botName) {
     const historyChatContents = await ChatContexts.get(chatId, fromUserId);
     const completeContents = [...historyChatContents];
-    let currentMessageCopy = { ...currentMessage };
-    if (currentMessage.reply_to_message) {
-      if (currentMessage.quote?.text) {
-        const quotedContents = `Quoted: "${currentMessage.quote.text}"
-
-${currentMessage.text || currentMessage.caption}`;
-        currentMessageCopy = { ...currentMessage, text: quotedContents };
-      }
-      const replyToParts = await extractMessageParts(currentMessage.reply_to_message, botName);
-      if (replyToParts.length > 0) {
-        const replyRole = currentMessage.reply_to_message.from?.username === botName ? "model" : "user";
+    const firstCurrentMessage = currentAggregatedMessage.messages[0];
+    if (firstCurrentMessage.reply_to_message) {
+      const replyToMessage = firstCurrentMessage.reply_to_message;
+      const replyRole = replyToMessage.from?.username === botName ? "model" : "user";
+      const repliedParts = await extractMessageParts(
+        [replyToMessage],
+        botName,
+        replyToMessage.text || replyToMessage.caption || ""
+      );
+      if (repliedParts.length > 0) {
         completeContents.push({
           role: replyRole,
-          parts: replyToParts
+          parts: repliedParts
         });
       }
     }
-    const currentParts = await extractMessageParts(currentMessageCopy, botName);
+    let currentMessageText = currentAggregatedMessage.caption || "";
+    if (firstCurrentMessage.quote?.text) {
+      currentMessageText = `引用: "${firstCurrentMessage.quote.text}"
+
+${currentMessageText}`;
+    }
+    const currentParts = await extractMessageParts(
+      currentAggregatedMessage.messages,
+      botName,
+      currentMessageText
+    );
     if (currentParts.length > 0) {
       completeContents.push({
         role: "user",
@@ -2839,7 +2939,7 @@ ${currentMessage.text || currentMessage.caption}`;
       });
     }
     if (completeContents.length === 0) {
-      throw new TelegramError("未能从消息中提取到有效内容，请检查消息格式。");
+      throw new TelegramError("未能从消息中提取到有效内容，请检查消息格式或媒体组内容。");
     }
     return completeContents;
   }
@@ -2903,9 +3003,9 @@ ${strArr.slice(strArr.length - 2e3).join("")}`.trim();
 
 ${resTexts}
 
-*✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}*
+_✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}_
 
-*⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。*`;
+_⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。_`;
     const { ok: sendOk, error: sendError } = await sendFormattedMessage(chatId, fullText, userMessageId);
     if (!sendOk) {
       const error = sendError ? sendError : new TelegramError("发送消息时发生未知错误");
@@ -2921,15 +3021,18 @@ ${resTexts}
     ]);
     return hasDisplayedThoughts;
   }
-  static async handleMention(message, isChat = false) {
+  static async _processAggregatedMessage(aggregatedMessage, isChat = false) {
     const { modelName, botName, adminId } = BotConfig.load();
-    const { message_id: userMessageId, from, chat, reply_to_message } = message;
-    Log.info("Handling mention message.", {
+    const firstMessage = aggregatedMessage.messages[0];
+    const { message_id: userMessageId, from, chat } = firstMessage;
+    Log.info("Processing aggregated mention message.", {
       chatId: chat.id,
       messageId: userMessageId,
-      isChatMode: isChat
+      isChatMode: isChat,
+      mediaGroupId: firstMessage.media_group_id,
+      messageCount: aggregatedMessage.messages.length
     });
-    if (await MentionHandler._handleRateLimiting(message, adminId)) {
+    if (await MentionHandler._handleRateLimiting(firstMessage, adminId)) {
       return;
     }
     let fileUploadMessageId = null;
@@ -2937,10 +3040,14 @@ ${resTexts}
     let completeContents = [];
     let hasResThought = false;
     try {
-      fileUploadMessageId = await MentionHandler._sendFileUploadMessage(message, reply_to_message, chat.id, userMessageId);
-      completeContents = await MentionHandler._buildCompleteContents(chat.id, from?.id, message, botName);
+      const anyMessageHasFile = aggregatedMessage.messages.some((msg) => containsFile(msg));
+      const repliedMessageHasFile = firstMessage.reply_to_message ? containsFile(firstMessage.reply_to_message) : false;
+      if (anyMessageHasFile || repliedMessageHasFile) {
+        fileUploadMessageId = await MentionHandler._sendFileUploadMessage(chat.id, userMessageId);
+      }
+      completeContents = await MentionHandler._buildCompleteContents(chat.id, from?.id, aggregatedMessage, botName);
       if (fileUploadMessageId) {
-        await sleep(3e3);
+        await sleep(MEDIA_GROUP_COLLECTION_TIMEOUT_MS);
         await TelegramBot.deleteMessage(chat.id, fileUploadMessageId);
         fileUploadMessageId = null;
       }
@@ -2959,7 +3066,7 @@ ${resTexts}
         completeContents
       );
     } catch (apiError) {
-      Log.error("Error during Gemini API call or response processing.", {
+      Log.error("Error during Gemini API call or response processing for aggregated message.", {
         err: apiError,
         chatId: chat.id,
         messageId: userMessageId
@@ -2978,22 +3085,90 @@ ${resTexts}
       throw apiError;
     }
   }
+  static async handleMention(message, isChat = false) {
+    const aggregatedMessage = await getAggregatedMediaGroup(message);
+    await MentionHandler._processAggregatedMessage(aggregatedMessage, isChat);
+  }
 }
 const handleMention = MentionHandler.handleMention;
+const POLLING_TIMEOUT_MS = 3 * 60 * 1e3;
+const POLLING_INTERVAL_MS = 3 * 1e3;
+const pollChatMemberStatus = async (chatId, user, timeoutMs, intervalMs) => {
+  const { id: userId, first_name, last_name = "" } = user;
+  const userName = `${first_name} ${last_name}`.trim();
+  const startTime = Date.now();
+  Log.info(`开始轮询用户 ${userName}(${userId}) 在聊天 ${chatId} 中的状态...`);
+  while (Date.now() - startTime < timeoutMs) {
+    const result = await TelegramBot.getChatMember(chatId, userId);
+    if (!result.ok) {
+      const error = result.error;
+      Log.error(`获取用户 ${userName}(${userId}) 聊天成员信息失败: ${error.message || "未知错误"} (Code: ${error.code || "N/A"})`, {
+        chatId,
+        userId,
+        error
+      });
+      await sleep(intervalMs);
+      continue;
+    }
+    const chatMember = result.data;
+    Log.info(`用户 ${userName}(${userId}) 当前状态: ${chatMember.status}`, { chatId, userId });
+    switch (chatMember.status) {
+      case "member":
+        Log.info(`用户 ${userName}(${userId}) 已通过验证 (状态: member)。`, { chatId, userId });
+        return { userId, isVerified: true };
+      case "restricted":
+        if (!chatMember.can_send_messages) {
+          Log.info(`用户 ${userName}(${userId}) 仍在限制中且无法发送消息，等待下次轮询...`, { chatId, userId });
+          await sleep(intervalMs);
+          continue;
+        } else {
+          Log.info(`用户 ${userName}(${userId}) 状态为 restricted 但已解除消息发送限制。`, { chatId, userId });
+          return { userId, isVerified: true };
+        }
+      case "creator":
+      case "administrator":
+        Log.info(`用户 ${userName}(${userId}) 是 ${chatMember.status}，视为已通过验证。`, { chatId, userId });
+        return { userId, isVerified: true };
+      case "kicked":
+      case "left":
+        Log.info(`用户 ${userName}(${userId}) 状态为 ${chatMember.status}，验证失败或已离开/被踢出。`, { chatId, userId });
+        return { userId, isVerified: false };
+      default:
+        Log.warn(`用户 ${userName}(${userId}) 处于未知或非验证状态，继续等待...`, { chatId, userId });
+        await sleep(intervalMs);
+        continue;
+    }
+  }
+  Log.warn(`轮询用户 ${userName}(${userId}) 状态超时 (${timeoutMs / 1e3}秒)，未能通过验证。`, { chatId, userId });
+  return { userId, isVerified: false };
+};
 const handleNewMember = async (message) => {
   const { botName, durableResourceId, newMemberWelcomeTextKeyName } = BotConfig.load();
   const { chat, new_chat_members } = message;
+  if (!new_chat_members || new_chat_members.length === 0) return;
   const newMemberIds = new_chat_members?.map((member) => member.id);
-  Log.info("Handling new chat member message", { chatId: chat.id, newMemberIds: newMemberIds.join(", ") });
-  for (const newMember of new_chat_members) {
-    const { id: newMemberId, first_name, last_name = "" } = newMember;
-    const newMemberFullName = `${first_name} ${last_name}`;
-    const newMemberMention = `[${newMemberFullName}](tg://user?id=${newMemberId})`;
-    const newMemberWelcomeText = await KvNamespace.read(durableResourceId, newMemberWelcomeTextKeyName, "text");
-    const replaceText = newMemberWelcomeText?.replace("NEW_MEMBER_MENTION", newMemberMention).replace("CHAT_TITLE", chat.title).replace("BOT_NAME", botName);
-    const welcomeResult = await TelegramBot.sendMessage(chat.id, replaceText, "HTML");
-    if (welcomeResult.ok) {
-      void scheduleDeletion({ chat_id: chat.id, message_id: welcomeResult.messageId }, 10 * 6e4);
+  Log.info("Handling new chat member message", { chatId: chat.id, newMemberIds });
+  await sleep(3e3);
+  const pollingTasks = new_chat_members.map((member) => pollChatMemberStatus(chat.id, member, POLLING_TIMEOUT_MS, POLLING_INTERVAL_MS));
+  const results = await Promise.all(pollingTasks);
+  for (const { userId, isVerified } of results) {
+    const newMember = new_chat_members.find((m) => m.id === userId);
+    if (!newMember) {
+      Log.error(`未找到ID为 ${userId} 的新成员，这不应该发生。`, { chatId: chat.id, userId });
+      continue;
+    }
+    if (isVerified) {
+      const newMemberFullName = `${newMember.first_name} ${newMember.last_name || ""}`.trim();
+      const newMemberMention = `[${newMemberFullName}](tg://user?id=${newMember.id})`;
+      const newMemberWelcomeText = await KvNamespace.read(durableResourceId, newMemberWelcomeTextKeyName, "text");
+      const replaceText = newMemberWelcomeText?.replace("NEW_MEMBER_MENTION", newMemberMention).replace("CHAT_TITLE", chat.title).replace("BOT_NAME", botName);
+      Log.info(`向已验证的新成员 ${newMemberFullName}(${newMember.id}) 发送欢迎消息。`, { chatId: chat.id, newMemberId: newMember.id });
+      const welcomeResult = await TelegramBot.sendMessage(chat.id, replaceText, "HTML");
+      if (welcomeResult.ok) {
+        void scheduleDeletion({ chat_id: chat.id, message_id: welcomeResult.messageId }, 10 * 6e4);
+      }
+    } else {
+      Log.warn(`新成员 ${newMember.first_name}(${newMember.id}) 未通过验证或超时，不发送欢迎消息。`, { chatId: chat.id, newMemberId: newMember.id });
     }
   }
 };
@@ -3102,7 +3277,7 @@ const createRoutes = async (route) => {
       Log.info("Webhook Request Headers", { headers: safeHeaders });
       const secretTokenFromHeader = request.headers["x-telegram-bot-api-secret-token"] || "";
       if (!constantTimeEqual(secretTokenFromHeader, secretToken)) {
-        Log.warn("Unauthorized webhook access attempt", { clientIp: request.ip, userAgent: request.headers["user-agent"] });
+        Log.warn("Unauthorized webhook access attempt", { clientIp: request.headers["x-real-ip"], userAgent: request.headers["user-agent"] });
         return reply.code(401).type("application/json").send({ code: 401, message: "Bad Credentials" });
       }
     },

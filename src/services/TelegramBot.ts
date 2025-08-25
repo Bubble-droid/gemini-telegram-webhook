@@ -16,6 +16,9 @@ import type {
   SetBotCommandResult,
   GetFileParams,
   GetFileResult,
+  DeleteMessagesParams,
+  GetChatMemberResult,
+  GetChatMemberParams,
 } from '@/types';
 import { markdownToHtml } from '@/utils';
 
@@ -216,6 +219,31 @@ export class TelegramBot {
   }
 
   /**
+   * 删除指定聊天中的消息。
+   * @param {number} chatId - 聊天ID。
+   * @param {number[]} messageIds - 消息ID列表
+   * @returns {Promise<{ ok: boolean }>} 成功返回 `{ ok: true }`，失败返回 `{ ok: false }`。
+   */
+  public static async deleteMessages(chatId: number | string, messageIds: number[]): Promise<{ ok: true } | { ok: false; error: TelegramError }> {
+    const payload: DeleteMessagesParams = {
+      chat_id: chatId,
+      message_ids: messageIds,
+    };
+    try {
+      await TelegramBot.sendRequest<DeleteMessagesParams, DeleteMessageResult>('POST', 'deleteMessages', payload);
+      Log.info('Telegram message deleted successfully.', { chatId, messageIds });
+      return { ok: true };
+    } catch (error: unknown) {
+      Log.error('Error deleting Telegram message', {
+        err: error as Error,
+        chatId,
+        messageIds,
+      });
+      return { ok: false, error: error as TelegramError };
+    }
+  }
+
+  /**
    * 设置 Bot 命令列表。
    * @param {number} chatId - 聊天 ID，用于指定命令范围。
    * @returns {Promise<{ ok: boolean }>} 成功返回 `{ ok: true }`，否则返回 `{ ok: false }`。
@@ -258,6 +286,34 @@ export class TelegramBot {
       Log.error(`Error in getFile for file_id ${fileId}`, {
         err: error as Error,
         fileId,
+      });
+      return { ok: false, error: error as TelegramError };
+    }
+  }
+
+  /**
+   * 获取指定聊天成员的信息。
+   * @param {number} chatId - 聊天 ID。
+   * @param {number} userId - 用户 ID。
+   * @returns {Promise<GetChatMemberResult>} 聊天成员信息对象。
+   */
+  public static async getChatMember(
+    chatId: number | string,
+    userId: number,
+  ): Promise<{ ok: true; data: GetChatMemberResult } | { ok: false; error: TelegramError }> {
+    Log.info(`Getting chat member info for chat_id: ${chatId}, user_id: ${userId}`);
+    const payload: GetChatMemberParams = {
+      chat_id: chatId,
+      user_id: userId,
+    };
+    try {
+      const result = await TelegramBot.sendRequest<GetChatMemberParams, GetChatMemberResult>('POST', 'getChatMember', payload);
+      return { ok: true, data: result };
+    } catch (error: unknown) {
+      Log.error(`Error in getChatMember for chat_id ${chatId}, user_id ${userId}`, {
+        err: error as Error,
+        chatId,
+        userId,
       });
       return { ok: false, error: error as TelegramError };
     }

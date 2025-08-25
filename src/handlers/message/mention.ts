@@ -259,9 +259,9 @@ export class MentionHandler {
 
 ${resTexts}
 
-*✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}*
+_✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}_
 
-*⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。*`;
+_⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。_`;
 
     // 调用新的分块发送函数来处理回复消息
     const { ok: sendOk, error: sendError } = await sendFormattedMessage(chatId, fullText, userMessageId);

@@ -256,11 +256,11 @@ export class MentionHandler {
 ${resTexts || 'Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。'}
 
 
-_✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}_
+✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}
 
-_❕ 如果你觉得我的回答偏离了实际主题，可以先尝试使用 /clear@${botName} 命令清理历史对话后，再重新提问，提问时请尽量详细描述你的问题，且需要有一个具体的目标。_
+❕ 如果你觉得我的回答偏离了实际主题，可以先尝试使用 \`/clear@${botName}\` 命令清理历史对话后，再重新提问，提问时请尽量详细描述你的问题，且需要有一个具体的目标。
 
-_⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。_`;
+⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。`;
 
     // 调用新的分块发送函数来处理回复消息
     const { ok: sendOk, error: sendError } = await sendFormattedMessage(chatId, fullText, userMessageId);

@@ -65,7 +65,7 @@ export const handleDocument = async (document: Document): Promise<Blob | void> =
     } else if (mime_type?.startsWith('video/')) {
       universalMimeType = 'video/mp4';
     } else {
-      throw new AppError(`不支持的文件类型: ${mime_type}`, 'FILE_TYPE_NOT_SUPPORTED');
+      throw new AppError(`不支持的文件类型: ${mime_type || '未知'}`, 'FILE_TYPE_NOT_SUPPORTED');
     }
   }
   const result = await TelegramBot.getFile(file_id);

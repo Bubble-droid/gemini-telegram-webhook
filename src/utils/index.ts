@@ -6,4 +6,3 @@ export * from './github_api';
 export * from './scheduler_task';
 export * from './KvNamespace';
 export * from './rate_limiter';
-export * from './media_group_manager';

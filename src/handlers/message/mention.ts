@@ -16,7 +16,7 @@ import { sendFormattedMessage } from '@/utils/formatting';
  * @returns {boolean} - 如果消息包含文件，返回 true，否则返回 false
  */
 const containsFile = (message: Message | undefined): boolean => {
-  return message ? (message.document || message.photo ? true : false) : false;
+  return message ? (message.document || message.photo || message.video ? true : false) : false;
 };
 
 /**
@@ -44,6 +44,7 @@ const extractMessageParts = async (message: Message, botName: string): Promise<P
     if (!messageText) {
       if (message.document) messageText = '分析这个文件';
       else if (message.photo) messageText = '分析这张图片';
+      else if (message.video) messageText = '分析这个视频';
     }
   }
 
@@ -190,6 +191,7 @@ export class MentionHandler {
     chatId: number,
     userMessageId: number,
     thinkMessageId: number,
+    botName: string,
     modelName: string,
     fromUserId: number,
     completeContentsBeforeCall: Content[],
@@ -248,18 +250,15 @@ export class MentionHandler {
       .join('')
       .trim();
 
-    if (!resTexts) {
-      // 理论上，GeminiApi 内部的空回复重试机制应该处理此情况。
-      // 但作为防御性编程，如果模型最终只返回了工具调用而没有文本，或者返回了空文本，
-      // 我们仍然需要一个用户友好的提示。
-      throw new GeminiError('Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。');
-    }
-
     const fullText = `🤖 模型：\`${modelName}\`
 
-${resTexts}
+
+${resTexts || 'Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。'}
+
 
 _✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}_
+
+_❕ 如果你觉得我的回答偏离了实际主题，可以先尝试使用 /clear@${botName} 命令清理历史对话后，再重新提问，提问时请尽量详细描述你的问题，且需要有一个具体的目标。_
 
 _⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。_`;
 
@@ -342,6 +341,7 @@ _⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判�
         chat.id,
         userMessageId,
         thinkMessageId,
+        botName,
         modelName,
         from?.id as number,
         completeContents,

@@ -1,0 +1,82 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "dns-cloudflare",
+        "type": "https",
+        "server": "one.one.one.one",
+        "server_port": 443,
+        "path": "/dns-query",
+        "detour": "warp",
+        "domain_resolver": "dns-hosts"
+      },
+      {
+        "tag": "dns-hosts",
+        "type": "hosts",
+        "predefined": {
+          "doh.pub": ["120.53.53.53", "1.12.12.21"],
+          "dns.google": ["8.8.4.4", "8.8.8.8"],
+          "one.one.one.one": ["1.0.0.1", "1.1.1.1"]
+        }
+      }
+    ]
+  },
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "warp",
+      "address": ["172.16.0.2/32", "2606:4700:110:8a90:d2cf:1f95:ed2c:4d7f/128"],
+      "private_key": "KJehkcYzV0r7534X4f3MtWMoFB+fcn9CgaDRin3d5Gk=",
+      "peers": [
+        {
+          "address": "162.159.192.4",
+          "port": 4500,
+          "public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
+          "allowed_ips": ["0.0.0.0/0", "::/0"],
+          "reserved": [63, 202, 133]
+        }
+      ]
+    }
+  ],
+  "inbounds": [
+    {
+      "type": "socks",
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "listen_port": 10080,
+      "tcp_fast_open": true,
+      "tcp_multi_path": true,
+      "udp_fragment": true
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "action": "resolve",
+        "server": "dns-cloudflare",
+        "strategy": "prefer_ipv6"
+      },
+      {
+        "action": "route",
+        "outbound": "warp"
+      }
+    ],
+    "default_domain_resolver": "dns-cloudflare"
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true,
+      "path": "cache.db"
+    }
+  }
+}

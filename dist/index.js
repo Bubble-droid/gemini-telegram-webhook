@@ -1194,54 +1194,6 @@ const rateLimiterCheck = async (chatId) => {
     return { canProceed: false, retryAfterSeconds: DEFAULT_RETRY_SECONDS };
   }
 };
-const MEDIA_GROUP_COLLECTION_TIMEOUT_MS = 3e3;
-const activeMediaGroups = /* @__PURE__ */ new Map();
-const getAggregatedMediaGroup = async (message) => {
-  const { media_group_id, message_id, caption, text } = message;
-  if (!media_group_id) {
-    Log.info(`[MediaGroupManager] Message ${message_id} is not part of a media group.`);
-    return { messages: [message], caption: caption || text };
-  }
-  if (activeMediaGroups.has(media_group_id)) {
-    const entry2 = activeMediaGroups.get(media_group_id);
-    Log.info(`[MediaGroupManager] Message ${message_id}: Media group ${media_group_id} already active. Adding message.`);
-    entry2.messages.push(message);
-    if (!entry2.caption && (caption || text)) {
-      entry2.caption = caption || text;
-    }
-    if (entry2.timeoutId) {
-      clearTimeout(entry2.timeoutId);
-    }
-    entry2.timeoutId = setTimeout(() => {
-      Log.info(`[MediaGroupManager] Media group ${media_group_id} collection timeout reached. Resolving with ${entry2.messages.length} messages.`);
-      activeMediaGroups.delete(media_group_id);
-      entry2.resolve({ messages: entry2.messages, caption: entry2.caption });
-    }, MEDIA_GROUP_COLLECTION_TIMEOUT_MS);
-    return entry2.promise;
-  }
-  Log.info(`[MediaGroupManager] Message ${message_id}: Initiating collection for media group ${media_group_id}.`);
-  let resolveFn;
-  let rejectFn;
-  const groupPromise = new Promise((resolve, reject) => {
-    resolveFn = resolve;
-    rejectFn = reject;
-  });
-  const entry = {
-    messages: [message],
-    caption: caption || text,
-    timeoutId: null,
-    resolve: resolveFn,
-    reject: rejectFn,
-    promise: groupPromise
-  };
-  activeMediaGroups.set(media_group_id, entry);
-  entry.timeoutId = setTimeout(() => {
-    Log.info(`[MediaGroupManager] Media group ${media_group_id} collection timeout reached. Resolving with ${entry.messages.length} messages.`);
-    activeMediaGroups.delete(media_group_id);
-    entry.resolve({ messages: entry.messages, caption: entry.caption });
-  }, MEDIA_GROUP_COLLECTION_TIMEOUT_MS);
-  return groupPromise;
-};
 class ChatContexts {
   static get = async (chatId, userId) => {
     const { chatContextId } = BotConfig.load();
@@ -2406,7 +2358,6 @@ class TelegramBot {
     }
   }
   static async getChatMember(chatId, userId) {
-    Log.info(`Getting chat member info for chat_id: ${chatId}, user_id: ${userId}`);
     const payload = {
       chat_id: chatId,
       user_id: userId
@@ -2815,68 +2766,114 @@ const handleImage = async (image) => {
   }
 };
 const SUPPORTED_MIME_TYPES = [
-  "application/json",
-  "application/yaml",
-  "text/javascript",
+  "text/html",
+  "text/css",
+  "text/csv",
   "text/plain",
   "text/markdown",
+  "text/javascript",
+  "text/x-javascript",
+  "application/json",
+  "application/yaml",
+  "application/javascript",
+  "application/x-javascript",
   "application/x-shellscript",
-  "application/pdf",
   "image/png",
   "image/jpeg",
-  "image/webp"
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "video/webm",
+  "video/mpeg"
+];
+const BINARY_MIME_TYPES = [
+  "application/zip",
+  "application/x-7z-compressed",
+  "application/gzip",
+  "application/x-tar",
+  "application/x-rar-compressed",
+  "application/x-iso9660-image",
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/octet-stream",
+  "application/x-msdownload",
+  "application/wasm",
+  "application/vnd.android.package-archive"
 ];
 const handleDocument = async (document) => {
   const { botToken } = BotConfig.load();
   const { file_id, mime_type } = document;
-  let universalTextType;
-  if (!SUPPORTED_MIME_TYPES.includes(String(mime_type))) universalTextType = "text/plain";
+  let universalMimeType = void 0;
+  if (!SUPPORTED_MIME_TYPES.includes(String(mime_type))) {
+    if (mime_type?.startsWith("text/")) {
+      universalMimeType = "text/plain";
+    } else if (mime_type?.startsWith("application/") && !BINARY_MIME_TYPES.includes(mime_type)) {
+      universalMimeType = "text/plain";
+    } else if (mime_type?.startsWith("image/")) {
+      universalMimeType = "image/jpeg";
+    } else if (mime_type?.startsWith("video/")) {
+      universalMimeType = "video/mp4";
+    } else {
+      throw new AppError(`不支持的文件类型: ${mime_type}`, "FILE_TYPE_NOT_SUPPORTED");
+    }
+  }
   const result = await TelegramBot.getFile(file_id);
   if (result.ok) {
     const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
     const documentArrayBuffer = await downloadFileAsArrayBuffer(fileUrl);
     const base64DocumentData = Buffer.from(documentArrayBuffer).toString("base64");
-    return { data: base64DocumentData, mimeType: universalTextType ? universalTextType : mime_type ? mime_type : "text/plain" };
+    return { data: base64DocumentData, mimeType: universalMimeType ? universalMimeType : mime_type };
+  }
+};
+const handleVideo = async (video) => {
+  const { botToken } = BotConfig.load();
+  const { file_id } = video;
+  const result = await TelegramBot.getFile(file_id);
+  if (result.ok) {
+    const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
+    const videoArrayBuffer = await downloadFileAsArrayBuffer(fileUrl);
+    const base64VideoData = Buffer.from(videoArrayBuffer).toString("base64");
+    return { data: base64VideoData, mimeType: "video/mp4" };
   }
 };
 const handleFile = async (message) => {
-  const { document, photo } = message;
+  const { document, photo, video } = message;
   if (photo) {
     const imageData = await handleImage(photo);
     if (imageData) return imageData;
   } else if (document) {
     const documentData = await handleDocument(document);
     if (documentData) return documentData;
+  } else if (video) {
+    const videoData = await handleVideo(video);
+    if (videoData) return videoData;
   }
+  return;
 };
 const containsFile = (message) => {
-  return message ? !!message.document || !!message.photo : false;
+  return message ? message.document || message.photo || message.video ? true : false : false;
 };
-const extractMessageParts = async (messages, botName, consolidatedCaption = void 0) => {
+const extractMessageParts = async (message, botName) => {
   const parts = [];
-  let messageText = consolidatedCaption || "";
-  let hasFile = false;
-  for (const message of messages) {
-    if (containsFile(message)) {
-      hasFile = true;
-      const fileData = await handleFile(message);
-      if (fileData) {
-        parts.push({ inlineData: fileData });
-      }
+  let messageText = message.text || message.caption || "";
+  messageText = messageText.replace(`@${botName}`, "").trim();
+  if (containsFile(message)) {
+    const fileData = await handleFile(message);
+    if (fileData) {
+      parts.push({ inlineData: fileData });
     }
-    if (!messageText && (message.text || message.caption)) {
-      messageText = message.text || message.caption || "";
+    if (!messageText) {
+      if (message.document) messageText = "分析这个文件";
+      else if (message.photo) messageText = "分析这张图片";
+      else if (message.video) messageText = "分析这个视频";
     }
   }
-  messageText = messageText.replace(new RegExp(`@${botName}`, "g"), "").trim();
-  if (hasFile && !messageText) {
-    messageText = "分析这些文件";
-  }
-  if (messageText) {
-    parts.push({ text: messageText });
-  } else if (!hasFile) {
-    parts.push({ text: "你好！" });
-  }
+  parts.push({ text: messageText ? messageText : "你好！" });
   return parts;
 };
 class MentionHandler {
@@ -2898,40 +2895,34 @@ class MentionHandler {
     }
     return false;
   }
-  static async _sendFileUploadMessage(chatId, userMessageId) {
-    const uploadingResult = await TelegramBot.sendMessage(chatId, "📄 File uploading...", "HTML", userMessageId);
-    return uploadingResult.ok ? uploadingResult.messageId : null;
+  static async _sendFileUploadMessage(message, replyToMessage, chatId, userMessageId) {
+    if (containsFile(message) || containsFile(replyToMessage)) {
+      const uploadingResult = await TelegramBot.sendMessage(chatId, "📄 File uploading...", "HTML", userMessageId);
+      return uploadingResult.ok ? uploadingResult.messageId : null;
+    }
+    return null;
   }
-  static async _buildCompleteContents(chatId, fromUserId, currentAggregatedMessage, botName) {
+  static async _buildCompleteContents(chatId, fromUserId, currentMessage, botName) {
     const historyChatContents = await ChatContexts.get(chatId, fromUserId);
     const completeContents = [...historyChatContents];
-    const firstCurrentMessage = currentAggregatedMessage.messages[0];
-    if (firstCurrentMessage.reply_to_message) {
-      const replyToMessage = firstCurrentMessage.reply_to_message;
-      const replyRole = replyToMessage.from?.username === botName ? "model" : "user";
-      const repliedParts = await extractMessageParts(
-        [replyToMessage],
-        botName,
-        replyToMessage.text || replyToMessage.caption || ""
-      );
-      if (repliedParts.length > 0) {
+    let currentMessageCopy = { ...currentMessage };
+    if (currentMessage.reply_to_message) {
+      if (currentMessage.quote?.text) {
+        const quotedContents = `Quoted: "${currentMessage.quote.text}"
+
+${currentMessage.text || currentMessage.caption}`;
+        currentMessageCopy = { ...currentMessage, text: quotedContents };
+      }
+      const replyToParts = await extractMessageParts(currentMessage.reply_to_message, botName);
+      if (replyToParts.length > 0) {
+        const replyRole = currentMessage.reply_to_message.from?.username === botName ? "model" : "user";
         completeContents.push({
           role: replyRole,
-          parts: repliedParts
+          parts: replyToParts
         });
       }
     }
-    let currentMessageText = currentAggregatedMessage.caption || "";
-    if (firstCurrentMessage.quote?.text) {
-      currentMessageText = `引用: "${firstCurrentMessage.quote.text}"
-
-${currentMessageText}`;
-    }
-    const currentParts = await extractMessageParts(
-      currentAggregatedMessage.messages,
-      botName,
-      currentMessageText
-    );
+    const currentParts = await extractMessageParts(currentMessageCopy, botName);
     if (currentParts.length > 0) {
       completeContents.push({
         role: "user",
@@ -2939,7 +2930,7 @@ ${currentMessageText}`;
       });
     }
     if (completeContents.length === 0) {
-      throw new TelegramError("未能从消息中提取到有效内容，请检查消息格式或媒体组内容。");
+      throw new TelegramError("未能从消息中提取到有效内容，请检查消息格式。");
     }
     return completeContents;
   }
@@ -2951,7 +2942,7 @@ ${currentMessageText}`;
     }
     return thinkingResult.messageId;
   }
-  static async _processGeminiResponse(geminiResponse, chatId, userMessageId, thinkMessageId, modelName, fromUserId, completeContentsBeforeCall) {
+  static async _processGeminiResponse(geminiResponse, chatId, userMessageId, thinkMessageId, botName, modelName, fromUserId, completeContentsBeforeCall) {
     let hasDisplayedThoughts = false;
     const {
       response,
@@ -2996,14 +2987,15 @@ ${strArr.slice(strArr.length - 2e3).join("")}`.trim();
     }
     const resTextParts = response.parts?.filter((part) => part.text && !part.thought);
     const resTexts = resTextParts?.map((part) => part.text).join("").trim();
-    if (!resTexts) {
-      throw new GeminiError("Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。");
-    }
     const fullText = `🤖 模型：\`${modelName}\`
 
-${resTexts}
+
+${resTexts || "Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。"}
+
 
 _✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}_
+
+_❕ 如果你觉得我的回答偏离了实际主题，可以先尝试使用 /clear@${botName} 命令清理历史对话后，再重新提问，提问时请尽量详细描述你的问题，且需要有一个具体的目标。_
 
 _⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。_`;
     const { ok: sendOk, error: sendError } = await sendFormattedMessage(chatId, fullText, userMessageId);
@@ -3021,18 +3013,15 @@ _⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判�
     ]);
     return hasDisplayedThoughts;
   }
-  static async _processAggregatedMessage(aggregatedMessage, isChat = false) {
+  static async handleMention(message, isChat = false) {
     const { modelName, botName, adminId } = BotConfig.load();
-    const firstMessage = aggregatedMessage.messages[0];
-    const { message_id: userMessageId, from, chat } = firstMessage;
-    Log.info("Processing aggregated mention message.", {
+    const { message_id: userMessageId, from, chat, reply_to_message } = message;
+    Log.info("Handling mention message.", {
       chatId: chat.id,
       messageId: userMessageId,
-      isChatMode: isChat,
-      mediaGroupId: firstMessage.media_group_id,
-      messageCount: aggregatedMessage.messages.length
+      isChatMode: isChat
     });
-    if (await MentionHandler._handleRateLimiting(firstMessage, adminId)) {
+    if (await MentionHandler._handleRateLimiting(message, adminId)) {
       return;
     }
     let fileUploadMessageId = null;
@@ -3040,14 +3029,10 @@ _⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判�
     let completeContents = [];
     let hasResThought = false;
     try {
-      const anyMessageHasFile = aggregatedMessage.messages.some((msg) => containsFile(msg));
-      const repliedMessageHasFile = firstMessage.reply_to_message ? containsFile(firstMessage.reply_to_message) : false;
-      if (anyMessageHasFile || repliedMessageHasFile) {
-        fileUploadMessageId = await MentionHandler._sendFileUploadMessage(chat.id, userMessageId);
-      }
-      completeContents = await MentionHandler._buildCompleteContents(chat.id, from?.id, aggregatedMessage, botName);
+      fileUploadMessageId = await MentionHandler._sendFileUploadMessage(message, reply_to_message, chat.id, userMessageId);
+      completeContents = await MentionHandler._buildCompleteContents(chat.id, from?.id, message, botName);
       if (fileUploadMessageId) {
-        await sleep(MEDIA_GROUP_COLLECTION_TIMEOUT_MS);
+        await sleep(3e3);
         await TelegramBot.deleteMessage(chat.id, fileUploadMessageId);
         fileUploadMessageId = null;
       }
@@ -3061,12 +3046,13 @@ _⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判�
         chat.id,
         userMessageId,
         thinkMessageId,
+        botName,
         modelName,
         from?.id,
         completeContents
       );
     } catch (apiError) {
-      Log.error("Error during Gemini API call or response processing for aggregated message.", {
+      Log.error("Error during Gemini API call or response processing.", {
         err: apiError,
         chatId: chat.id,
         messageId: userMessageId
@@ -3084,10 +3070,6 @@ _⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判�
       }
       throw apiError;
     }
-  }
-  static async handleMention(message, isChat = false) {
-    const aggregatedMessage = await getAggregatedMediaGroup(message);
-    await MentionHandler._processAggregatedMessage(aggregatedMessage, isChat);
   }
 }
 const handleMention = MentionHandler.handleMention;
@@ -3111,14 +3093,12 @@ const pollChatMemberStatus = async (chatId, user, timeoutMs, intervalMs) => {
       continue;
     }
     const chatMember = result.data;
-    Log.info(`用户 ${userName}(${userId}) 当前状态: ${chatMember.status}`, { chatId, userId });
     switch (chatMember.status) {
       case "member":
         Log.info(`用户 ${userName}(${userId}) 已通过验证 (状态: member)。`, { chatId, userId });
         return { userId, isVerified: true };
       case "restricted":
         if (!chatMember.can_send_messages) {
-          Log.info(`用户 ${userName}(${userId}) 仍在限制中且无法发送消息，等待下次轮询...`, { chatId, userId });
           await sleep(intervalMs);
           continue;
         } else {

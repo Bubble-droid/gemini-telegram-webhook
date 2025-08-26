@@ -301,7 +301,7 @@ export class TelegramBot {
     chatId: number | string,
     userId: number,
   ): Promise<{ ok: true; data: GetChatMemberResult } | { ok: false; error: TelegramError }> {
-    Log.info(`Getting chat member info for chat_id: ${chatId}, user_id: ${userId}`);
+    // Log.info(`Getting chat member info for chat_id: ${chatId}, user_id: ${userId}`);
     const payload: GetChatMemberParams = {
       chat_id: chatId,
       user_id: userId,

@@ -48,7 +48,7 @@ const pollChatMemberStatus = async (
     }
 
     const chatMember = result.data; // 获取实际的 ChatMember 对象
-    Log.info(`用户 ${userName}(${userId}) 当前状态: ${chatMember.status}`, { chatId, userId });
+    // Log.info(`用户 ${userName}(${userId}) 当前状态: ${chatMember.status}`, { chatId, userId });
 
     switch (chatMember.status) {
       case 'member':
@@ -58,7 +58,7 @@ const pollChatMemberStatus = async (
         // TypeScript 会自动推断 chatMember 为 ChatMemberRestricted 类型
         if (!chatMember.can_send_messages) {
           // 成员仍在限制中且无法发送消息，继续等待
-          Log.info(`用户 ${userName}(${userId}) 仍在限制中且无法发送消息，等待下次轮询...`, { chatId, userId });
+          // Log.info(`用户 ${userName}(${userId}) 仍在限制中且无法发送消息，等待下次轮询...`, { chatId, userId });
           await sleep(intervalMs);
           continue;
         } else {

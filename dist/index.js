@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import { isIP } from "node:net";
 import process$1 from "node:process";
 import { randomBytes } from "node:crypto";
-import { Type, Behavior, HarmBlockThreshold, HarmCategory, FunctionCallingConfigMode, GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, HarmBlockThreshold, HarmCategory, Type, Behavior, FunctionCallingConfigMode } from "@google/genai";
 import { Logger } from "tslog";
 import Cloudflare from "cloudflare";
 const LOGGER_LEVELS = ["trace", "debug", "info", "warn", "error", "fatal"];
@@ -1262,8 +1262,9 @@ const botCommands = [
   {
     name: "start",
     description: "开始使用",
-    action: async (chatId, messageId) => {
+    action: async (params) => {
       Log.info("Executing /start command.");
+      const { chatId, messageId } = params;
       const { modelName, durableResourceId, startReplyTextKeyName } = BotConfig.load();
       const startReplyText = await KvNamespace.read(durableResourceId, startReplyTextKeyName, "text");
       const replaceText = startReplyText?.replace("MODEL_NAME", modelName);
@@ -1277,8 +1278,9 @@ const botCommands = [
   {
     name: "clear",
     description: "清理对话上下文",
-    action: async (chatId, messageId, userId) => {
+    action: async (params) => {
       Log.info("Executing /clear command.");
+      const { chatId, messageId, userId } = params;
       const clearingResult = await TelegramBot.sendMessage(chatId, "🗑 Clearing...", "HTML", messageId);
       await ChatContexts.clear(chatId, userId);
       if (clearingResult.ok) {
@@ -1296,8 +1298,9 @@ const botCommands = [
   {
     name: "tools",
     description: "模型可用工具",
-    action: async (chatId, messageId) => {
+    action: async (params) => {
       Log.info("Executing /tools command.");
+      const { chatId, messageId } = params;
       const toolList = geminiTools[0].functionDeclarations?.map((tool) => `  * **${tool.name}**: ${tool.description}
 `).join("\n").trim();
       const toolsText = `🛠 我可以使用以下工具：
@@ -1308,6 +1311,156 @@ ${toolList}`;
         void scheduleDeletion({ chat_id: chatId, message_id: toolsResult.messageId }, 10 * 6e4);
       }
       void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 10 * 6e4);
+    }
+  },
+  {
+    name: "exp_img_gen",
+    description: "生成图片",
+    action: async (params) => {
+      Log.info("Executing /exp_img_gen command.");
+      const { chatId, messageId, message } = params;
+      const { durableResourceId, geminiApiKeysKeyName, botToken, botApiUrl } = BotConfig.load();
+      const apiKeys = await KvNamespace.read(durableResourceId, geminiApiKeysKeyName, "json");
+      if (!apiKeys || apiKeys.length === 0) {
+        throw new GeminiError("未找到有效的 API 密钥，请检查配置。", "GEMINI_API_KEY_NOT_FOUND", false);
+      }
+      const [apiKey, apiKeyId] = apiKeys[0];
+      const ai = new GoogleGenAI({ apiKey });
+      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
+      const contents = [];
+      const parts = [];
+      const config = {
+        responseModalities: ["IMAGE", "TEXT"],
+        temperature: 1,
+        safetySettings: [
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE }
+        ]
+      };
+      const systemInstruction = `## SYSTEM PROTOCOL: AI UI/UX VISUALIZATION ENGINE ##
+
+# 1. FUNCTION
+Your sole function is to serve as an advanced AI-powered UI/UX visualization and rendering engine. You translate UI source code and natural language design directives into a high-fidelity, photorealistic visual mockup of a software interface. Your purpose is not to chat, but to create.
+
+# 2. EXECUTION FLOW
+1.  **Receive Inputs**: You will be provided with \`[UI Source Code]\` (e.g., HTML/CSS, React/Vue components, Swift UI, Android XML) and natural language \`[Design Directives]\` (e.g., theme, color palette, target audience, desired style).
+2.  **Structural Analysis**: First, meticulously parse the \`[UI Source Code]\`. Identify every component, its properties, and the hierarchical layout. This structural map is the unbreakable foundation for the render.
+3.  **Aesthetic Interpretation**: Next, apply the user's \`[Design Directives]\`. Augment these with your internal knowledge of modern UI/UX design principles, including typography, color theory, spacing (e.g., 8pt grid system), accessibility standards, and current design trends (e.g., Neumorphism, Glassmorphism, Flat Design).
+4.  **Synthesize & Render**: Finally, merge the structural analysis with the aesthetic interpretation to generate a single, polished, and elegant UI interface image.
+
+# 3. RENDERING PRINCIPLES
+* **Structural Fidelity**: ABSOLUTE PRIORITY. The generated image's layout, components, and content hierarchy MUST be a direct visual representation of the provided \`[UI Source Code]\`. If the code specifies a header, a sidebar, and a content area, the image must show exactly that structure.
+* **Layout & Component Accuracy**: All UI elements (buttons, inputs, cards, menus) must be rendered accurately and appear functional. Their placement, alignment, and spacing must be precise and intentional. When a platform is implied (e.g., SwiftUI code), components should adhere to that platform's native design language unless otherwise directed.
+* **Modern Aesthetics**: The final image must be beautiful, elegant, and modern. This is achieved through:
+    * **Clean Typography**: Use well-regarded UI fonts with appropriate size, weight, and hierarchy.
+    * **Consistent Spacing**: Employ ample white space and a consistent layout grid to ensure clarity and balance.
+    * **Harmonious Colors**: Create or apply a professional color palette that enhances usability.
+    * **Subtle Effects**: Use shadows, gradients, and borders tastefully to create depth and define interactivity.
+* **Directive Adherence**: You MUST follow all explicit user \`[Design Directives]\`. If the user asks for a "dark mode with a primary color of #5B21B6", this must be the core of the visual theme.
+* **Plausibility & Detail**: The UI should feel real. Use high-quality, context-appropriate placeholder icons (e.g., a gear icon for settings). Populate text fields with realistic placeholder text (e.g., "john.doe@email.com") instead of just "Lorem Ipsum". Image containers should feature high-quality, thematic placeholder images.
+
+# 4. OUTPUT CONSTRAINTS
+* **Primary Output**: The output MUST be the generated UI image and nothing else.
+* **Secondary Output (Optional but Encouraged)**: After the image, you may provide a brief, structured "Design Rationale" in Markdown. This adds value by explaining your choices.
+    * Example:
+        \`\`\`
+        **Design Rationale:**
+        * **Theme:** Dark Mode, as requested.
+        * **Palette:** A deep purple primary (#5B21B6) was used for interactive elements to create strong contrast and a modern feel.
+        * **Typography:** Used "Inter" font for its excellent screen readability.
+        * **Key Choices:** Added subtle inner shadows to input fields to enhance the sense of depth and interactivity.
+        \`\`\`
+* **Prohibitions**: Do not include any conversational intros ("Here is the UI I designed for you..."), postscripts, or apologies. The process is entirely functional.
+
+---
+Engine activated. Awaiting UI source code and design directives.`;
+      const messageText = message.text || message.caption;
+      const messageEntities = message.entities || message.caption_entities;
+      const commandEntity = messageEntities.find((entity) => entity.type === "bot_command");
+      const commandText = messageText.substring(commandEntity.offset, commandEntity.offset + commandEntity.length);
+      const cleanText = messageText.replace(commandText, "").trim();
+      parts.push({ text: systemInstruction });
+      if (message.document) {
+        const { file_id } = message.document;
+        const result = await TelegramBot.getFile(file_id);
+        if (result.ok) {
+          const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
+          const res = await fetch(fileUrl, { method: "GET" });
+          const fileContents = await res.text();
+          parts.push({ text: fileContents });
+        }
+      }
+      if (messageText) {
+        parts.push({ text: cleanText });
+      }
+      contents.push({
+        role: "user",
+        parts
+      });
+      let renderMessageId = void 0;
+      const renderResult = await TelegramBot.sendMessage(chatId, `🎨 Rendering...`, "HTML", messageId);
+      if (renderResult.ok) {
+        renderMessageId = renderResult.messageId;
+      }
+      try {
+        const response = await ai.models.generateContent({
+          model: "gemini-2.0-flash-preview-image-generation",
+          contents,
+          config
+        });
+        const candidate = response.candidates?.[0];
+        if (!candidate || !candidate.content || !candidate.content.parts) {
+          throw new GeminiError("Gemini API 返回结果不包含有效的 candidate 或 content", "INVALID_RESPONSE", false);
+        }
+        if (renderMessageId) {
+          await TelegramBot.deleteMessage(chatId, renderMessageId);
+          renderMessageId = void 0;
+        }
+        const parts2 = candidate.content.parts;
+        const resTexts = parts2.map((part) => part.text).join("");
+        const imageData = parts2.find((part) => part.inlineData);
+        if (!imageData) {
+          throw new GeminiError("Gemini API 未返回图片数据", "INVALID_RESPONSE", false);
+        }
+        const base64Data = imageData.inlineData?.data;
+        const buffer = Buffer.from(base64Data, "base64");
+        const payload = {
+          chat_id: chatId,
+          photo: buffer,
+          caption: markdownToHtml(resTexts),
+          parse_mode: "HTML",
+          show_caption_above_media: true,
+          reply_parameters: {
+            message_id: messageId,
+            allow_sending_without_reply: true
+          }
+        };
+        const formData = new FormData();
+        formData.append("chat_id", payload.chat_id);
+        formData.append("photo", new Blob([payload.photo], { type: "image/png" }), `gemini_gen_img.png`);
+        formData.append("caption", payload.caption);
+        formData.append("parse_mode", payload.parse_mode);
+        formData.append("show_caption_above_media", String(payload.show_caption_above_media));
+        formData.append("reply_parameters", JSON.stringify(payload.reply_parameters));
+        const url = `${botApiUrl}/sendPhoto`;
+        const res = await fetch(url, {
+          method: "POST",
+          body: formData
+        });
+        const result = await res.json();
+        if (result.ok) {
+          void scheduleDeletion({ chat_id: chatId, message_id: result.result.message_id }, 24 * 60 * 60 * 1e3);
+        }
+      } catch (error) {
+        if (renderMessageId) {
+          await TelegramBot.deleteMessage(chatId, renderMessageId);
+        }
+        const errorMessage = error instanceof GeminiError ? error.message : String(error);
+        throw new GeminiError(errorMessage, "API_CLIENT_ERROR", false);
+      }
     }
   }
 ];
@@ -2726,7 +2879,12 @@ const handleCommand = async (message) => {
   const commandName = fullCommandText.slice(1).split("@")[0].trim();
   const targetCommand = botCommands.find((cmd) => cmd.name === commandName);
   if (targetCommand) {
-    await targetCommand.action(chat.id, messageId, from?.id);
+    await targetCommand.action({
+      chatId: chat.id,
+      messageId,
+      userId: from?.id,
+      message
+    });
   }
 };
 const downloadFileAsArrayBuffer = async (url) => {
@@ -2786,25 +2944,6 @@ const SUPPORTED_MIME_TYPES = [
   "video/webm",
   "video/mpeg"
 ];
-const BINARY_MIME_TYPES = [
-  "application/zip",
-  "application/x-7z-compressed",
-  "application/gzip",
-  "application/x-tar",
-  "application/x-rar-compressed",
-  "application/x-iso9660-image",
-  "application/pdf",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/octet-stream",
-  "application/x-msdownload",
-  "application/wasm",
-  "application/vnd.android.package-archive"
-];
 const handleDocument = async (document) => {
   const { botToken } = BotConfig.load();
   const { file_id, mime_type } = document;
@@ -2812,14 +2951,14 @@ const handleDocument = async (document) => {
   if (!SUPPORTED_MIME_TYPES.includes(String(mime_type))) {
     if (mime_type?.startsWith("text/")) {
       universalMimeType = "text/plain";
-    } else if (mime_type?.startsWith("application/") && !BINARY_MIME_TYPES.includes(mime_type)) {
+    } else if (mime_type?.startsWith("application/") && !isBinaryApplicationMime(mime_type, { defaultToBinary: true })) {
       universalMimeType = "text/plain";
     } else if (mime_type?.startsWith("image/")) {
       universalMimeType = "image/jpeg";
     } else if (mime_type?.startsWith("video/")) {
       universalMimeType = "video/mp4";
     } else {
-      throw new AppError(`不支持的文件类型: ${mime_type}`, "FILE_TYPE_NOT_SUPPORTED");
+      throw new AppError(`不支持的文件类型: ${mime_type || "未知"}`, "FILE_TYPE_NOT_SUPPORTED");
     }
   }
   const result = await TelegramBot.getFile(file_id);
@@ -2829,6 +2968,60 @@ const handleDocument = async (document) => {
     const base64DocumentData = Buffer.from(documentArrayBuffer).toString("base64");
     return { data: base64DocumentData, mimeType: universalMimeType ? universalMimeType : mime_type };
   }
+};
+const isBinaryApplicationMime = (mime, opts) => {
+  const defaultToBinary = opts?.defaultToBinary ?? true;
+  if (!mime || typeof mime !== "string") return defaultToBinary;
+  const clean = mime.split(";")[0].trim().toLowerCase();
+  if (!clean.startsWith("application/")) {
+    return defaultToBinary;
+  }
+  const subtype = clean.slice("application/".length);
+  const textSet = /* @__PURE__ */ new Set([
+    "json",
+    "ld+json",
+    "activity+json",
+    "problem+json",
+    "json-seq",
+    "javascript",
+    "ecmascript",
+    "xml",
+    "xhtml+xml",
+    "rss+xml",
+    "atom+xml",
+    "x-www-form-urlencoded",
+    "graphql",
+    "graphql+json",
+    "hal+json",
+    "xml-dtd"
+  ]);
+  const binarySet = /* @__PURE__ */ new Set([
+    "octet-stream",
+    "pdf",
+    "zip",
+    "x-7z-compressed",
+    "x-rar-compressed",
+    "x-tar",
+    "gzip",
+    "x-gzip",
+    "x-bzip2",
+    "x-xz",
+    "x-msdownload",
+    "x-shockwave-flash",
+    "wasm",
+    "x-iso9660-image",
+    "postscript"
+  ]);
+  if (textSet.has(subtype)) return false;
+  if (binarySet.has(subtype)) return true;
+  if (subtype.includes("+")) {
+    const parts = subtype.split("+");
+    const suffix = parts[parts.length - 1];
+    if (["json", "xml", "javascript", "ecmascript", "xhtml+xml"].includes(suffix)) return false;
+    if (["zip", "gzip", "tar", "pdf", "wasm", "octet-stream", "x-xz", "x-bzip2"].includes(suffix)) return true;
+  }
+  if (subtype.startsWith("vnd.")) return true;
+  return defaultToBinary;
 };
 const handleVideo = async (video) => {
   const { botToken } = BotConfig.load();
@@ -2993,11 +3186,11 @@ ${strArr.slice(strArr.length - 2e3).join("")}`.trim();
 ${resTexts || "Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。"}
 
 
-_✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}_
+✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}
 
-_❕ 如果你觉得我的回答偏离了实际主题，可以先尝试使用 /clear@${botName} 命令清理历史对话后，再重新提问，提问时请尽量详细描述你的问题，且需要有一个具体的目标。_
+❕ 如果你觉得我的回答偏离了实际主题，可以先尝试使用 \`/clear@${botName}\` 命令清理历史对话后，再重新提问，提问时请尽量详细描述你的问题，且需要有一个具体的目标。
 
-_⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。_`;
+⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。`;
     const { ok: sendOk, error: sendError } = await sendFormattedMessage(chatId, fullText, userMessageId);
     if (!sendOk) {
       const error = sendError ? sendError : new TelegramError("发送消息时发生未知错误");
@@ -3074,7 +3267,7 @@ _⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判�
 }
 const handleMention = MentionHandler.handleMention;
 const POLLING_TIMEOUT_MS = 3 * 60 * 1e3;
-const POLLING_INTERVAL_MS = 3 * 1e3;
+const POLLING_INTERVAL_MS = 5 * 1e3;
 const pollChatMemberStatus = async (chatId, user, timeoutMs, intervalMs) => {
   const { id: userId, first_name, last_name = "" } = user;
   const userName = `${first_name} ${last_name}`.trim();
@@ -3128,7 +3321,7 @@ const handleNewMember = async (message) => {
   if (!new_chat_members || new_chat_members.length === 0) return;
   const newMemberIds = new_chat_members?.map((member) => member.id);
   Log.info("Handling new chat member message", { chatId: chat.id, newMemberIds });
-  await sleep(3e3);
+  await sleep(5e3);
   const pollingTasks = new_chat_members.map((member) => pollChatMemberStatus(chat.id, member, POLLING_TIMEOUT_MS, POLLING_INTERVAL_MS));
   const results = await Promise.all(pollingTasks);
   for (const { userId, isVerified } of results) {

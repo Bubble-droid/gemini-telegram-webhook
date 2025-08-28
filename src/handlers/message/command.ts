@@ -22,7 +22,12 @@ const handleCommand = async (message: Message): Promise<void> => {
   const commandName = fullCommandText.slice(1).split('@')[0].trim();
   const targetCommand = botCommands.find((cmd) => cmd.name === commandName);
   if (targetCommand) {
-    await targetCommand.action(chat.id, messageId, from?.id as number);
+    await targetCommand.action({
+      chatId: chat.id,
+      messageId,
+      userId: from?.id as number,
+      message,
+    });
   }
 };
 

@@ -272,7 +272,14 @@ export interface ChatInviteLink {
 export interface BotCommandAction {
   name: string;
   description: string;
-  action: (chatId: number, messageId: number, userId: number) => Promise<void>;
+  action: (params: CommandActionParams) => Promise<void>;
+}
+
+export interface CommandActionParams {
+  chatId: number;
+  messageId: number;
+  userId: number;
+  message: Message;
 }
 
 export interface BotCommand {
@@ -304,6 +311,20 @@ export interface ReplyParameters {
 }
 
 export type SendMessageResult = Message;
+
+export interface SendPhotoParams {
+  chat_id: number | string;
+  photo: string | Buffer;
+  caption?: string;
+  parse_mode?: ParseMode;
+  caption_entities?: MessageEntity[];
+  show_caption_above_media?: boolean;
+  has_spoiler?: boolean;
+  protect_content?: boolean;
+  reply_parameters?: ReplyParameters;
+}
+
+export type SendPhotoResult = Message;
 
 export interface EditMessageTextParams {
   chat_id: number | string;

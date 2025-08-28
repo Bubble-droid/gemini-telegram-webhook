@@ -6,7 +6,7 @@ import { KvNamespace, scheduleDeletion, sleep } from '@/utils';
 
 // 定义轮询参数，这些可以根据实际需求调整
 const POLLING_TIMEOUT_MS = 3 * 60 * 1000; // 3 分钟的超时时间
-const POLLING_INTERVAL_MS = 3 * 1000; // 每 3 秒轮询一次
+const POLLING_INTERVAL_MS = 5 * 1000; // 每 3 秒轮询一次
 
 /**
  * @function pollChatMemberStatus
@@ -99,7 +99,7 @@ const handleNewMember = async (message: Message): Promise<void> => {
   if (!new_chat_members || new_chat_members.length === 0) return;
   const newMemberIds = new_chat_members?.map((member) => member.id) as number[];
   Log.info('Handling new chat member message', { chatId: chat.id, newMemberIds });
-  await sleep(3_000);
+  await sleep(5_000);
   // 为每个新成员创建异步轮询任务
   const pollingTasks = new_chat_members.map((member) => pollChatMemberStatus(chat.id, member, POLLING_TIMEOUT_MS, POLLING_INTERVAL_MS));
 

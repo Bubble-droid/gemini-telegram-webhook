@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@breezystack/lamejs':
+        specifier: ^1.2.7
+        version: 1.2.7
       '@google/genai':
         specifier: ^1.14.0
         version: 1.14.0
@@ -74,6 +77,9 @@ importers:
         version: 7.1.3(@types/node@24.3.0)(jiti@2.5.1)(tsx@4.20.4)
 
 packages:
+
+  '@breezystack/lamejs@1.2.7':
+    resolution: {integrity: sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA==}
 
   '@esbuild/aix-ppc64@0.25.9':
     resolution: {integrity: sha512-OaGtL73Jck6pBKjNIe24BnFE6agGl+6KxDtTfHhy1HmhthfKouEcOhqpSL64K4/0WCtbKFLOdzD/44cJ4k9opA==}
@@ -1444,6 +1450,8 @@ packages:
     engines: {node: '>=10'}
 
 snapshots:
+
+  '@breezystack/lamejs@1.2.7': {}
 
   '@esbuild/aix-ppc64@0.25.9':
     optional: true

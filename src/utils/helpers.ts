@@ -10,7 +10,7 @@ import {
   escapeMarkdownLegacyText,
   escapeMarkdownLegacyLinkUrl,
 } from '@/utils/formatting';
-import { spawn } from 'node:child_process';
+import * as lame from '@breezystack/lamejs';
 
 /**
  * [改进] 将标准 Markdown 格式文本转换为 Telegram 支持的 HTML 格式
@@ -452,54 +452,45 @@ export const shortenString = (input: string): string => {
   return `${headPart}\n\n......\n\n${tailPart}`;
 };
 
-export const pcmBufferToOggOpus = async (pcmBuf: Buffer, opts: { rate?: number; channels?: number; bitrate?: string } = {}): Promise<Buffer> => {
-  const rate = opts.rate ?? 24000;
-  const channels = opts.channels ?? 1;
-  const bitrate = opts.bitrate ?? '64k';
+/**
+ * 将 Gemini API 返回的原始 PCM (s16le, 24000Hz, 单声道) Buffer 转换为 MP3 Buffer。
+ *
+ * @param {Buffer} pcmBuffer 原始 PCM 音频数据的 Buffer。
+ * @returns 包含 MP3 格式音频数据的 Promise<Buffer>。
+ */
+export const convertPcmToMp3 = async (pcmBuffer: Buffer): Promise<Buffer> => {
+  const sampleRate = 24000; // Gemini API 返回的采样率
+  const channels = 1; // Gemini API 返回的声道数 (单声道)
+  const kbps = 128; // MP3 编码的比特率，可根据需求调整
 
-  return await new Promise<Buffer>((resolve, reject) => {
-    const args = [
-      '-f',
-      's16le', // input format: signed 16-bit little endian
-      '-ar',
-      String(rate), // input sample rate
-      '-ac',
-      String(channels),
-      '-i',
-      'pipe:0', // read PCM from stdin
-      '-c:a',
-      'libopus',
-      '-b:a',
-      bitrate,
-      '-vbr',
-      'on',
-      '-f',
-      'ogg',
-      'pipe:1', // write ogg to stdout
-    ];
+  // 创建 MP3 编码器
+  const mp3encoder = new lame.Mp3Encoder(channels, sampleRate, kbps);
 
-    const ff = spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+  // 将 Node.js Buffer 转换为 Int16Array
+  // `pcmBuffer.buffer` 获取底层的 ArrayBuffer，`pcmBuffer.byteOffset` 和 `pcmBuffer.length / 2`
+  // 用于确保视图正确地指向 PCM 数据。
+  const pcm16 = new Int16Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.length / 2);
 
-    const outChunks: Buffer[] = [];
-    const errChunks: Buffer[] = [];
+  const mp3Data: Buffer[] = [];
+  // MP3 编码通常以 1152 个样本为一帧
+  const samplesPerFrame = 1152;
 
-    ff.stdout.on('data', (c: Buffer) => outChunks.push(Buffer.from(c)));
-    ff.stderr.on('data', (c: Buffer) => errChunks.push(Buffer.from(c)));
+  // 分块编码 PCM 数据
+  for (let i = 0; i < pcm16.length; i += samplesPerFrame) {
+    const chunk = pcm16.subarray(i, i + samplesPerFrame);
+    const mp3buf = mp3encoder.encodeBuffer(chunk);
+    if (mp3buf.length > 0) {
+      mp3Data.push(Buffer.from(mp3buf));
+    }
+  }
 
-    ff.on('error', (err) => reject(new Error(`ffmpeg spawn error: ${String(err)}`)));
+  // 刷新编码器以获取剩余的数据
+  const mp3buf = mp3encoder.flush();
+  if (mp3buf.length > 0) {
+    mp3Data.push(Buffer.from(mp3buf));
+  }
 
-    ff.on('close', (code) => {
-      if (code !== 0) {
-        const errMsg = Buffer.concat(errChunks).toString() || `ffmpeg exited ${code}`;
-        return reject(new Error(`ffmpeg failed: ${errMsg}`));
-      }
-      resolve(Buffer.concat(outChunks));
-    });
-
-    // 写入 PCM 并结束 stdin
-    ff.stdin.write(pcmBuf);
-    ff.stdin.end();
-  });
+  return Buffer.concat(mp3Data);
 };
 
 export { markdownToHtml, markdownToMarkdownV2, markdownToLegacyMarkdown, formatTime, secureHex, sleep, rotateArray };

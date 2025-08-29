@@ -2,6 +2,7 @@
 
 import { BotConfig, Log, TelegramBot } from '@/services';
 import { formatTime } from '@/utils'; // 导入 helper 函数
+import { escapeHtml } from './formatting';
 
 /**
  * @function sendErrorNotification
@@ -18,10 +19,10 @@ const sendErrorNotification = async (error: Error, context: string = ''): Promis
       const errorMessage =
         `*🚨 [错误告警] 🚨*\n\n` +
         `*发生时间*: \`${currentTime}\`\n\n` +
-        `*错误上下文*: \`${context}\`\n\n` +
-        `*错误信息*: \`${error.message || String(error)}\`\n\n` +
+        `*错误上下文*: \`${escapeHtml(context)}\`\n\n` +
+        `*错误信息*: \`${escapeHtml(error.message || String(error))}\`\n\n` +
         `*堆栈追踪*:\n` +
-        `\`\`\`javascript\n${error.stack || 'N/A'}\n\`\`\``;
+        `\`\`\`javascript\n${escapeHtml(error.stack || 'N/A')}\n\`\`\``;
       await TelegramBot.sendMessage(adminId, errorMessage, 'HTML');
       Log.info('Error notification sent to admin.', { context, adminId });
     } else {

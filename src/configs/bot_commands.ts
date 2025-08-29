@@ -2,7 +2,7 @@
 
 import { BotConfig, TelegramBot, ChatContexts, Log, GeminiError, GeminiApi } from '@/services';
 import { geminiTools } from '@/configs';
-import { scheduleDeletion, sleep, KvNamespace, pcmBufferToOggOpus } from '@/utils';
+import { scheduleDeletion, sleep, KvNamespace, convertPcmToMp3 } from '@/utils';
 import type { BotCommandAction, CommandActionParams } from '@/types';
 import { GoogleGenAI, type Content, type GenerateContentConfig, type Part } from '@google/genai';
 
@@ -221,15 +221,18 @@ export const botCommands: BotCommandAction[] = [
         if (!candidate || !candidate.content || !candidate.content.parts) {
           throw new GeminiError('Gemini API 返回结果不包含有效内容', 'INVALID_RESPONSE', false);
         }
-        const parts = candidate.content.parts;
-        const audioData = parts.find((part) => part.inlineData);
-        if (!audioData) {
+        const responseParts = candidate.content.parts; // 重命名以避免与外部 parts 变量冲突
+        const audioData = responseParts.find((part) => part.inlineData);
+        if (!audioData || !audioData.inlineData?.data) {
+          // 增加对 data 存在的检查
           throw new GeminiError('Gemini API 未返回音频数据', 'INVALID_RESPONSE', false);
         }
-        const base64Data = audioData.inlineData?.data as string;
-        const pcmBuf = Buffer.from(base64Data, 'base64');
-        const oggBuf = await pcmBufferToOggOpus(pcmBuf, { rate: 24000, channels: 1, bitrate: '64k' });
-        const result = await TelegramBot.sendVoice(chatId, oggBuf, messageId);
+        const base64Data = audioData.inlineData.data as string;
+        const pcmAudioBuffer = Buffer.from(base64Data, 'base64');
+        Log.info('开始将 PCM 音频数据转换为 MP3...');
+        const mp3AudioBuffer = await convertPcmToMp3(pcmAudioBuffer);
+        Log.info('MP3 音频数据转换完成。');
+        const result = await TelegramBot.sendVoice(chatId, mp3AudioBuffer, messageId); // 发送转换后的 MP3 Buffer
         if (result.ok) {
           void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1000);
         }

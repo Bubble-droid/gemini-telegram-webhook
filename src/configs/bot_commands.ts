@@ -2,10 +2,9 @@
 
 import { BotConfig, TelegramBot, ChatContexts, Log, GeminiError, GeminiApi } from '@/services';
 import { geminiTools } from '@/configs';
-import { scheduleDeletion, sleep, KvNamespace, shortenString } from '@/utils';
+import { scheduleDeletion, sleep, KvNamespace } from '@/utils';
 import type { BotCommandAction, CommandActionParams } from '@/types';
 import { GoogleGenAI, type Content, type GenerateContentConfig, type Part } from '@google/genai';
-import { escapeHtml } from '@/utils/formatting';
 
 /**
  * @constant botCommands
@@ -126,13 +125,13 @@ export const botCommands: BotCommandAction[] = [
             })),
           },
         });
-        const candidate = response.candidates?.[0];
-        if (!candidate || !candidate.content || !candidate.content.parts) {
-          throw new GeminiError('Gemini API 返回结果不包含有效的 candidate 或 content', 'INVALID_RESPONSE', false);
-        }
         if (renderMessageId) {
           await TelegramBot.deleteMessage(chatId, renderMessageId);
           renderMessageId = undefined;
+        }
+        const candidate = response.candidates?.[0];
+        if (!candidate || !candidate.content || !candidate.content.parts) {
+          throw new GeminiError('Gemini API 返回结果不包含有效的内容', 'INVALID_RESPONSE', false);
         }
         const parts = candidate.content.parts;
         const resTexts = parts.map((part) => part.text).join('');
@@ -141,16 +140,101 @@ export const botCommands: BotCommandAction[] = [
           throw new GeminiError('Gemini API 未返回图片数据', 'INVALID_RESPONSE', false);
         }
         const base64Data = imageData.inlineData?.data as string;
-        const buffer = Buffer.from(base64Data, 'base64');
-        const shorten = shortenString(resTexts);
-        const quoteCaption = `<blockquote expandable>${escapeHtml(shorten)}</blockquote>`;
-        const result = await TelegramBot.sendPhoto(chatId, buffer, quoteCaption, 'HTML', messageId, false);
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+        const result = await TelegramBot.sendPhoto(chatId, imageBuffer, resTexts, messageId);
         if (result.ok) {
-          void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 30 * 60 * 1000);
+          void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1000);
         }
       } catch (error: unknown) {
         if (renderMessageId) {
           await TelegramBot.deleteMessage(chatId, renderMessageId);
+        }
+        const errorMessage = error instanceof GeminiError ? error.message : String(error);
+        throw new GeminiError(errorMessage, 'API_CLIENT_ERROR', false);
+      }
+    },
+  },
+  {
+    name: 'exp_spch_gen',
+    description: '生成语音',
+    action: async (params: CommandActionParams) => {
+      Log.info('Executing /exp_spch_gen command.');
+      const { chatId, messageId, message } = params;
+      const { durableResourceId, geminiApiKeysKeyName, botName } = BotConfig.load();
+      const apiKeys = await KvNamespace.read<[string, string][]>(durableResourceId, geminiApiKeysKeyName, 'json');
+      if (!apiKeys || apiKeys.length === 0) {
+        throw new GeminiError('未找到有效的 API 密钥，请检查配置。', 'GEMINI_API_KEY_NOT_FOUND', false);
+      }
+      const [apiKey, apiKeyId] = apiKeys[Math.floor(Math.random() * apiKeys.length)];
+      const ai = new GoogleGenAI({ apiKey });
+      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
+      const contents: Content[] = [];
+      const parts: Part[] = [];
+      const config: GenerateContentConfig = {
+        responseModalities: ['AUDIO'],
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Leda' } }, languageCode: 'cmn-CN' },
+        safetySettings: GeminiApi.SAFETY_SETTINGS,
+      };
+      const messageText = (message.text || message.caption) as string;
+      const cleanText = messageText.replace(`/exp_spch_gen@${botName}`, '').trim();
+      if (!cleanText) throw new GeminiError(`没有有效的语音生成提示`, `NO_SPEECH_DESCRIPTION`);
+      parts.push({ text: cleanText });
+      contents.push({
+        role: 'user',
+        parts,
+      });
+      let synthMessageId: number | undefined = undefined;
+      const synthResult = await TelegramBot.sendMessage(chatId, `🎙 Synthesizing...`, 'HTML', messageId);
+      if (synthResult.ok) {
+        synthMessageId = synthResult.messageId;
+      }
+      try {
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-preview-tts',
+          contents,
+          config,
+        });
+        Log.info(`Gemini API 响应: `, {
+          response: {
+            ...response,
+            candidates: response.candidates?.map((candidate) => ({
+              ...candidate,
+              content: {
+                ...candidate.content,
+                parts: candidate.content?.parts?.map((part) => {
+                  if (part.inlineData && part.inlineData.data) {
+                    return { ...part, inlineData: { ...part.inlineData, data: 'BASE64_ENCODED_DATA' } };
+                  } else if (part.text) {
+                    return { ...part, text: 'TEXT_CONTENT' };
+                  }
+                  return part;
+                }),
+              },
+            })),
+          },
+        });
+        if (synthMessageId) {
+          await TelegramBot.deleteMessage(chatId, synthMessageId);
+          synthMessageId = undefined;
+        }
+        const candidate = response.candidates?.[0];
+        if (!candidate || !candidate.content || !candidate.content.parts) {
+          throw new GeminiError('Gemini API 返回结果不包含有效内容', 'INVALID_RESPONSE', false);
+        }
+        const parts = candidate.content.parts;
+        const audioData = parts.find((part) => part.inlineData);
+        if (!audioData) {
+          throw new GeminiError('Gemini API 未返回音频数据', 'INVALID_RESPONSE', false);
+        }
+        const base64Data = audioData.inlineData?.data as string;
+        const audioBuffer = Buffer.from(base64Data, 'base64');
+        const result = await TelegramBot.sendVoice(chatId, audioBuffer, messageId);
+        if (result.ok) {
+          void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1000);
+        }
+      } catch (error: unknown) {
+        if (synthMessageId) {
+          await TelegramBot.deleteMessage(chatId, synthMessageId);
         }
         const errorMessage = error instanceof GeminiError ? error.message : String(error);
         throw new GeminiError(errorMessage, 'API_CLIENT_ERROR', false);

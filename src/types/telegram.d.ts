@@ -326,6 +326,19 @@ export interface SendPhotoParams {
 
 export type SendPhotoResult = Message;
 
+export interface SendVoiceParams {
+  chat_id: number | string;
+  voice: Buffer;
+  caption?: string;
+  parse_mode?: ParseMode;
+  caption_entities?: MessageEntity[];
+  duration?: number;
+  protect_content?: boolean;
+  reply_parameters?: ReplyParameters;
+}
+
+export type SendVoiceResult = Message;
+
 export interface EditMessageTextParams {
   chat_id: number | string;
   message_id: number;
@@ -416,6 +429,7 @@ export type GetChatMemberResult = ChatMember;
 export type TelegramApiMethod =
   | 'sendMessage'
   | 'sendPhoto'
+  | 'sendVoice'
   | 'editMessageText'
   | 'deleteMessage'
   | 'deleteMessages'

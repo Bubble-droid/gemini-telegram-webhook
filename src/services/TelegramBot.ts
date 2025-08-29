@@ -21,8 +21,11 @@ import type {
   GetChatMemberParams,
   SendPhotoParams,
   SendPhotoResult,
+  SendVoiceParams,
+  SendVoiceResult,
 } from '@/types';
-import { markdownToHtml } from '@/utils';
+import { markdownToHtml, shortenString } from '@/utils';
+import { escapeHtml } from '@/utils/formatting';
 
 /**
  * @class TelegramBot
@@ -168,15 +171,15 @@ export class TelegramBot {
     chatId: number | string,
     photoBuffer: Buffer,
     caption?: string,
-    parseMode?: ParseMode,
     replyToMessageId?: number,
-    isFormat: boolean = true,
   ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
+    const shorten = shortenString(String(caption));
+    const quoteCaption = `<blockquote expandable>${escapeHtml(shorten)}</blockquote>`;
     const payload: SendPhotoParams = {
       chat_id: chatId,
       photo: photoBuffer,
-      caption: isFormat && caption ? markdownToHtml(caption) : caption,
-      parse_mode: parseMode,
+      caption: quoteCaption,
+      parse_mode: 'HTML',
       show_caption_above_media: true,
       reply_parameters: replyToMessageId
         ? {
@@ -207,7 +210,48 @@ export class TelegramBot {
       Log.error('Error sending Telegram photo message', {
         err: error as Error,
         chatId,
-        text: payload.caption?.substring(0, 100) + '...',
+      });
+      return {
+        ok: false,
+        error: error as TelegramError,
+      };
+    }
+  }
+
+  public static async sendVoice(
+    chatId: number | string,
+    voiceBuffer: Buffer,
+    replyToMessageId?: number,
+  ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
+    const payload: SendVoiceParams = {
+      chat_id: chatId,
+      voice: voiceBuffer,
+      reply_parameters: replyToMessageId
+        ? {
+            message_id: replyToMessageId,
+            allow_sending_without_reply: true,
+          }
+        : undefined,
+    };
+    const voiceBlob = new Blob([payload.voice], { type: 'audio/mpeg' });
+    const formData = new FormData();
+    formData.append('chat_id', payload.chat_id);
+    formData.append('photo', voiceBlob, `gemini_gen_spch.mp3`);
+    formData.append('reply_parameters', JSON.stringify(payload.reply_parameters));
+    try {
+      const result = await TelegramBot.sendRequest<FormData, SendVoiceResult>('POST', 'sendVoice', formData, true);
+      Log.info('Telegram voice message sent successfully.', {
+        chatId,
+        messageId: result.message_id,
+      });
+      return {
+        ok: true,
+        messageId: result.message_id,
+      };
+    } catch (error: unknown) {
+      Log.error('Error sending Telegram voice message', {
+        err: error as Error,
+        chatId,
       });
       return {
         ok: false,

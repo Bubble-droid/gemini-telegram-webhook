@@ -22,7 +22,7 @@ pnpm-workspace.yaml
 .vercel/
 
 
-resources/gemini_api_keys.json
+resources/_gemini_api_keys.json
 resources/system_prompt.md.bak
 .roo/
 

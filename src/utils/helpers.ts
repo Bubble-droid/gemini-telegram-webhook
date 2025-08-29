@@ -442,4 +442,27 @@ const rotateArray = <T>(arr: readonly T[], steps: number = 1, direction: 'left' 
   return arr.slice(actualSteps).concat(arr.slice(0, actualSteps));
 };
 
+/**
+ * @param input 要简化的字符串
+ * @returns 简化后的字符串或原字符串
+ */
+export const shortenString = (input: string): string => {
+  const MAX = 4096;
+  const HEAD = 2000;
+  const TAIL = 2000;
+
+  if (typeof input !== 'string') {
+    throw new TypeError('input must be a string');
+  }
+
+  // 使用 Array.from 保持对 Unicode 代码点（包括 emoji）的正确处理
+  const chars = Array.from(input);
+
+  if (chars.length <= MAX) return input;
+
+  const headPart = chars.slice(0, HEAD).join('');
+  const tailPart = chars.slice(chars.length - TAIL).join('');
+  return `${headPart}\n\n......\n\n${tailPart}`;
+};
+
 export { markdownToHtml, markdownToMarkdownV2, markdownToLegacyMarkdown, formatTime, secureHex, sleep, rotateArray };

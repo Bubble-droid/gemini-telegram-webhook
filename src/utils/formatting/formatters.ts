@@ -137,10 +137,10 @@ const formatToMarkdownV2 = (markdownText: string): string => {
   // 注意：需要确保不匹配到 __下划线__ 的情况。
   // (?<!_)_ 匹配前面不是_的_  (?!_)匹配后面不是_的_
   // (?<!\s)匹配前面不是空格的  (?!\s)匹配后面不是空格的
-  processedText = processedText.replace(/(?<!_)_(?!_)(?!\s)(.*?)(?<!\s)_(?!_)/g, (match, content: string): string => {
-    const escapedContent = escapeMarkdownV2Text(content);
-    return `_${escapedContent}_`;
-  });
+  // processedText = processedText.replace(/(?<!_)_(?!_)(?!\s)(.*?)(?<!\s)_(?!_)/g, (match, content: string): string => {
+  //   const escapedContent = escapeMarkdownV2Text(content);
+  //   return `_${escapedContent}_`;
+  // });
 
   // 9. 引用块 (> 引用内容) 和 可展开引用块 (>> 可展开引用内容)
   // Telegram MV2 对这两种都使用 "> " 前缀。内容不应被转义，因为转义规则适用于文本，而非块引用本身。
@@ -236,10 +236,10 @@ const formatToHtml = (markdownText: string): string => {
 
   // 8. 斜体 (_斜体_) - 内容转义，包裹在 <i> 标签中
   // 同MV2，确保不匹配到 __下划线__ 的情况。
-  processedText = processedText.replace(/(?<!_)_(?!_)(?!\s)(.*?)(?<!\s)_(?!_)/g, (match, content: string): string => {
-    const escapedContent = escapeHtml(content);
-    return `<i>${escapedContent}</i>`;
-  });
+  // processedText = processedText.replace(/(?<!_)_(?!_)(?!\s)(.*?)(?<!\s)_(?!_)/g, (match, content: string): string => {
+  //   const escapedContent = escapeHtml(content);
+  //   return `<i>${escapedContent}</i>`;
+  // });
 
   // 9. 引用块 (> 引用内容) 和 可展开引用块 (>> 可展开引用块)
   // HTML 引用块需要将连续的引用行合并到一个 <blockquote> 标签中。
@@ -344,10 +344,10 @@ const formatToMarkdownLegacy = (markdownText: string): string => {
   });
 
   // 5. 斜体 (_斜体_) -> Telegram Legacy 的 _斜体_ - 内容转义普通字符
-  processedText = processedText.replace(/(?<!_)_(?!_)(?!\s)(.*?)(?<!\s)_(?!_)/g, (match, content: string): string => {
-    const innerContent = escapeMarkdownLegacyText(content);
-    return `_${innerContent}_`;
-  });
+  // processedText = processedText.replace(/(?<!_)_(?!_)(?!\s)(.*?)(?<!\s)_(?!_)/g, (match, content: string): string => {
+  //   const innerContent = escapeMarkdownLegacyText(content);
+  //   return `_${innerContent}_`;
+  // });
 
   // 6. 下划线 (__下划线__) - Legacy 不支持，移除标记，内容转义
   processedText = processedText.replace(/__(.*?)__/g, (match, content: string): string => {

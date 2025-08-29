@@ -1,10 +1,11 @@
 // src/configs/bot_commands.ts
 
-import { BotConfig, TelegramBot, ChatContexts, Log, GeminiError } from '@/services';
+import { BotConfig, TelegramBot, ChatContexts, Log, GeminiError, GeminiApi } from '@/services';
 import { geminiTools } from '@/configs';
-import { scheduleDeletion, sleep, KvNamespace, markdownToHtml } from '@/utils';
-import type { BotCommandAction, CommandActionParams, Message, MessageEntity, SendPhotoParams, SendPhotoResult, TelegramApiResponse } from '@/types';
-import { GoogleGenAI, HarmBlockThreshold, HarmCategory, type Content, type GenerateContentConfig, type Part } from '@google/genai';
+import { scheduleDeletion, sleep, KvNamespace, shortenString } from '@/utils';
+import type { BotCommandAction, CommandActionParams } from '@/types';
+import { GoogleGenAI, type Content, type GenerateContentConfig, type Part } from '@google/genai';
+import { escapeHtml } from '@/utils/formatting';
 
 /**
  * @constant botCommands
@@ -61,9 +62,9 @@ export const botCommands: BotCommandAction[] = [
       const toolsText = `🛠 我可以使用以下工具：\n\n${toolList}`;
       const toolsResult = await TelegramBot.sendMessage(chatId, toolsText, 'HTML', messageId);
       if (toolsResult.ok) {
-        void scheduleDeletion({ chat_id: chatId, message_id: toolsResult.messageId }, 10 * 60_000);
+        void scheduleDeletion({ chat_id: chatId, message_id: toolsResult.messageId }, 5 * 60_000);
       }
-      void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 10 * 60_000);
+      void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 5 * 60_000);
     },
   },
   {
@@ -72,12 +73,12 @@ export const botCommands: BotCommandAction[] = [
     action: async (params: CommandActionParams) => {
       Log.info('Executing /exp_img_gen command.');
       const { chatId, messageId, message } = params;
-      const { durableResourceId, geminiApiKeysKeyName, botToken, botApiUrl } = BotConfig.load();
+      const { durableResourceId, geminiApiKeysKeyName, botName } = BotConfig.load();
       const apiKeys = await KvNamespace.read<[string, string][]>(durableResourceId, geminiApiKeysKeyName, 'json');
       if (!apiKeys || apiKeys.length === 0) {
         throw new GeminiError('未找到有效的 API 密钥，请检查配置。', 'GEMINI_API_KEY_NOT_FOUND', false);
       }
-      const [apiKey, apiKeyId] = apiKeys[0];
+      const [apiKey, apiKeyId] = apiKeys[Math.floor(Math.random() * apiKeys.length)];
       const ai = new GoogleGenAI({ apiKey });
       Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
       const contents: Content[] = [];
@@ -85,76 +86,16 @@ export const botCommands: BotCommandAction[] = [
       const config: GenerateContentConfig = {
         responseModalities: ['IMAGE', 'TEXT'],
         temperature: 1.0,
-        safetySettings: [
-          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
-        ],
+        safetySettings: GeminiApi.SAFETY_SETTINGS,
       };
-      const systemInstruction = `## SYSTEM PROTOCOL: AI UI/UX VISUALIZATION ENGINE ##
-
-# 1. FUNCTION
-Your sole function is to serve as an advanced AI-powered UI/UX visualization and rendering engine. You translate UI source code and natural language design directives into a high-fidelity, photorealistic visual mockup of a software interface. Your purpose is not to chat, but to create.
-
-# 2. EXECUTION FLOW
-1.  **Receive Inputs**: You will be provided with \`[UI Source Code]\` (e.g., HTML/CSS, React/Vue components, Swift UI, Android XML) and natural language \`[Design Directives]\` (e.g., theme, color palette, target audience, desired style).
-2.  **Structural Analysis**: First, meticulously parse the \`[UI Source Code]\`. Identify every component, its properties, and the hierarchical layout. This structural map is the unbreakable foundation for the render.
-3.  **Aesthetic Interpretation**: Next, apply the user's \`[Design Directives]\`. Augment these with your internal knowledge of modern UI/UX design principles, including typography, color theory, spacing (e.g., 8pt grid system), accessibility standards, and current design trends (e.g., Neumorphism, Glassmorphism, Flat Design).
-4.  **Synthesize & Render**: Finally, merge the structural analysis with the aesthetic interpretation to generate a single, polished, and elegant UI interface image.
-
-# 3. RENDERING PRINCIPLES
-* **Structural Fidelity**: ABSOLUTE PRIORITY. The generated image's layout, components, and content hierarchy MUST be a direct visual representation of the provided \`[UI Source Code]\`. If the code specifies a header, a sidebar, and a content area, the image must show exactly that structure.
-* **Layout & Component Accuracy**: All UI elements (buttons, inputs, cards, menus) must be rendered accurately and appear functional. Their placement, alignment, and spacing must be precise and intentional. When a platform is implied (e.g., SwiftUI code), components should adhere to that platform's native design language unless otherwise directed.
-* **Modern Aesthetics**: The final image must be beautiful, elegant, and modern. This is achieved through:
-    * **Clean Typography**: Use well-regarded UI fonts with appropriate size, weight, and hierarchy.
-    * **Consistent Spacing**: Employ ample white space and a consistent layout grid to ensure clarity and balance.
-    * **Harmonious Colors**: Create or apply a professional color palette that enhances usability.
-    * **Subtle Effects**: Use shadows, gradients, and borders tastefully to create depth and define interactivity.
-* **Directive Adherence**: You MUST follow all explicit user \`[Design Directives]\`. If the user asks for a "dark mode with a primary color of #5B21B6", this must be the core of the visual theme.
-* **Plausibility & Detail**: The UI should feel real. Use high-quality, context-appropriate placeholder icons (e.g., a gear icon for settings). Populate text fields with realistic placeholder text (e.g., "john.doe@email.com") instead of just "Lorem Ipsum". Image containers should feature high-quality, thematic placeholder images.
-
-# 4. OUTPUT CONSTRAINTS
-* **Primary Output**: The output MUST be the generated UI image and nothing else.
-* **Secondary Output (Optional but Encouraged)**: After the image, you may provide a brief, structured "Design Rationale" in Markdown. This adds value by explaining your choices.
-    * Example:
-        \`\`\`
-        **Design Rationale:**
-        * **Theme:** Dark Mode, as requested.
-        * **Palette:** A deep purple primary (#5B21B6) was used for interactive elements to create strong contrast and a modern feel.
-        * **Typography:** Used "Inter" font for its excellent screen readability.
-        * **Key Choices:** Added subtle inner shadows to input fields to enhance the sense of depth and interactivity.
-        \`\`\`
-* **Prohibitions**: Do not include any conversational intros ("Here is the UI I designed for you..."), postscripts, or apologies. The process is entirely functional.
-
----
-Engine activated. Awaiting UI source code and design directives.`;
-
       const messageText = (message.text || message.caption) as string;
-      const messageEntities = (message.entities || message.caption_entities) as MessageEntity[];
-      const commandEntity = messageEntities.find((entity) => entity.type === 'bot_command') as MessageEntity;
-      const commandText = messageText.substring(commandEntity.offset, commandEntity.offset + commandEntity.length);
-      const cleanText = messageText.replace(commandText, '').trim();
-      parts.push({ text: systemInstruction });
-      if (message.document) {
-        const { file_id } = message.document;
-        const result = await TelegramBot.getFile(file_id);
-        if (result.ok) {
-          const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
-          const res = await fetch(fileUrl, { method: 'GET' });
-          const fileContents = await res.text();
-          parts.push({ text: fileContents });
-        }
-      }
-      if (messageText) {
-        parts.push({ text: cleanText });
-      }
+      const cleanText = messageText.replace(`/exp_img_gen@${botName}`, '').trim();
+      if (!cleanText) throw new GeminiError(`没有有效的图片生成提示`, `NO_IMAGE_DESCRIPTION`);
+      parts.push({ text: cleanText });
       contents.push({
         role: 'user',
         parts,
       });
-
       let renderMessageId: number | undefined = undefined;
       const renderResult = await TelegramBot.sendMessage(chatId, `🎨 Rendering...`, 'HTML', messageId);
       if (renderResult.ok) {
@@ -165,6 +106,25 @@ Engine activated. Awaiting UI source code and design directives.`;
           model: 'gemini-2.0-flash-preview-image-generation',
           contents,
           config,
+        });
+        Log.info(`Gemini API 响应: `, {
+          response: {
+            ...response,
+            candidates: response.candidates?.map((candidate) => ({
+              ...candidate,
+              content: {
+                ...candidate.content,
+                parts: candidate.content?.parts?.map((part) => {
+                  if (part.inlineData && part.inlineData.data) {
+                    return { ...part, inlineData: { ...part.inlineData, data: 'BASE64_ENCODED_DATA' } };
+                  } else if (part.text) {
+                    return { ...part, text: 'TEXT_CONTENT' };
+                  }
+                  return part;
+                }),
+              },
+            })),
+          },
         });
         const candidate = response.candidates?.[0];
         if (!candidate || !candidate.content || !candidate.content.parts) {
@@ -182,32 +142,11 @@ Engine activated. Awaiting UI source code and design directives.`;
         }
         const base64Data = imageData.inlineData?.data as string;
         const buffer = Buffer.from(base64Data, 'base64');
-        const payload: SendPhotoParams = {
-          chat_id: chatId,
-          photo: buffer,
-          caption: markdownToHtml(resTexts),
-          parse_mode: 'HTML',
-          show_caption_above_media: true,
-          reply_parameters: {
-            message_id: messageId,
-            allow_sending_without_reply: true,
-          },
-        };
-        const formData = new FormData();
-        formData.append('chat_id', payload.chat_id);
-        formData.append('photo', new Blob([payload.photo], { type: 'image/png' }), `gemini_gen_img.png`);
-        formData.append('caption', payload.caption);
-        formData.append('parse_mode', payload.parse_mode);
-        formData.append('show_caption_above_media', String(payload.show_caption_above_media));
-        formData.append('reply_parameters', JSON.stringify(payload.reply_parameters));
-        const url = `${botApiUrl}/sendPhoto`;
-        const res = await fetch(url, {
-          method: 'POST',
-          body: formData,
-        });
-        const result = (await res.json()) as TelegramApiResponse<SendPhotoResult>;
+        const shorten = shortenString(resTexts);
+        const quoteCaption = `<blockquote expandable>${escapeHtml(shorten)}</blockquote>`;
+        const result = await TelegramBot.sendPhoto(chatId, buffer, quoteCaption, 'HTML', messageId, false);
         if (result.ok) {
-          void scheduleDeletion({ chat_id: chatId, message_id: result.result.message_id }, 24 * 60 * 60 * 1000);
+          void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 30 * 60 * 1000);
         }
       } catch (error: unknown) {
         if (renderMessageId) {

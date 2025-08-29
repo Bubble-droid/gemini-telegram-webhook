@@ -314,7 +314,7 @@ export type SendMessageResult = Message;
 
 export interface SendPhotoParams {
   chat_id: number | string;
-  photo: string | Buffer;
+  photo: Buffer;
   caption?: string;
   parse_mode?: ParseMode;
   caption_entities?: MessageEntity[];
@@ -415,6 +415,7 @@ export type GetChatMemberResult = ChatMember;
 
 export type TelegramApiMethod =
   | 'sendMessage'
+  | 'sendPhoto'
   | 'editMessageText'
   | 'deleteMessage'
   | 'deleteMessages'

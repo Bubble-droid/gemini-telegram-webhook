@@ -53,7 +53,7 @@ const handleUpdate = async (update: Update): Promise<void> => {
     const errorMessage: string = err instanceof Error ? err.message : String(err);
     const errorResult = await TelegramBot.sendMessage(message.chat.id, `❌ ${errorMessage}`, 'HTML', message_id);
     if (errorResult.ok) {
-      void scheduleDeletion({ chat_id: chat.id, message_id: errorResult.messageId }, 5 * 60_000);
+      void scheduleDeletion({ chat_id: chat.id, message_id: errorResult.messageId }, 3 * 60_000);
     }
   }
 };

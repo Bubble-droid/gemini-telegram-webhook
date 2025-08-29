@@ -1,10 +1,10 @@
 // src/services/GeminiApi.ts
 
 import { GoogleGenAI, FunctionCallingConfigMode, HarmCategory, HarmBlockThreshold } from '@google/genai';
-import type { Content, GenerateContentConfig, GenerateContentResponse, Part } from '@google/genai';
+import type { Content, GenerateContentConfig, GenerateContentResponse, Part, SafetySetting } from '@google/genai';
 import { BotConfig, GeminiError, Log, TelegramBot, ToolExecutors } from '@/services';
 import { geminiTools } from '@/configs';
-import { KvNamespace, rotateArray, sleep } from '@/utils';
+import { KvNamespace, rotateArray, shortenString, sleep } from '@/utils';
 import { escapeHtml } from '@/utils/formatting';
 import type { ChatParams, GenerateContentSuccessResponse, ApiCallContext, ToolExecArgs } from '@/types';
 
@@ -16,6 +16,13 @@ export class GeminiApi {
   // 定义最大无效回复和客户端错误重试次数，以及基础重试延迟
   private static readonly MAX_RETRIES_COMMON: number = 3; // 无效回复和客户端错误共用最大重试次数
   private static readonly BASE_RETRY_DELAY_MS: number = 10_000; // 10 秒
+  public static readonly SAFETY_SETTINGS: SafetySetting[] = [
+    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
+  ];
 
   /**
    * 初始化 API 调用所需的配置和状态上下文。
@@ -53,13 +60,7 @@ export class GeminiApi {
         },
       },
       responseMimeType: 'text/plain',
-      safetySettings: [
-        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
-      ],
+      safetySettings: GeminiApi.SAFETY_SETTINGS,
       systemInstruction: [{ text: systemPrompt }],
     };
 
@@ -222,13 +223,7 @@ export class GeminiApi {
       if (thoughtTexts) {
         context.metrics.hasToolThoughts = true;
         // 截断思考文本以适应 Telegram 消息长度限制
-        const displayThoughtText = (() => {
-          const strArr = Array.from(thoughtTexts);
-          if (strArr.length > 4096) {
-            return `${strArr.slice(0, 2000).join('')}\n\n......\n\n${strArr.slice(strArr.length - 2000).join('')}`.trim();
-          }
-          return thoughtTexts;
-        })();
+        const displayThoughtText = shortenString(thoughtTexts);
         // 如果存在 thinkMessageId，更新 Telegram 消息
         if (context.thinkMessageId !== undefined) {
           await TelegramBot.editMessageText(

@@ -22,7 +22,7 @@ COPY --from=build /app/dist /app/dist
 COPY --from=build /app/package-docker.json /app/package.json
 
 # 复制 sing-box 配置
-COPY ./.temp/sing-box-1.12.3-linux-amd64/sing-box /usr/bin/sing-box
+COPY ./proxy/sing-box /usr/bin/sing-box
 RUN chmod +x /usr/bin/sing-box
 
 COPY ./proxy/sing-box-config.json /etc/sing-box/config.json
@@ -38,4 +38,3 @@ RUN npm install
 EXPOSE 39001
 
 CMD ["/usr/local/bin/docker-entrypoint.sh"]
-# CMD ["node", "--enable-source-maps", "/app/dist/index.js"]

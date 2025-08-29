@@ -19,6 +19,8 @@ import type {
   DeleteMessagesParams,
   GetChatMemberResult,
   GetChatMemberParams,
+  SendPhotoParams,
+  SendPhotoResult,
 } from '@/types';
 import { markdownToHtml } from '@/utils';
 
@@ -35,16 +37,20 @@ export class TelegramBot {
    * @param {P} body - 请求体参数
    * @returns {Promise<T>} API 响应对象
    */
-  private static async sendRequest<P, T>(httpMethod: HttpMethod, apiMethod: TelegramApiMethod, body: P): Promise<T> {
+  private static async sendRequest<P, T>(httpMethod: HttpMethod, apiMethod: TelegramApiMethod, body: P, isFormData: boolean = false): Promise<T> {
     const { botApiUrl } = BotConfig.load();
     const url = `${botApiUrl}/${apiMethod}`;
     try {
       const response = await fetch(url, {
         method: String(httpMethod).toUpperCase(),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
+        ...(isFormData
+          ? {}
+          : {
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            }),
+        body: isFormData ? (body as FormData) : JSON.stringify(body),
       });
 
       const parsed = (await response.json()) as TelegramApiResponse<T>;
@@ -54,7 +60,6 @@ export class TelegramBot {
         const errCode = `API_FAILED_${String(apiMethod).toUpperCase()}_${response.status}`;
         Log.error(`Telegram API request failed for ${apiMethod}`, {
           apiMethod,
-          requestBody: body,
           statusCode: response.status,
           responseBody: parsed,
           customError: new TelegramError(`Telegram API error: ${desc}`, errCode),
@@ -68,7 +73,6 @@ export class TelegramBot {
         const errCode = `HTTP_ERROR_${response.status}`;
         Log.error(`Telegram API request failed for ${apiMethod}`, {
           apiMethod,
-          requestBody: body,
           statusCode: response.status,
           responseBody: parsed,
           customError: new TelegramError(desc, errCode),
@@ -86,7 +90,6 @@ export class TelegramBot {
       }
       Log.error(`Error sending request to ${apiMethod}`, {
         apiMethod,
-        requestBody: body,
         err: error as Error,
         customError: new TelegramError(
           `Network error sending request to ${apiMethod}: ${error instanceof Error ? error.message : String(error)}`,
@@ -105,6 +108,7 @@ export class TelegramBot {
    * 向指定聊天发送文本消息。
    * @param {number} chatId - 接收消息的聊天 ID。
    * @param {string} text - 要发送的文本内容。
+   * @param {ParseMode} parseMode
    * @param {number} [replyToMessageId] - 可选参数：如果此消息是对特定消息的回复，则指定被回复消息的 ID。
    * @returns {Promise<{ ok: boolean; messageId?: number }>} 消息发送成功返回 `true`，否则返回 `false`。
    */
@@ -144,6 +148,66 @@ export class TelegramBot {
         err: error as Error,
         chatId,
         text: text.substring(0, 100) + '...',
+      });
+      return {
+        ok: false,
+        error: error as TelegramError,
+      };
+    }
+  }
+
+  /**
+   * @param chatId
+   * @param photoBuffer
+   * @param caption
+   * @param parseMode
+   * @param replyToMessageId
+   * @param isFormat
+   */
+  public static async sendPhoto(
+    chatId: number | string,
+    photoBuffer: Buffer,
+    caption?: string,
+    parseMode?: ParseMode,
+    replyToMessageId?: number,
+    isFormat: boolean = true,
+  ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
+    const payload: SendPhotoParams = {
+      chat_id: chatId,
+      photo: photoBuffer,
+      caption: isFormat && caption ? markdownToHtml(caption) : caption,
+      parse_mode: parseMode,
+      show_caption_above_media: true,
+      reply_parameters: replyToMessageId
+        ? {
+            message_id: replyToMessageId,
+            allow_sending_without_reply: true,
+          }
+        : undefined,
+    };
+    const photoBlob = new Blob([payload.photo], { type: 'image/png' });
+    const formData = new FormData();
+    formData.append('chat_id', payload.chat_id);
+    formData.append('photo', photoBlob, `gemini_gen_img.png`);
+    formData.append('caption', payload.caption);
+    formData.append('parse_mode', payload.parse_mode);
+    formData.append('show_caption_above_media', String(payload.show_caption_above_media));
+    formData.append('reply_parameters', JSON.stringify(payload.reply_parameters));
+    try {
+      const result = await TelegramBot.sendRequest<FormData, SendPhotoResult>('POST', 'sendPhoto', formData, true);
+      Log.info('Telegram photo message sent successfully.', {
+        chatId,
+        messageId: result.message_id,
+      });
+      return {
+        ok: true,
+        messageId: result.message_id,
+      };
+    } catch (error: unknown) {
+      Log.error('Error sending Telegram photo message', {
+        err: error as Error,
+        chatId,
+        text: payload.caption?.substring(0, 100) + '...',
       });
       return {
         ok: false,

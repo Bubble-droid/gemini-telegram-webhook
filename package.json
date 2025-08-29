@@ -23,7 +23,7 @@
     "clean": "rm -rf dist",
     "dev": "tsx --env-file=.env --watch ./src/server.ts",
     "build:server": "pnpm run clean && pnpm run typecheck && pnpm run lint && vite build --config vite.config.ts",
-    "build:docker": "docker buildx build --push --platform linux/amd64 -t seamao/gemini-telegram-webhook:latest .",
+    "build:docker": "docker buildx build --platform linux/amd64 -t gemini-telegram-webhook:latest .",
     "start": "node --enable-source-maps --env-file=.env dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --fix",

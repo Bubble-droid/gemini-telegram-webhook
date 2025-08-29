@@ -461,7 +461,7 @@ export const shortenString = (input: string): string => {
 export const convertPcmToMp3 = async (pcmBuffer: Buffer): Promise<Buffer> => {
   const sampleRate = 24000; // Gemini API 返回的采样率
   const channels = 1; // Gemini API 返回的声道数 (单声道)
-  const kbps = 128; // MP3 编码的比特率，可根据需求调整
+  const kbps = 256; // MP3 编码的比特率，可根据需求调整
 
   // 创建 MP3 编码器
   const mp3encoder = new lame.Mp3Encoder(channels, sampleRate, kbps);

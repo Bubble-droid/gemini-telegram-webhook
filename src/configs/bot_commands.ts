@@ -84,12 +84,16 @@ export const botCommands: BotCommandAction[] = [
       const parts: Part[] = [];
       const config: GenerateContentConfig = {
         responseModalities: ['IMAGE', 'TEXT'],
-        temperature: 1.0,
         safetySettings: GeminiApi.SAFETY_SETTINGS,
       };
       const messageText = (message.text || message.caption) as string;
       const cleanText = messageText.replace(`/exp_img_gen@${botName}`, '').trim();
-      if (!cleanText) throw new GeminiError(`没有有效的图片生成提示`, `NO_IMAGE_DESCRIPTION`);
+      if (!cleanText) {
+        const notText = await TelegramBot.sendMessage(chatId, `没有有效的图片生成提示（NO_IMAGE_DESCRIPTION）`, 'HTML', messageId);
+        if (notText.ok) {
+          void scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1000);
+        }
+      }
       parts.push({ text: cleanText });
       contents.push({
         role: 'user',
@@ -136,7 +140,7 @@ export const botCommands: BotCommandAction[] = [
         const parts = candidate.content.parts;
         const resTexts = parts.map((part) => part.text).join('');
         const imageData = parts.find((part) => part.inlineData);
-        if (!imageData) {
+        if (!imageData || !imageData.inlineData?.data) {
           throw new GeminiError('Gemini API 未返回图片数据', 'INVALID_RESPONSE', false);
         }
         const base64Data = imageData.inlineData?.data as string;
@@ -155,10 +159,10 @@ export const botCommands: BotCommandAction[] = [
     },
   },
   {
-    name: 'exp_spch_gen',
+    name: 'exp_tts_gen',
     description: '生成语音',
     action: async (params: CommandActionParams) => {
-      Log.info('Executing /exp_spch_gen command.');
+      Log.info('Executing /exp_tts_gen command.');
       const { chatId, messageId, message } = params;
       const { durableResourceId, geminiApiKeysKeyName, botName } = BotConfig.load();
       const apiKeys = await KvNamespace.read<[string, string][]>(durableResourceId, geminiApiKeysKeyName, 'json');
@@ -172,12 +176,17 @@ export const botCommands: BotCommandAction[] = [
       const parts: Part[] = [];
       const config: GenerateContentConfig = {
         responseModalities: ['AUDIO'],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Leda' } }, languageCode: 'cmn-CN' },
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Leda' } } },
         safetySettings: GeminiApi.SAFETY_SETTINGS,
       };
       const messageText = (message.text || message.caption) as string;
-      const cleanText = messageText.replace(`/exp_spch_gen@${botName}`, '').trim();
-      if (!cleanText) throw new GeminiError(`没有有效的语音生成提示`, `NO_SPEECH_DESCRIPTION`);
+      const cleanText = messageText.replace(`/exp_tts_gen@${botName}`, '').trim();
+      if (!cleanText) {
+        const notText = await TelegramBot.sendMessage(chatId, `没有有效的语音生成提示（NO_SPEECH_DESCRIPTION）`, 'HTML', messageId);
+        if (notText.ok) {
+          void scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1000);
+        }
+      }
       parts.push({ text: cleanText });
       contents.push({
         role: 'user',

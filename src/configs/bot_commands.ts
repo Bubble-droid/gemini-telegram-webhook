@@ -2,7 +2,7 @@
 
 import { BotConfig, TelegramBot, ChatContexts, Log, GeminiError, GeminiApi } from '@/services';
 import { geminiTools } from '@/configs';
-import { scheduleDeletion, sleep, KvNamespace } from '@/utils';
+import { scheduleDeletion, sleep, KvNamespace, pcmBufferToOggOpus } from '@/utils';
 import type { BotCommandAction, CommandActionParams } from '@/types';
 import { GoogleGenAI, type Content, type GenerateContentConfig, type Part } from '@google/genai';
 
@@ -227,8 +227,9 @@ export const botCommands: BotCommandAction[] = [
           throw new GeminiError('Gemini API 未返回音频数据', 'INVALID_RESPONSE', false);
         }
         const base64Data = audioData.inlineData?.data as string;
-        const audioBuffer = Buffer.from(base64Data, 'base64');
-        const result = await TelegramBot.sendVoice(chatId, audioBuffer, messageId);
+        const pcmBuf = Buffer.from(base64Data, 'base64');
+        const oggBuf = await pcmBufferToOggOpus(pcmBuf, { rate: 24000, channels: 1, bitrate: '64k' });
+        const result = await TelegramBot.sendVoice(chatId, oggBuf, messageId);
         if (result.ok) {
           void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1000);
         }

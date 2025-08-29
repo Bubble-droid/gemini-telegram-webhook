@@ -10,6 +10,7 @@ import {
   escapeMarkdownLegacyText,
   escapeMarkdownLegacyLinkUrl,
 } from '@/utils/formatting';
+import { spawn } from 'node:child_process';
 
 /**
  * [改进] 将标准 Markdown 格式文本转换为 Telegram 支持的 HTML 格式
@@ -129,20 +130,6 @@ const markdownToHtml = (markdownText: string): string => {
       finalLines.push(`${tag}${escapeHtml(currentBlockquote.join('\n'))}</blockquote>`);
     }
     htmlText = finalLines.join('\n');
-
-    // 最后，对所有未被以上规则匹配的普通文本进行通用 HTML 转义。
-    // 注意：这里的 HTML 转义只应处理标签之外的裸露字符，防止重复转义。
-    // 由于我们在每个替换函数中都对 `$1` 和 `$2` 进行了转义，
-    // 这里如果还有未转义的 `<` `>` `&` `"` 符号，说明它们不是标记的一部分，
-    // 需要进行最终的转义。
-    // 但是，直接对整个 `htmlText` 调用 `escapeHtml` 会导致标签本身被转义。
-    // 因此，我们依赖于每个替换回调函数中对内容的精确转义。
-    // 如果存在未被格式化规则捕获的裸露 HTML 特殊字符，
-    // 最安全的做法是在所有 Markdown 转换完成后，对整个文本进行一次最终的 HTML 转义，
-    // 同时避免转义标签。一个更复杂的解析器才能做到这一点。
-    // 为了简化，我们假设所有需要在 HTML 中转义的字符都被包裹在 Markdown 格式中并已处理。
-    // 裸露在外的 `<` `>` `&` `"` 应在 `formatText` 的纯文本模式中处理。
-    // 在这里，我们不再进行全局字符遍历转义，避免破坏已生成的 HTML 标签。
 
     return htmlText;
   } catch (error) {
@@ -463,6 +450,56 @@ export const shortenString = (input: string): string => {
   const headPart = chars.slice(0, HEAD).join('');
   const tailPart = chars.slice(chars.length - TAIL).join('');
   return `${headPart}\n\n......\n\n${tailPart}`;
+};
+
+export const pcmBufferToOggOpus = async (pcmBuf: Buffer, opts: { rate?: number; channels?: number; bitrate?: string } = {}): Promise<Buffer> => {
+  const rate = opts.rate ?? 24000;
+  const channels = opts.channels ?? 1;
+  const bitrate = opts.bitrate ?? '64k';
+
+  return await new Promise<Buffer>((resolve, reject) => {
+    const args = [
+      '-f',
+      's16le', // input format: signed 16-bit little endian
+      '-ar',
+      String(rate), // input sample rate
+      '-ac',
+      String(channels),
+      '-i',
+      'pipe:0', // read PCM from stdin
+      '-c:a',
+      'libopus',
+      '-b:a',
+      bitrate,
+      '-vbr',
+      'on',
+      '-f',
+      'ogg',
+      'pipe:1', // write ogg to stdout
+    ];
+
+    const ff = spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+
+    const outChunks: Buffer[] = [];
+    const errChunks: Buffer[] = [];
+
+    ff.stdout.on('data', (c: Buffer) => outChunks.push(Buffer.from(c)));
+    ff.stderr.on('data', (c: Buffer) => errChunks.push(Buffer.from(c)));
+
+    ff.on('error', (err) => reject(new Error(`ffmpeg spawn error: ${String(err)}`)));
+
+    ff.on('close', (code) => {
+      if (code !== 0) {
+        const errMsg = Buffer.concat(errChunks).toString() || `ffmpeg exited ${code}`;
+        return reject(new Error(`ffmpeg failed: ${errMsg}`));
+      }
+      resolve(Buffer.concat(outChunks));
+    });
+
+    // 写入 PCM 并结束 stdin
+    ff.stdin.write(pcmBuf);
+    ff.stdin.end();
+  });
 };
 
 export { markdownToHtml, markdownToMarkdownV2, markdownToLegacyMarkdown, formatTime, secureHex, sleep, rotateArray };

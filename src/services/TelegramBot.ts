@@ -236,7 +236,7 @@ export class TelegramBot {
     const voiceBlob = new Blob([payload.voice], { type: 'audio/mpeg' });
     const formData = new FormData();
     formData.append('chat_id', payload.chat_id);
-    formData.append('photo', voiceBlob, `gemini_gen_spch.mp3`);
+    formData.append('voice', voiceBlob, `gemini_gen_spch.mp3`);
     formData.append('reply_parameters', JSON.stringify(payload.reply_parameters));
     try {
       const result = await TelegramBot.sendRequest<FormData, SendVoiceResult>('POST', 'sendVoice', formData, true);

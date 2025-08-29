@@ -16,7 +16,7 @@ FROM node:current-alpine3.22 AS prod
 WORKDIR /app
 
 # 安装 sing-box + proxychains-ng（和最小工具）
-RUN apk add --no-cache proxychains-ng curl
+RUN apk update && apk add --no-cache proxychains-ng curl ffmpeg
 
 COPY --from=build /app/dist /app/dist
 COPY --from=build /app/package-docker.json /app/package.json

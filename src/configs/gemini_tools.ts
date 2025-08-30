@@ -14,22 +14,22 @@ const functionForSearch: FunctionDeclaration[] = [
       properties: {
         keyword: {
           type: Type.STRING,
-          description: '用于搜索文件内容的关键词，多个关键词请用 AND 或 OR 分隔。',
+          description: '用于搜索文件内容的关键词，多个关键词请用 AND 或 OR 分隔，例如 "路由 AND 拦截"。',
           example: '路由 AND 拦截',
         },
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者。',
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
           example: 'SagerNet',
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称。',
+          description: 'GitHub 仓库名称，例如 "sing-box"。',
           example: 'sing-box',
         },
         branch: {
           type: Type.STRING,
-          description: '要搜索的仓库分支。',
+          description: '要搜索的仓库分支，默认为仓库默认分支（如 main 或 master）。',
           default: 'main',
           example: 'main',
         },
@@ -47,17 +47,17 @@ const functionForSearch: FunctionDeclaration[] = [
       properties: {
         keyword: {
           type: Type.STRING,
-          description: '用于搜索提交消息内容的关键词，多个关键词请用 AND 或 OR 分隔。',
+          description: '用于搜索提交消息内容的关键词，多个关键词请用 AND 或 OR 分隔，例如 "fix AND bug"。',
           example: 'fix AND bug',
         },
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者。',
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
           example: 'SagerNet',
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称。',
+          description: 'GitHub 仓库名称，例如 "sing-box"。',
           example: 'sing-box',
         },
       },
@@ -74,22 +74,22 @@ const functionForSearch: FunctionDeclaration[] = [
       properties: {
         keyword: {
           type: Type.STRING,
-          description: '用于搜索 Issue 内容和标题的关键词，多个关键词请用 AND 或 OR 分隔。',
+          description: '用于搜索 Issue 内容和标题的关键词，多个关键词请用 AND 或 OR 分隔，例如 "tun AND error"。',
           example: 'tun AND error',
         },
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者。',
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
           example: 'SagerNet',
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称。',
+          description: 'GitHub 仓库名称，例如 "sing-box"。',
           example: 'sing-box',
         },
         state: {
           type: Type.STRING,
-          description: 'Issue 的状态。',
+          description: 'Issue 的状态，可以是 "open"（开放）、"closed"（关闭），默认为 "open"。',
           default: 'open',
           enum: ['open', 'closed'],
           example: 'open',
@@ -111,17 +111,17 @@ const functionForList: FunctionDeclaration[] = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者。',
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
           example: 'SagerNet',
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称。',
+          description: 'GitHub 仓库名称，例如 "sing-box"。',
           example: 'sing-box',
         },
         branch: {
           type: Type.STRING,
-          description: '要查询的仓库分支。',
+          description: '要查询的仓库分支，默认为仓库默认分支（如 main 或 master）。',
           default: 'main',
           example: 'main',
         },
@@ -139,23 +139,23 @@ const functionForList: FunctionDeclaration[] = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者。',
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
           example: 'SagerNet',
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称。',
+          description: 'GitHub 仓库名称，例如 "sing-box"。',
           example: 'sing-box',
         },
         path: {
           type: Type.STRING,
-          description: '要列出文件和子目录的路径，此路径应相对于仓库根目录。',
+          description: '要列出文件和子目录的路径，默认为仓库根目录。例如 "docs/configuration/"。此路径应相对于仓库根目录。',
           default: '',
           example: 'docs/configuration/',
         },
         branch: {
           type: Type.STRING,
-          description: '要查询的仓库分支。',
+          description: '要查询的仓库分支，默认为仓库默认分支（如 main 或 master）。',
           default: 'main',
           example: 'main',
         },
@@ -173,17 +173,17 @@ const functionForList: FunctionDeclaration[] = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者。',
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
           example: 'SagerNet',
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称。',
+          description: 'GitHub 仓库名称，例如 "sing-box"。',
           example: 'sing-box',
         },
         per_page: {
           type: Type.NUMBER,
-          description: '每页返回的提交数量。',
+          description: '每页返回的提交数量，默认为 20，最大 100。',
           default: 20,
           minimum: 1,
           maximum: 100,
@@ -191,7 +191,7 @@ const functionForList: FunctionDeclaration[] = [
         },
         page: {
           type: Type.NUMBER,
-          description: '页码。',
+          description: '页码，默认为 1。',
           default: 1,
           minimum: 1,
           example: 1,
@@ -210,17 +210,17 @@ const functionForList: FunctionDeclaration[] = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者。',
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
           example: 'SagerNet',
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称。',
+          description: 'GitHub 仓库名称，例如 "sing-box"。',
           example: 'sing-box',
         },
         per_page: {
           type: Type.NUMBER,
-          description: '每页返回的发布版本数量。',
+          description: '每页返回的发布版本数量，默认为 10，最大 100。',
           default: 10,
           minimum: 1,
           maximum: 100,
@@ -228,7 +228,7 @@ const functionForList: FunctionDeclaration[] = [
         },
         page: {
           type: Type.NUMBER,
-          description: '页码。',
+          description: '页码，默认为 1。',
           default: 1,
           minimum: 1,
           example: 1,
@@ -247,12 +247,12 @@ const functionForList: FunctionDeclaration[] = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者。',
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
           example: 'SagerNet',
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称。',
+          description: 'GitHub 仓库名称，例如 "sing-box"。',
           example: 'sing-box',
         },
       },
@@ -272,7 +272,8 @@ const functionForGet: FunctionDeclaration[] = [
       properties: {
         filePaths: {
           type: Type.ARRAY,
-          description: '需要查询的文件路径列表',
+          description:
+            '需要查询的文件路径列表，例如 ["MetaCubeX/Meta-docs/refs/heads/main/docs/api/index.md", "SagerNet/sing-box/refs/heads/dev-next/src/main.go", ...]，每次查询最少 4 个文件 ',
           items: {
             type: Type.STRING,
             title: 'File Path Item',
@@ -296,17 +297,17 @@ const functionForGet: FunctionDeclaration[] = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者。',
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
           example: 'SagerNet',
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称。',
+          description: 'GitHub 仓库名称，例如 "sing-box"。',
           example: 'sing-box',
         },
         commit_sha: {
           type: Type.STRING,
-          description: '要查询的提交的 SHA 值。',
+          description: '要查询的提交的 SHA 值，例如 "2464ced48c504eb0dee616c6d474813621779afc"。',
           example: '2464ced48c504eb0dee616c6d474813621779afc',
         },
       },
@@ -323,17 +324,17 @@ const functionForGet: FunctionDeclaration[] = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者。',
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
           example: 'SagerNet',
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称。',
+          description: 'GitHub 仓库名称，例如 "sing-box"。',
           example: 'sing-box',
         },
         issue_number: {
           type: Type.NUMBER,
-          description: 'Issue 的编号。',
+          description: 'Issue 的编号，例如 3202。',
           example: 3202,
         },
       },
@@ -350,23 +351,23 @@ const functionForGet: FunctionDeclaration[] = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者。',
+          description: 'GitHub 仓库所有者，例如 "GUI-for-Cores"。',
           example: 'GUI-for-Cores',
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称。',
+          description: 'GitHub 仓库名称，例如 "GUI.for.SingBox"。',
           example: 'GUI.for.SingBox',
         },
         release_id: {
           type: Type.NUMBER,
-          description: '发布版本的 ID，如果提供，将优先使用此 ID。',
+          description: '发布版本的 ID，例如 227541695。如果提供，将优先使用此 ID。',
           example: 227541695,
           nullable: true,
         },
         tag_name: {
           type: Type.STRING,
-          description: '发布版本的标签名称，如果未提供 release_id 或其查询失败，将尝试使用此标签名称。',
+          description: '发布版本的标签名称，例如 "rolling-release-alpha"。如果未提供 release_id 或其查询失败，将尝试使用此标签名称。',
           example: 'rolling-release-alpha',
           nullable: true,
         },

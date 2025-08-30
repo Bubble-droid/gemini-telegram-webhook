@@ -394,7 +394,7 @@ const functionForSend: FunctionDeclaration[] = [
         prompt: {
           type: Type.STRING,
           title: 'Image Generation Prompt',
-          description: '用于生成图片的文本提示。',
+          description: '用于生成图片的文本提示。例如：A cute cat is napping in the sun.',
           example: 'A cute cat is napping in the sun.',
         },
       },
@@ -412,7 +412,7 @@ const functionForSend: FunctionDeclaration[] = [
         prompt: {
           type: Type.STRING,
           title: 'Speech Generation Prompt',
-          description: '用于生成语音的文本提示。',
+          description: '用于生成语音的文本提示。例如：Please say in a helpless tone: 拜托！我不会算命啊！',
           example: 'Please say in a helpless tone: "拜托！我不会算命啊！"',
         },
       },

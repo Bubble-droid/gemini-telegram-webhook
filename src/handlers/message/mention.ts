@@ -263,15 +263,18 @@ ${resTexts || 'Gemini API 未返回有效文本回复：模型可能只生成了
     // 更新聊天记录，保存用户提问和 Bot 回复
     // completeContentsBeforeCall 已经包含了历史记录和用户当前提问
     // 只需将模型本次回复添加到历史记录中
-    const botResponseContent: Content = {
-      role: 'model',
-      parts: response.parts, // 保存模型所有 parts，包括思考内容，以便上下文完整
-    };
 
-    await ChatContexts.update(chatId, fromUserId, [
-      ...completeContentsBeforeCall, // 现有历史记录 + 用户当前提问
-      botResponseContent, // 模型本次回复
-    ]);
+    if (resTexts) {
+      const botResponseContent: Content = {
+        role: 'model',
+        parts: response.parts, // 保存模型所有 parts，包括思考内容，以便上下文完整
+      };
+
+      await ChatContexts.update(chatId, fromUserId, [
+        ...completeContentsBeforeCall, // 现有历史记录 + 用户当前提问
+        botResponseContent, // 模型本次回复
+      ]);
+    }
 
     return hasDisplayedThoughts;
   }

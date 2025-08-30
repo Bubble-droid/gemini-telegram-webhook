@@ -6,7 +6,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # 使用 github.repository_owner 和 github.event.repository.name 分别获取所有者和仓库名，并转换为小写
+  IMAGE_NAME: ${{ format('{0}/{1}', github.repository_owner, github.event.repository.name) | lower }}
 
 jobs:
   build-and-push-image:
@@ -34,7 +35,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 直接设置固定的标签，不使用 metadata-action
       - name: Build and push Docker image
         id: push
         uses: docker/build-push-action@v6

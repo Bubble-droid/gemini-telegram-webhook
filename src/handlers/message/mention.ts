@@ -263,10 +263,10 @@ ${resTexts}
 ⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。`;
 
     // 调用新的分块发送函数来处理回复消息
-    const { ok: sendOk, error: sendError } = await sendFormattedMessage(chatId, fullText, userMessageId);
+    const finalReplyResult = await sendFormattedMessage(chatId, fullText, userMessageId);
 
-    if (!sendOk) {
-      const error = sendError ? sendError : new TelegramError('发送消息时发生未知错误');
+    if (!finalReplyResult.ok) {
+      const error = finalReplyResult.error || new TelegramError('发送最终回复时发生未知错误');
       throw error;
     }
 

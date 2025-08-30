@@ -21,7 +21,7 @@ export const sendFormattedMessage = async (
   chatId: number,
   standardMarkdownText: string,
   replyToMessageId: number,
-): Promise<{ ok: boolean; messageId?: number; error?: TelegramError }> => {
+): Promise<{ ok: true; messageId?: number } | { ok: false; error: TelegramError }> => {
   const modesToTry: (ParseMode | null)[] = ['HTML', 'MarkdownV2', 'Markdown', null]; // null 代表纯文本模式
   let lastMessageId: number | undefined = undefined;
   let lastError: TelegramError | null = null;

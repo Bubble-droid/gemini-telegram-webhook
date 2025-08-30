@@ -239,14 +239,24 @@ export class MentionHandler {
 
     // 提取最终的回复文本（非思考内容）：从 `response.parts` 中过滤掉带有 `thought` 属性的 Part
     const resTextParts = response.parts?.filter((part) => part.text && !part.thought);
-    const resTexts = resTextParts
-      ?.map((part) => part.text)
-      .join('')
-      .trim();
+    const resTexts =
+      resTextParts
+        ?.map((part) => part.text)
+        .join('')
+        .trim() || '';
+
+    if (!resTexts) {
+      const replyText = 'Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。';
+      const replyResult = await TelegramBot.sendMessage(chatId, replyText, 'HTML', userMessageId);
+      if (replyResult.ok) {
+        void scheduleDeletion({ chat_id: chatId, message_id: replyResult.messageId }, 3 * 60 * 1000);
+      }
+      return hasDisplayedThoughts;
+    }
 
     const fullText = `🤖 模型：\`${modelName}\`
 
-${resTexts || 'Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。'}
+${resTexts}
 
 ✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}
 

@@ -97,7 +97,7 @@ export const botCommands: BotCommandAction[] = [
         currentApiKey: apiKey,
         prompt: cleanText,
       };
-      const response = await ToolExecutors.sendVoiceMessage(args as ToolExecArgs);
+      const response = await ToolExecutors.sendPhotoMessage(args as ToolExecArgs);
       if (renderMessageId) {
         await TelegramBot.deleteMessage(chatId, renderMessageId);
         renderMessageId = undefined;

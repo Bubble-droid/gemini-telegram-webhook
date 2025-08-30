@@ -13,6 +13,9 @@ import type {
 } from './github';
 
 export interface ToolExecArgs {
+  chatId: number;
+  userMessageId: number;
+  currentApiKey: string;
   keyword: string;
   owner: string;
   repo: string;
@@ -26,6 +29,7 @@ export interface ToolExecArgs {
   release_id?: number;
   tag_name?: string;
   filePaths: string[];
+  prompt?: string;
 }
 
 /**
@@ -190,6 +194,9 @@ export interface GetCurrentTimeResult {
   currentTime: string;
 }
 
+export type SendPhotoMessageResult = string;
+export type SendVoiceMessageResult = string;
+
 export interface ToolExecutorsType {
   searchFilesInRepo: (args: ToolExecArgs) => Promise<ToolExecResponse<SearchFilesInRepoResult>>;
   searchCommitsInRepo: (args: ToolExecArgs) => Promise<ToolExecResponse<SearchCommitsInRepoResult>>;
@@ -204,6 +211,8 @@ export interface ToolExecutorsType {
   getReleaseDetails: (args: ToolExecArgs) => Promise<ToolExecResponse<GetReleaseDetailsResult>>;
   getCommitDetails: (args: ToolExecArgs) => Promise<ToolExecResponse<GetCommitDetailsResult>>;
   getCurrentTime: () => ToolExecResponse<GetCurrentTimeResult>;
+  sendPhotoMessage: (args: ToolExecArgs) => Promise<ToolExecResponse<SendPhotoMessageResult>>;
+  sendVoiceMessage: (args: ToolExecArgs) => Promise<ToolExecResponse<SendVoiceMessageResult>>;
 }
 
 export type ToolName = keyof typeof ToolExecutors;

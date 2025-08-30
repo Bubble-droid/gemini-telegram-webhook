@@ -4,6 +4,7 @@ import type { Content } from '@google/genai';
 
 export interface ChatParams {
   chatId: number;
+  userMessageId: number;
   thinkMessageId: number;
 }
 
@@ -25,7 +26,8 @@ export interface GenerateContentSuccessResponse {
  */
 export interface ApiCallContext {
   chatId: number;
-  thinkMessageId: number | undefined; // 考虑到可能没有 thinkMessageId 的情况，设为可选
+  userMessageId: number;
+  thinkMessageId?: number; // 考虑到可能没有 thinkMessageId 的情况，设为可选
   systemPrompt: string;
   apiKeys: [string, string][]; // 当前轮换后的 API 密钥组
   modelName: string;

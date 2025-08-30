@@ -322,6 +322,7 @@ ${resTexts || 'Gemini API 未返回有效文本回复：模型可能只生成了
       // 6. 调用 Gemini API
       const geminiResponse: GenerateContentSuccessResponse = await GeminiApi.generateContent(completeContents, {
         chatId: chat.id,
+        userMessageId,
         thinkMessageId,
       });
 

@@ -279,7 +279,7 @@ export interface CommandActionParams {
   chatId: number;
   messageId: number;
   userId: number;
-  message: Message;
+  cleanText?: string;
 }
 
 export interface BotCommand {

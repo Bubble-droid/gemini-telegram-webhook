@@ -1,6 +1,6 @@
 // src/configs/tool_executors.ts
 
-import { Log } from '@/services';
+import { GeminiApi, GeminiError, Log, simpleGeminiApiResponse, TelegramBot } from '@/services';
 import type {
   GetCommitDetailsResult,
   GetCurrentTimeResult,
@@ -29,7 +29,8 @@ import type {
   ToolExecResponse,
   ToolExecutorsType,
 } from '@/types';
-import { formatTime, makeGitHubApiRequest, makeRawFileRequest } from '@/utils';
+import { convertPcmToMp3, formatTime, makeGitHubApiRequest, makeRawFileRequest, scheduleDeletion } from '@/utils';
+import { GoogleGenAI, type Content, type GenerateContentConfig } from '@google/genai';
 
 export const ToolExecutors: ToolExecutorsType = {
   /**
@@ -487,4 +488,93 @@ export const ToolExecutors: ToolExecutorsType = {
     Log.info('getCurrentTime 工具执行完毕，当前时间:', { currentTime });
     return { success: true, data: { currentTime } };
   },
+
+  sendPhotoMessage: async (args) => {
+    Log.info('执行工具: sendPhotoMessage');
+    const { chatId, userMessageId, currentApiKey, prompt } = args;
+    const modelName: string = 'gemini-2.0-flash-preview-image-generation';
+    const modelConfig: GenerateContentConfig = {
+      responseModalities: ['IMAGE', 'TEXT'],
+    };
+    const contents: Content[] = [
+      {
+        role: 'user',
+        parts: [{ text: prompt }],
+      },
+    ];
+    try {
+      const response = await callMultiModalModels(currentApiKey, modelName, modelConfig, contents);
+      const resTexts = response.parts?.map((part) => part.text).join('') || '';
+      const imageData = response.parts?.find((part) => part.inlineData && part.inlineData.data);
+      const base64Data = imageData?.inlineData?.data as string;
+      const imageBuffer = Buffer.from(base64Data, 'base64');
+      const result = await TelegramBot.sendPhoto(chatId, imageBuffer, resTexts, userMessageId);
+      if (!result.ok) {
+        return { success: false, error: `Error sending Telegram photo message, ${result.error}` };
+      }
+      void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1000);
+      return { success: true, data: 'Telegram photo message sent successfully.' };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return { success: false, error: errorMessage };
+    }
+  },
+
+  sendVoiceMessage: async (args) => {
+    Log.info('执行工具: sendVoiceMessage');
+    const { chatId, userMessageId, currentApiKey, prompt } = args;
+    const modelName: string = 'gemini-2.5-flash-preview-tts';
+    const modelConfig: GenerateContentConfig = {
+      responseModalities: ['AUDIO'],
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Leda' } } },
+    };
+    const contents: Content[] = [
+      {
+        role: 'user',
+        parts: [{ text: prompt }],
+      },
+    ];
+    try {
+      const response = await callMultiModalModels(currentApiKey, modelName, modelConfig, contents);
+      const audioData = response.parts?.find((part) => part.inlineData && part.inlineData.data);
+      const base64Data = audioData?.inlineData?.data as string;
+      const pcmAudioBuffer = Buffer.from(base64Data, 'base64');
+      Log.info('开始将 PCM 音频数据转换为 MP3...');
+      const mp3AudioBuffer = await convertPcmToMp3(pcmAudioBuffer);
+      Log.info('MP3 音频数据转换完成。');
+      const result = await TelegramBot.sendVoice(chatId, mp3AudioBuffer, userMessageId);
+      if (!result.ok) {
+        return { success: false, error: `Error sending Telegram voice message, ${result.error}` };
+      }
+      void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1000);
+      return { success: true, data: 'Telegram voice message sent successfully.' };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return { success: false, error: errorMessage };
+    }
+  },
+};
+
+export const callMultiModalModels = async (
+  apiKey: string,
+  model: string,
+  modelConfig: GenerateContentConfig,
+  contents: Content[],
+): Promise<Content> => {
+  const ai = new GoogleGenAI({ apiKey });
+  const config: GenerateContentConfig = {
+    ...modelConfig,
+    safetySettings: GeminiApi.SAFETY_SETTINGS,
+  };
+  Log.info('发送 Gemini API 请求...');
+  Log.info('当前发送的 contents:', { contents });
+  const response = await ai.models.generateContent({ model, contents, config });
+  Log.info(`Gemini API 响应: `, {
+    response: simpleGeminiApiResponse(response),
+  });
+  const candidate = response.candidates?.[0];
+  if (!candidate || !candidate.content || !candidate.content.parts) {
+    throw new GeminiError('Gemini API 返回结果不包含有效的内容', 'INVALID_RESPONSE');
+  }
+  return candidate.content;
 };

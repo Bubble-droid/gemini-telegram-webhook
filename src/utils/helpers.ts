@@ -39,7 +39,7 @@ const markdownToHtml = (markdownText: string): string => {
     // 斜体: *italic*
     ITALIC_ASTERISK: /\*(?!\s)(.*?)(?<!\s)\*/g,
     // 斜体: _italic_
-    ITALIC_UNDERSCORE: /_(?!\s)(.*?)(?<!\s)_/g,
+    // ITALIC_UNDERSCORE: /_(?!\s)(.*?)(?<!\s)_/g,
     // 删除线: ~strikethrough~
     STRIKETHROUGH: /~(?!\s)(.*?)(?<!\s)~/g,
     // 剧透: ||spoiler||
@@ -74,7 +74,7 @@ const markdownToHtml = (markdownText: string): string => {
 
     // 6. 斜体 (* 和 _)
     htmlText = htmlText.replace(REGEX.ITALIC_ASTERISK, (_, content: string) => `<i>${escapeHtml(content)}</i>`);
-    htmlText = htmlText.replace(REGEX.ITALIC_UNDERSCORE, (_, content: string) => `<i>${escapeHtml(content)}</i>`);
+    // htmlText = htmlText.replace(REGEX.ITALIC_UNDERSCORE, (_, content: string) => `<i>${escapeHtml(content)}</i>`);
 
     // 7. 删除线
     htmlText = htmlText.replace(REGEX.STRIKETHROUGH, (_, content: string) => `<s>${escapeHtml(content)}</s>`);
@@ -159,7 +159,7 @@ const markdownToMarkdownV2 = (markdownText: string): string => {
     UNDERLINE_UNDERSCORE: /__(?!\s)(.*?)(?<!\s)__/g,
     // 斜体: *italic* 或 _italic_ (转换为 _italic_)
     ITALIC_ASTERISK: /\*(?!\s)(.*?)(?<!\s)\*/g,
-    ITALIC_UNDERSCORE: /_(?!\s)(.*?)(?<!\s)_/g,
+    // ITALIC_UNDERSCORE: /_(?!\s)(.*?)(?<!\s)_/g,
     // 删除线: ~strikethrough~ (转换为 ~strikethrough~, 注意 Telegram MV2 是单 ~)
     STRIKETHROUGH: /~(?!\s)(.*?)(?<!\s)~/g,
     // 剧透: ||spoiler||
@@ -193,7 +193,7 @@ const markdownToMarkdownV2 = (markdownText: string): string => {
 
     // 6. 斜体: *italic* 或 _italic_ -> _italic_
     mdV2Text = mdV2Text.replace(REGEX.ITALIC_ASTERISK, (_, content: string) => `_${escapeMarkdownV2Text(content)}_`);
-    mdV2Text = mdV2Text.replace(REGEX.ITALIC_UNDERSCORE, (_, content: string) => `_${escapeMarkdownV2Text(content)}_`);
+    // mdV2Text = mdV2Text.replace(REGEX.ITALIC_UNDERSCORE, (_, content: string) => `_${escapeMarkdownV2Text(content)}_`);
 
     // 7. 删除线: ~strike~ -> ~strike~ (注意 Telegram MV2 是单 ~)
     mdV2Text = mdV2Text.replace(REGEX.STRIKETHROUGH, (_, content: string) => `~${escapeMarkdownV2Text(content)}~`);
@@ -237,7 +237,7 @@ const markdownToLegacyMarkdown = (markdownText: string): string => {
     BOLD_ASTERISK: /\*\*(?!\s)(.*?)(?<!\s)\*\*/g,
     // 斜体: *italic* 或 _italic_ (转换为 _italic_)
     ITALIC_ASTERISK: /\*(?!\s)(.*?)(?<!\s)\*/g,
-    ITALIC_UNDERSCORE: /_(?!\s)(.*?)(?<!\s)_/g,
+    // ITALIC_UNDERSCORE: /_(?!\s)(.*?)(?<!\s)_/g,
     // 其他不支持的格式，将被移除标记，仅保留内容
     UNDERLINE_UNDERSCORE: /__(?!\s)(.*?)(?<!\s)__/g,
     STRIKETHROUGH: /~(?!\s)(.*?)(?<!\s)~/g,
@@ -266,7 +266,7 @@ const markdownToLegacyMarkdown = (markdownText: string): string => {
 
     // 5. 斜体: *italic* 或 _italic_ -> _italic_
     legacyMdText = legacyMdText.replace(REGEX.ITALIC_ASTERISK, (_, content: string) => `_${escapeMarkdownLegacyText(content)}_`);
-    legacyMdText = legacyMdText.replace(REGEX.ITALIC_UNDERSCORE, (_, content: string) => `_${escapeMarkdownLegacyText(content)}_`);
+    // legacyMdText = legacyMdText.replace(REGEX.ITALIC_UNDERSCORE, (_, content: string) => `_${escapeMarkdownLegacyText(content)}_`);
 
     // 6. 移除所有不支持的格式，并对其内容进行转义
     legacyMdText = legacyMdText.replace(REGEX.UNDERLINE_UNDERSCORE, (_, content: string) => escapeMarkdownLegacyText(content));
@@ -380,9 +380,6 @@ const formatTime = (time: Date | number = Date.now()): string => {
  * @throws {Error} 如果 length 为负数。
  */
 const secureHex = (length: number = 16): string => {
-  if (length < 0) {
-    throw new Error('secureHex: length 必须是非负数。');
-  }
   // 计算所需的字节长度，向上取整以确保能生成足够长的16进制字符
   const byteLength: number = Math.ceil(length / 2);
   // 生成随机字节，转换为16进制字符串，然后截取到指定长度
@@ -399,9 +396,6 @@ const secureHex = (length: number = 16): string => {
  * @throws {Error} 如果 delayMs 为负数。
  */
 const sleep = async (delayMs: number): Promise<void> => {
-  if (delayMs < 0) {
-    throw new Error('sleep: delayMs 必须是非负数。');
-  }
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 };
 

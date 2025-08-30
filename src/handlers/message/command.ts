@@ -20,13 +20,14 @@ const handleCommand = async (message: Message): Promise<void> => {
   const fullCommandText = messageText.substring(commandEntity.offset, commandEntity.offset + commandEntity.length);
   void TelegramBot.setBotCommands(chat.id, from?.id as number);
   const commandName = fullCommandText.slice(1).split('@')[0].trim();
+  const cleanText = messageText.replace(fullCommandText, '').trim();
   const targetCommand = botCommands.find((cmd) => cmd.name === commandName);
   if (targetCommand) {
     await targetCommand.action({
       chatId: chat.id,
       messageId,
       userId: from?.id as number,
-      message,
+      cleanText,
     });
   }
 };

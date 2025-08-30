@@ -6,7 +6,7 @@ import { BotConfig, GeminiError, Log, TelegramBot, ToolExecutors } from '@/servi
 import { geminiTools } from '@/configs';
 import { KvNamespace, rotateArray, shortenString, sleep } from '@/utils';
 import { escapeHtml } from '@/utils/formatting';
-import type { ChatParams, GenerateContentSuccessResponse, ApiCallContext, ToolExecArgs } from '@/types';
+import type { ChatParams, GenerateContentSuccessResponse, ApiCallContext, ToolExecArgs, ToolName } from '@/types';
 
 /**
  * @class GeminiApi
@@ -33,7 +33,7 @@ export class GeminiApi {
    */
   private static async _initializeApiCallContext(chatParams: ChatParams, initialContents: Content[]): Promise<ApiCallContext> {
     const { durableResourceId, systemPromptKeyName, geminiApiKeysKeyName, modelName } = BotConfig.load();
-    const { chatId, thinkMessageId } = chatParams;
+    const { chatId, userMessageId, thinkMessageId } = chatParams;
 
     // 从 KvNamespace 读取系统提示，如果不存在则使用默认值
     const systemPrompt = (await KvNamespace.read<string>(durableResourceId, systemPromptKeyName, 'text')) || 'You are a helpful assistant.';
@@ -67,6 +67,7 @@ export class GeminiApi {
     // 返回初始化后的上下文对象
     return {
       chatId,
+      userMessageId,
       thinkMessageId,
       systemPrompt,
       apiKeys,
@@ -137,23 +138,7 @@ export class GeminiApi {
         : context.metrics.totalUsageToken;
 
     Log.info(`Gemini API 响应: `, {
-      response: {
-        ...response,
-        candidates: response.candidates?.map((candidate) => ({
-          ...candidate,
-          content: {
-            ...candidate.content,
-            parts: candidate.content?.parts?.map((part) => {
-              if (part.thought) {
-                return { ...part, text: 'THOUGHT_TEXT' };
-              } else if (part.thoughtSignature) {
-                return { ...part, thoughtSignature: 'THOUGHT_SIGNATURE' };
-              }
-              return part;
-            }),
-          },
-        })),
-      },
+      response: simpleGeminiApiResponse(response),
     });
     return response;
   }
@@ -246,12 +231,18 @@ export class GeminiApi {
     for (const functionCall of functionCalls) {
       const functionName = functionCall.functionCall?.name;
       const functionArgs = functionCall.functionCall?.args;
+      const toolExecArgs = {
+        chatId: context.chatId,
+        userMessageId: context.userMessageId,
+        currentApiKey: context.apiKeys[0][0],
+        ...functionArgs,
+      } as ToolExecArgs;
 
       if (typeof functionName === 'string' && functionName in ToolExecutors) {
         try {
           // 执行工具函数
-          const executor = ToolExecutors[functionName as keyof typeof ToolExecutors];
-          const toolResult = (await executor(functionArgs as unknown as ToolExecArgs)) as unknown as Record<string, unknown>;
+          const executor = ToolExecutors[functionName as ToolName];
+          const toolResult = (await executor(toolExecArgs)) as unknown as Record<string, unknown>;
           toolResponseParts.push({
             functionResponse: {
               name: functionName,
@@ -486,3 +477,28 @@ export class GeminiApi {
     throw new GeminiError(errorMsg, 'MAX_CALL_ROUNDS_REACHED', context.metrics.hasToolThoughts);
   };
 }
+
+export const simpleGeminiApiResponse = (response: GenerateContentResponse): GenerateContentResponse => {
+  const simpleResponse = {
+    ...response,
+    candidates: response.candidates?.map((candidate) => ({
+      ...candidate,
+      content: {
+        ...candidate.content,
+        parts: candidate.content?.parts?.map((part) => {
+          if (part.thought) {
+            return { ...part, text: 'THOUGHT_TEXT' };
+          } else if (part.thoughtSignature) {
+            return { ...part, thoughtSignature: 'THOUGHT_SIGNATURE' };
+          } else if (part.inlineData && part.inlineData.data) {
+            return { ...part, inlineData: { ...part.inlineData, data: 'BASE64_ENCODED_DATA' } };
+          } else if (part.text) {
+            return { ...part, text: 'TEXT_CONTENT' };
+          }
+          return part;
+        }),
+      },
+    })),
+  };
+  return simpleResponse as GenerateContentResponse;
+};

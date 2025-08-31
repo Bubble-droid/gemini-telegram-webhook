@@ -54,6 +54,7 @@ export interface Message {
   show_caption_above_media?: true;
   new_chat_member?: User;
   new_chat_members?: User[];
+  reply_markup?: InlineKeyboardMarkup;
 }
 
 export interface DirectMessagesTopic {

@@ -18,13 +18,16 @@ import { handleCallbackQuery } from './callback_query';
 const handleUpdate = async (update: Update): Promise<void> => {
   Log.info('Handling Telegram update', { update });
   const { botName, allowGroups } = BotConfig.load();
+  if (!update.callback_query) return;
+  const { callback_query } = update;
+  if (callback_query && callback_query.message && callback_query.data) return await handleCallbackQuery(callback_query);
   if (!update.message) return;
-  const { update_id, message, callback_query } = update;
+  const { update_id, message } = update;
   if (message.sticker) return;
   const { message_id, chat } = message;
   if (!allowGroups.includes(chat.id) || chat.type === 'private') return;
   if (message.new_chat_members && message.new_chat_members.length > 0) return await handleNewMember(message);
-  if (callback_query && callback_query.message && callback_query.data) return await handleCallbackQuery(callback_query);
+
   const messageText = message.text || message.caption || null;
   const messageEntities = message.entities || message.caption_entities || null;
   if (!messageEntities || !messageText) return await handleNormal(message);

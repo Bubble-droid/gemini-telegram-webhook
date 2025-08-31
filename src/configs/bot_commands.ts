@@ -81,7 +81,7 @@ export const botCommands: BotCommandAction[] = [
         switch_inline_query_current_chat: `请演示下 \`${tool.name}\` 工具`,
       }));
 
-      const replyMarkup: ReplyMarkup = { inline_keyboard: [[{ text: '✋ 工具演示' }], keyboard] };
+      const replyMarkup: ReplyMarkup = { inline_keyboard: [[{ text: '✋ 工具演示', copy_text: { text: 'OK' } }], keyboard] };
 
       const toolsText = `🛠 我可以使用以下工具：\n\n${toolList}`;
       const toolsResult = await TelegramBot.sendMessage(chatId, markdownToHtml(toolsText), messageId, 'HTML', replyMarkup);

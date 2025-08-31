@@ -489,7 +489,7 @@ export const ToolExecutors: ToolExecutorsType = {
     return { success: true, data: { currentTime } };
   },
 
-  sendPhotoMessage: async (args) => {
+  generateImage: async (args) => {
     Log.info('执行工具: sendPhotoMessage');
     const { chatId, userMessageId, currentApiKey, prompt } = args;
     const modelName: string = 'gemini-2.0-flash-preview-image-generation';
@@ -510,17 +510,17 @@ export const ToolExecutors: ToolExecutorsType = {
       const imageBuffer = Buffer.from(base64Data, 'base64');
       const result = await TelegramBot.sendPhoto(chatId, imageBuffer, resTexts, userMessageId);
       if (!result.ok) {
-        return { success: false, error: `Error sending Telegram photo message, ${result.error}` };
+        return { success: false, error: `Error replying image message, ${result.error}` };
       }
       void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1000);
-      return { success: true, data: 'Telegram photo message sent successfully.' };
+      return { success: true, data: 'Image generate and reply message successfully.' };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       return { success: false, error: errorMessage };
     }
   },
 
-  sendVoiceMessage: async (args) => {
+  generateSpeech: async (args) => {
     Log.info('执行工具: sendVoiceMessage');
     const { chatId, userMessageId, currentApiKey, prompt } = args;
     const modelName: string = 'gemini-2.5-flash-preview-tts';
@@ -544,10 +544,10 @@ export const ToolExecutors: ToolExecutorsType = {
       Log.info('MP3 音频数据转换完成。');
       const result = await TelegramBot.sendVoice(chatId, mp3AudioBuffer, userMessageId);
       if (!result.ok) {
-        return { success: false, error: `Error sending Telegram voice message, ${result.error}` };
+        return { success: false, error: `Error replying speech message, ${result.error}` };
       }
       void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1000);
-      return { success: true, data: 'Telegram voice message sent successfully.' };
+      return { success: true, data: 'Speech generate and reply message successfully.' };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       return { success: false, error: errorMessage };

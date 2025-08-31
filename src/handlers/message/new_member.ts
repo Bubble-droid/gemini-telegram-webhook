@@ -1,8 +1,8 @@
 // src/handlers/message/new_member.ts
 
 import { Log, BotConfig, TelegramBot } from '@/services';
-import type { Message, User } from '@/types/telegram';
-import { KvNamespace, scheduleDeletion, sleep } from '@/utils';
+import type { Message, ReplyMarkup, User } from '@/types';
+import { KvNamespace, markdownToHtml, scheduleDeletion, sleep } from '@/utils';
 
 // 定义轮询参数，这些可以根据实际需求调整
 const POLLING_TIMEOUT_MS = 3 * 60 * 1000; // 3 分钟的超时时间
@@ -124,7 +124,17 @@ const handleNewMember = async (message: Message): Promise<void> => {
         .replace('BOT_NAME', botName) as string;
 
       Log.info(`向已验证的新成员 ${newMemberFullName}(${newMember.id}) 发送欢迎消息。`, { chatId: chat.id, newMemberId: newMember.id });
-      const welcomeResult = await TelegramBot.sendMessage(chat.id, replaceText, 'HTML');
+
+      const replyMarkup: ReplyMarkup = {
+        inline_keyboard: [
+          [{ text: '使用指南', url: 'https://gui-for-cores.github.io/zh/guide' }],
+          [
+            { text: '通知频道', url: 'https://t.me/GUI_for_Cores_Channel' },
+            { text: '项目地址', url: 'https://github.com/GUI-for-Cores' },
+          ],
+        ],
+      };
+      const welcomeResult = await TelegramBot.sendMessage(chat.id, markdownToHtml(replaceText), undefined, 'HTML', replyMarkup);
 
       if (welcomeResult.ok) {
         void scheduleDeletion({ chat_id: chat.id, message_id: welcomeResult.messageId }, 3 * 60_000);

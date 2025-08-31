@@ -382,10 +382,10 @@ const functionForGet: FunctionDeclaration[] = [
   },
 ];
 
-const functionForSend: FunctionDeclaration[] = [
+const functionForGenerate: FunctionDeclaration[] = [
   {
-    name: 'sendPhotoMessage',
-    description: '使用此工具生成图片并向用户发送图片消息。',
+    name: 'generateImage',
+    description: '使用此工具生成图片并用图片回复用户。',
     behavior: Behavior.BLOCKING,
     parameters: {
       type: Type.OBJECT,
@@ -402,12 +402,12 @@ const functionForSend: FunctionDeclaration[] = [
     },
   },
   {
-    name: 'sendVoiceMessage',
-    description: '使用此工具生成语音并向用户发送语音消息。',
+    name: 'generateSpeech',
+    description: '使用此工具生成语音并用语音回复用户。',
     behavior: Behavior.BLOCKING,
     parameters: {
       type: Type.OBJECT,
-      title: 'Generate Voice Parameters',
+      title: 'Generate Speech Parameters',
       properties: {
         prompt: {
           type: Type.STRING,
@@ -423,6 +423,6 @@ const functionForSend: FunctionDeclaration[] = [
 
 export const geminiTools: Tool[] = [
   {
-    functionDeclarations: [...functionForSearch, ...functionForList, ...functionForGet, ...functionForSend],
+    functionDeclarations: [...functionForSearch, ...functionForList, ...functionForGet, ...functionForGenerate],
   },
 ];

@@ -211,8 +211,8 @@ export interface ToolExecutorsType {
   getReleaseDetails: (args: ToolExecArgs) => Promise<ToolExecResponse<GetReleaseDetailsResult>>;
   getCommitDetails: (args: ToolExecArgs) => Promise<ToolExecResponse<GetCommitDetailsResult>>;
   getCurrentTime: () => ToolExecResponse<GetCurrentTimeResult>;
-  sendPhotoMessage: (args: ToolExecArgs) => Promise<ToolExecResponse<SendPhotoMessageResult>>;
-  sendVoiceMessage: (args: ToolExecArgs) => Promise<ToolExecResponse<SendVoiceMessageResult>>;
+  generateImage: (args: ToolExecArgs) => Promise<ToolExecResponse<SendPhotoMessageResult>>;
+  generateSpeech: (args: ToolExecArgs) => Promise<ToolExecResponse<SendVoiceMessageResult>>;
 }
 
 export type ToolName = keyof typeof ToolExecutors;

@@ -295,6 +295,26 @@ export interface SendMessageParams {
   link_preview_options?: LinkPreviewOptions;
   protect_content?: boolean;
   reply_parameters?: ReplyParameters;
+  reply_markup?: string;
+}
+
+export type ReplyMarkup = InlineKeyboardMarkup;
+
+export interface InlineKeyboardMarkup {
+  inline_keyboard: InlineKeyboardButton[][];
+}
+
+export interface InlineKeyboardButton {
+  text: string;
+  url?: string;
+  callback_data?: string;
+  switch_inline_query?: string;
+  switch_inline_query_current_chat?: string;
+  copy_text?: CopyTextButton;
+}
+
+export interface CopyTextButton {
+  text: string;
 }
 
 export type ParseMode = 'HTML' | 'MarkdownV2' | 'Markdown';
@@ -322,6 +342,7 @@ export interface SendPhotoParams {
   has_spoiler?: boolean;
   protect_content?: boolean;
   reply_parameters?: ReplyParameters;
+  reply_markup?: string;
 }
 
 export type SendPhotoResult = Message;
@@ -335,6 +356,7 @@ export interface SendVoiceParams {
   duration?: number;
   protect_content?: boolean;
   reply_parameters?: ReplyParameters;
+  reply_markup?: string;
 }
 
 export type SendVoiceResult = Message;
@@ -346,6 +368,7 @@ export interface EditMessageTextParams {
   parse_mode?: ParseMode;
   entities?: MessageEntity[];
   link_preview_options?: LinkPreviewOptions;
+  reply_markup?: string;
 }
 
 export type EditMessageTextResult = Message;

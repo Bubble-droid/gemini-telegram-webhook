@@ -90,7 +90,7 @@ export const sendFormattedMessage = async (
           continue;
         }
 
-        const sendResult = await TelegramBot.sendMessage(chatId, balancedChunk, mode === null ? undefined : mode, currentReplyTo, false);
+        const sendResult = await TelegramBot.sendMessage(chatId, balancedChunk, currentReplyTo, mode === null ? undefined : mode);
 
         if (sendResult.ok) {
           Log.info(`消息块发送成功 (格式: ${mode === null ? '纯文本' : mode}).`);

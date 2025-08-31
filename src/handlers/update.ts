@@ -3,7 +3,8 @@
 import type { Update } from '@/types';
 import { BotConfig, Log, TelegramBot } from '@/services';
 import { handleMention, handleCommand, handleNewMember, handleNormal } from '@/handlers/message';
-import { scheduleDeletion, sendErrorNotification } from '@/utils';
+import { scheduleDeletion, sendErrorNotification, shortenString } from '@/utils';
+import { escapeHtml } from '@/utils/formatting';
 
 /**
  * @function handleUpdate
@@ -51,7 +52,8 @@ const handleUpdate = async (update: Update): Promise<void> => {
     Log.error('Error while handling update', { err, updateId: update_id });
     await sendErrorNotification(err, `Error while handling update ${JSON.stringify({ chatId: chat.id, messageId: message_id })}`);
     const errorMessage: string = err instanceof Error ? err.message : String(err);
-    const errorResult = await TelegramBot.sendMessage(message.chat.id, `❌ ${errorMessage}`, 'HTML', message_id);
+    const shorten = `<blockquote expandable>${escapeHtml(shortenString(`❌ ${errorMessage}`))}</blockquote>`;
+    const errorResult = await TelegramBot.sendMessage(chat.id, shorten, message_id);
     if (errorResult.ok) {
       void scheduleDeletion({ chat_id: chat.id, message_id: errorResult.messageId }, 3 * 60_000);
     }

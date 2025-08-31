@@ -423,6 +423,18 @@ const rotateArray = <T>(arr: readonly T[], steps: number = 1, direction: 'left' 
   return arr.slice(actualSteps).concat(arr.slice(0, actualSteps));
 };
 
+export const sampleByShuffle = <T>(arr: readonly T[], k: number = 3): T[] => {
+  if (k <= 0) return [];
+  if (k >= arr.length) return arr.slice();
+  const a = arr.slice(); // 复制一份不修改原数组
+  // 完整洗牌（也可做部分洗牌以优化，但这里简单明了）
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a.slice(0, k);
+};
+
 /**
  * @param input 要简化的字符串
  * @returns 简化后的字符串或原字符串
@@ -455,7 +467,7 @@ export const shortenString = (input: string): string => {
 export const convertPcmToMp3 = async (pcmBuffer: Buffer): Promise<Buffer> => {
   const sampleRate = 24000; // Gemini API 返回的采样率
   const channels = 1; // Gemini API 返回的声道数 (单声道)
-  const kbps = 256; // MP3 编码的比特率，可根据需求调整
+  const kbps = 128; // MP3 编码的比特率，可根据需求调整
 
   // 创建 MP3 编码器
   const mp3encoder = new lame.Mp3Encoder(channels, sampleRate, kbps);

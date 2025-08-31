@@ -73,7 +73,6 @@ export class MentionHandler {
       const rateLimitResult = await TelegramBot.sendMessage(
         chat.id,
         `超出速率限制，请等待 ${checkResult.retryAfterSeconds} 秒后重试。`,
-        'HTML',
         userMessageId,
       );
       if (rateLimitResult.ok) {
@@ -99,7 +98,7 @@ export class MentionHandler {
     userMessageId: number,
   ): Promise<number | null> {
     if (containsFile(message) || containsFile(replyToMessage)) {
-      const uploadingResult = await TelegramBot.sendMessage(chatId, '📄 File uploading...', 'HTML', userMessageId);
+      const uploadingResult = await TelegramBot.sendMessage(chatId, '📄 File uploading...', userMessageId);
       return uploadingResult.ok ? uploadingResult.messageId : null;
     }
     return null;
@@ -166,7 +165,7 @@ export class MentionHandler {
    * @throws {Error} 如果发送失败。
    */
   private static async _sendThinkingMessage(chatId: number, userMessageId: number): Promise<number> {
-    const thinkingResult = await TelegramBot.sendMessage(chatId, '✨ Thinking...', 'HTML', userMessageId);
+    const thinkingResult = await TelegramBot.sendMessage(chatId, '✨ Thinking...', userMessageId);
     if (!thinkingResult.ok) {
       Log.error('Failed to send thinking message.');
       throw new TelegramError('Failed to send thinking message.');
@@ -219,14 +218,8 @@ export class MentionHandler {
 
     if (resThoughtTexts) {
       hasDisplayedThoughts = true;
-      const displayThoughtText = shortenString(resThoughtTexts);
-      await TelegramBot.editMessageText(
-        chatId,
-        thinkMessageId,
-        `<b>Thoughts</b>:\n\n<blockquote expandable>${escapeHtml(displayThoughtText)}</blockquote>`,
-        'HTML',
-        false,
-      );
+      const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escapeHtml(shortenString(resThoughtTexts))}</blockquote>`;
+      await TelegramBot.editMessageText(chatId, thinkMessageId, displayThoughtText, 'HTML');
     }
 
     // 根据模型是否生成了思考内容 (`hasToolThoughts`) 和是否实际显示了思考文本 (`hasDisplayedThoughts`)，
@@ -247,7 +240,7 @@ export class MentionHandler {
 
     if (!resTexts) {
       const replyText = 'Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。';
-      const replyResult = await TelegramBot.sendMessage(chatId, replyText, 'HTML', userMessageId);
+      const replyResult = await TelegramBot.sendMessage(chatId, replyText, userMessageId);
       if (replyResult.ok) {
         void scheduleDeletion({ chat_id: chatId, message_id: replyResult.messageId }, 3 * 60 * 1000);
       }

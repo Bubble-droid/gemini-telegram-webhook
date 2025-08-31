@@ -164,11 +164,8 @@ export class GeminiApi {
           // 注意：这里没有重置 errorRetryCount，它会持续累积
 
           if (context.thinkMessageId !== undefined) {
-            await TelegramBot.editMessageText(
-              context.chatId,
-              context.thinkMessageId,
-              `Gemini API 客户端错误，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${attempt + 1} 次重试...`,
-            );
+            const errorRetryText = `Gemini API 客户端错误，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${attempt + 1} 次重试...`;
+            await TelegramBot.editMessageText(context.chatId, context.thinkMessageId, errorRetryText);
           }
           await sleep(delay);
           Log.info(`Gemini API 客户端错误，进行第 ${attempt + 1} 次重试...`);
@@ -207,17 +204,10 @@ export class GeminiApi {
         .trim();
       if (thoughtTexts) {
         context.metrics.hasToolThoughts = true;
-        // 截断思考文本以适应 Telegram 消息长度限制
-        const displayThoughtText = shortenString(thoughtTexts);
         // 如果存在 thinkMessageId，更新 Telegram 消息
         if (context.thinkMessageId !== undefined) {
-          await TelegramBot.editMessageText(
-            context.chatId,
-            context.thinkMessageId,
-            `<b>Thoughts</b>:\n\n<blockquote expandable>${escapeHtml(displayThoughtText)}</blockquote>`,
-            'HTML',
-            false,
-          );
+          const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escapeHtml(shortenString(thoughtTexts))}</blockquote>`;
+          await TelegramBot.editMessageText(context.chatId, context.thinkMessageId, displayThoughtText, 'HTML');
         }
       }
     }
@@ -374,11 +364,8 @@ export class GeminiApi {
           currentEmptyReplyAttempt++; // 递增当前无效回复重试的局部计数
 
           if (context.thinkMessageId !== undefined) {
-            await TelegramBot.editMessageText(
-              context.chatId,
-              context.thinkMessageId,
-              `Gemini API 响应为空，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${currentEmptyReplyAttempt} 次重试...`,
-            );
+            const emptyReplyRetryText = `Gemini API 响应为空，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${currentEmptyReplyAttempt} 次重试...`;
+            await TelegramBot.editMessageText(context.chatId, context.thinkMessageId, emptyReplyRetryText);
           }
           Log.warn(
             `Gemini API 返回结果不包含有效的 candidate 或 content，尝试重试 (无效回复重试 ${currentEmptyReplyAttempt}/${GeminiApi.MAX_RETRIES_COMMON})。`,

@@ -23,8 +23,9 @@ import type {
   SendPhotoResult,
   SendVoiceParams,
   SendVoiceResult,
+  ReplyMarkup,
 } from '@/types';
-import { markdownToHtml, shortenString } from '@/utils';
+import { shortenString } from '@/utils';
 import { escapeHtml } from '@/utils/formatting';
 
 /**
@@ -118,13 +119,13 @@ export class TelegramBot {
   public static async sendMessage(
     chatId: number,
     text: string,
-    parseMode?: ParseMode,
     replyToMessageId?: number,
-    isFormat: boolean = true,
+    parseMode?: ParseMode,
+    replyMarkup?: ReplyMarkup,
   ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
     const payload: SendMessageParams = {
       chat_id: chatId,
-      text: isFormat ? markdownToHtml(text) : text,
+      text: text,
       parse_mode: parseMode,
       link_preview_options: {
         is_disabled: true,
@@ -135,6 +136,7 @@ export class TelegramBot {
             allow_sending_without_reply: true,
           }
         : undefined,
+      reply_markup: replyMarkup ? JSON.stringify(replyMarkup) : undefined,
     };
     try {
       const result = await TelegramBot.sendRequest<SendMessageParams, SendMessageResult>('POST', 'sendMessage', payload);
@@ -172,13 +174,13 @@ export class TelegramBot {
     photoBuffer: Buffer,
     caption?: string,
     replyToMessageId?: number,
+    replyMarkup?: ReplyMarkup,
   ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
-    const shorten = shortenString(String(caption));
-    const quoteCaption = `<blockquote expandable>${escapeHtml(shorten)}</blockquote>`;
+    const shorten = `<blockquote expandable>${escapeHtml(shortenString(String(caption)))}</blockquote>`;
     const payload: SendPhotoParams = {
       chat_id: chatId,
       photo: photoBuffer,
-      caption: quoteCaption,
+      caption: shorten,
       parse_mode: 'HTML',
       show_caption_above_media: true,
       reply_parameters: replyToMessageId
@@ -187,6 +189,7 @@ export class TelegramBot {
             allow_sending_without_reply: true,
           }
         : undefined,
+      reply_markup: replyMarkup ? JSON.stringify(replyMarkup) : undefined,
     };
     const photoBlob = new Blob([payload.photo], { type: 'image/png' });
     const formData = new FormData();
@@ -222,6 +225,7 @@ export class TelegramBot {
     chatId: number | string,
     voiceBuffer: Buffer,
     replyToMessageId?: number,
+    replyMarkup?: ReplyMarkup,
   ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
     const payload: SendVoiceParams = {
       chat_id: chatId,
@@ -232,6 +236,7 @@ export class TelegramBot {
             allow_sending_without_reply: true,
           }
         : undefined,
+      reply_markup: replyMarkup ? JSON.stringify(replyMarkup) : undefined,
     };
     const voiceBlob = new Blob([payload.voice], { type: 'audio/mpeg' });
     const formData = new FormData();
@@ -272,16 +277,17 @@ export class TelegramBot {
     messageId: number,
     text: string,
     parseMode?: ParseMode,
-    isFormat: boolean = true,
+    replyMarkup?: ReplyMarkup,
   ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
     const payload: EditMessageTextParams = {
       chat_id: chatId,
       message_id: messageId,
-      text: isFormat ? markdownToHtml(text) : text,
+      text: text,
       parse_mode: parseMode,
       link_preview_options: {
         is_disabled: true,
       },
+      reply_markup: replyMarkup ? JSON.stringify(replyMarkup) : undefined,
     };
     try {
       const result = await TelegramBot.sendRequest<EditMessageTextParams, EditMessageTextResult>('POST', 'editMessageText', payload);

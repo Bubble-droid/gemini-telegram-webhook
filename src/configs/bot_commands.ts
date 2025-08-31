@@ -128,6 +128,7 @@ export const botCommands: BotCommandAction[] = [
       if (isCallback) {
         const backReplyMarkup: ReplyMarkup = {
           inline_keyboard: [
+            ...replyMarkup.inline_keyboard,
             [
               {
                 text: '⬅️ Go Back',

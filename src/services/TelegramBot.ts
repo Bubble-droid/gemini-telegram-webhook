@@ -24,6 +24,8 @@ import type {
   SendVoiceParams,
   SendVoiceResult,
   ReplyMarkup,
+  AnswerCallbackQueryParams,
+  AnswerCallbackQueryResult,
 } from '@/types';
 import { shortenString } from '@/utils';
 import { escapeHtml } from '@/utils/formatting';
@@ -430,6 +432,29 @@ export class TelegramBot {
         userId,
       });
       return { ok: false, error: error as TelegramError };
+    }
+  }
+
+  public static async answerCallbackQuery(
+    queryId: string,
+    callbackText?: string,
+    showAlert?: boolean,
+  ): Promise<{ ok: true } | { ok: false; error: TelegramError }> {
+    const payload: AnswerCallbackQueryParams = {
+      callback_query_id: queryId,
+      text: callbackText,
+      show_alert: showAlert,
+    };
+    try {
+      await TelegramBot.sendRequest<AnswerCallbackQueryParams, AnswerCallbackQueryResult>('POST', 'answerCallbackQuery', payload);
+      Log.info('Callback query answered successfully.', { queryId });
+      return { ok: true };
+    } catch (err: unknown) {
+      Log.error('Error answering callback query', {
+        err: err as Error,
+        queryId,
+      });
+      return { ok: false, error: err as TelegramError };
     }
   }
 }

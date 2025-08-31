@@ -5,6 +5,25 @@ export interface Update {
   message?: Message;
   edited_message?: Message;
   chat_member?: ChatMemberUpdated;
+  callback_query?: CallbackQuery;
+}
+
+export interface CallbackQuery {
+  id: string;
+  from: User;
+  message?: MaybeInaccessibleMessage;
+  inline_message_id?: string;
+  chat_instance: string;
+  data?: string;
+  game_short_name?: string;
+}
+
+export type MaybeInaccessibleMessage = Message | InaccessibleMessage;
+
+export interface InaccessibleMessage {
+  chat: Chat;
+  message_id: number;
+  date: 0;
 }
 
 export interface Message {
@@ -279,6 +298,7 @@ export interface CommandActionParams {
   chatId: number;
   messageId: number;
   userId: number;
+  isCallback?: boolean;
   cleanText?: string;
 }
 
@@ -449,6 +469,16 @@ export interface GetChatMemberParams {
 
 export type GetChatMemberResult = ChatMember;
 
+export interface AnswerCallbackQueryParams {
+  callback_query_id: string;
+  text?: string;
+  show_alert?: boolean;
+  url?: string;
+  cache_time?: number;
+}
+
+export type AnswerCallbackQueryResult = boolean;
+
 export type TelegramApiMethod =
   | 'sendMessage'
   | 'sendPhoto'
@@ -458,7 +488,8 @@ export type TelegramApiMethod =
   | 'deleteMessages'
   | 'setMyCommands'
   | 'getFile'
-  | 'getChatMember';
+  | 'getChatMember'
+  | 'answerCallbackQuery';
 
 export interface ApiSuccessResponse<T> {
   ok: true;

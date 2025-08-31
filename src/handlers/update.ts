@@ -5,6 +5,7 @@ import { BotConfig, Log, TelegramBot } from '@/services';
 import { handleMention, handleCommand, handleNewMember, handleNormal } from '@/handlers/message';
 import { scheduleDeletion, sendErrorNotification, shortenString } from '@/utils';
 import { escapeHtml } from '@/utils/formatting';
+import { handleCallbackQuery } from './callback_query';
 
 /**
  * @function handleUpdate
@@ -18,11 +19,12 @@ const handleUpdate = async (update: Update): Promise<void> => {
   Log.info('Handling Telegram update', { update });
   const { botName, allowGroups } = BotConfig.load();
   if (!update.message) return;
-  const { update_id, message } = update;
+  const { update_id, message, callback_query } = update;
   if (message.sticker) return;
   const { message_id, chat } = message;
   if (!allowGroups.includes(chat.id) || chat.type === 'private') return;
   if (message.new_chat_members && message.new_chat_members.length > 0) return await handleNewMember(message);
+  if (callback_query && callback_query.message && callback_query.data) return await handleCallbackQuery(callback_query);
   const messageText = message.text || message.caption || null;
   const messageEntities = message.entities || message.caption_entities || null;
   if (!messageEntities || !messageText) return await handleNormal(message);

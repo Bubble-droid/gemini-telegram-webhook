@@ -394,8 +394,26 @@ const functionForGenerate: FunctionDeclaration[] = [
         prompt: {
           type: Type.STRING,
           title: 'Image Generation Prompt',
-          description: '用于生成图片的文本提示。例如：A cute cat is napping in the sun.',
-          example: 'A cute cat is napping in the sun.',
+          description: '用于生成图片的文本提示。',
+          example: `A photorealistic [shot type] of [subject], [action or expression], set in
+[environment]. The scene is illuminated by [lighting description], creating
+a [mood] atmosphere. Captured with a [camera/lens details], emphasizing
+[key textures and details]. The image should be in a [aspect ratio] format.
+
+A [style] sticker of a [subject], featuring [key characteristics] and a
+[color palette]. The design should have [line style] and [shading style].
+The background must be transparent.
+
+A single comic book panel in a [art style] style. In the foreground,
+[character description and action]. In the background, [setting details].
+The panel has a [dialogue/caption box] with the text "[Text]". The lighting
+creates a [mood] mood. [Aspect ratio].
+
+A high-resolution, studio-lit product photograph of a [product description]
+on a [background surface/description]. The lighting is a [lighting setup,
+e.g., three-point softbox setup] to [lighting purpose]. The camera angle is
+a [angle type] to showcase [specific feature]. Ultra-realistic, with sharp
+focus on [key detail]. [Aspect ratio].`,
         },
       },
       required: ['prompt'],
@@ -412,8 +430,17 @@ const functionForGenerate: FunctionDeclaration[] = [
         prompt: {
           type: Type.STRING,
           title: 'Speech Generation Prompt',
-          description: `用于生成语音的文本提示，必须带上语调描述。例如：Please say in a helpless tone: "拜托！我不会算命啊！"`,
-          example: `Please say in a helpless tone: "拜托！我不会算命啊！"`,
+          description: `用于生成语音的文本提示，可以使用自然语言提示来控制语音的样式、语调、口音和语速。`,
+          example: `Say in a helpless tone:
+"拜托！我不会算命啊！"
+
+Say in an spooky whisper:
+"By the pricking of my thumbs...
+Something wicked this way comes"
+
+Make Speaker1 sound tired and bored, and Speaker2 sound excited and happy:
+Speaker1: So... what's on the agenda today?
+Speaker2: You're never going to guess!`,
         },
       },
       required: ['prompt'],

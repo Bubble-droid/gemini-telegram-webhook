@@ -4,13 +4,14 @@ import { BotConfig, Log, TelegramBot } from '@/services';
 import type { CallbackQuery, Message, ReplyMarkup } from '@/types';
 import { handleMention } from './message';
 import { botCommands } from '@/configs';
+import { KvNamespace } from '@/utils';
 
 export const handleCallbackQuery = async (query: CallbackQuery): Promise<void> => {
   if (!query.message || !query.data) {
     Log.info('Invalid callback query', { queryId: query.id });
     return;
   }
-  const { botName } = BotConfig.load();
+  const { botName, rateLimitId, contextsExpirationSecond } = BotConfig.load();
   const { id, from, message, data } = query;
   const { chat, message_id: messageId } = message;
 
@@ -51,7 +52,14 @@ export const handleCallbackQuery = async (query: CallbackQuery): Promise<void> =
         });
       }
     }
-    callbackText = '操作完成';
+    callbackText = '执行完成';
+  } else if (data.startsWith('reaction_')) {
+    const keyName = `reacted_${chat.id}_${messageId}`;
+    const reactedUsers = (await KvNamespace.read<number[]>(rateLimitId, keyName, 'json')) || [];
+    if (!reactedUsers.includes(from.id)) {
+      reactedUsers.push(from.id);
+      await KvNamespace.write(rateLimitId, keyName, JSON.stringify(reactedUsers), { expiration_ttl: contextsExpirationSecond });
+    }
   }
 
   await TelegramBot.answerCallbackQuery(id, callbackText);

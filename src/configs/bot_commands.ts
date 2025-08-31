@@ -96,6 +96,7 @@ export const botCommands: BotCommandAction[] = [
         if (clearedResult.ok) {
           void scheduleDeletion({ chat_id: chatId, message_id: clearedResult.messageId }, 3 * 60_000);
         }
+        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60_000);
       }
     },
   },
@@ -165,6 +166,7 @@ export const botCommands: BotCommandAction[] = [
         if (notText.ok) {
           void scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1000);
         }
+        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60 * 1000);
         return;
       }
       let renderMessageId: number | undefined = undefined;
@@ -206,6 +208,7 @@ export const botCommands: BotCommandAction[] = [
         if (notText.ok) {
           void scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1000);
         }
+        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60 * 1000);
         return;
       }
       let synthMessageId: number | undefined = undefined;

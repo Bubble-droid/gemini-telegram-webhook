@@ -53,7 +53,7 @@ export const handleCallbackQuery = async (query: CallbackQuery): Promise<void> =
       return;
     }
 
-    void TelegramBot.answerCallbackQuery(id);
+    TelegramBot.answerCallbackQuery(id);
     // Add the user to the reacted list and save it for 48 hours.
     const newReactedUsers = [...reactedUsers, from.id];
     await KvNamespace.write(rateLimitId, keyName, JSON.stringify(newReactedUsers), { expiration_ttl: 48 * 60 * 60 });

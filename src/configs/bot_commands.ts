@@ -128,7 +128,7 @@ export const botCommands: BotCommandAction[] = [
       const toolFunctions = geminiTools[0]?.functionDeclarations || [];
       const toolList =
         toolFunctions
-          ?.map((tool) => `* **${tool.name}**\n    ${tool.description?.slice(0, 20)}...`)
+          ?.map((tool) => `* **${tool.name}**\n    ${tool.description?.slice(0, 40)}...`)
           .join('\n')
           .trim() || '';
       const randomTools = sampleByShuffle<FunctionDeclaration>(toolFunctions, 4);

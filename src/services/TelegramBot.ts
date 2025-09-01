@@ -143,7 +143,7 @@ export class TelegramBot {
             allow_sending_without_reply: true,
           }
         : undefined,
-      reply_markup: addReactionRow(options?.replyMarkup),
+      reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : undefined,
     };
     try {
       const result = await TelegramBot.sendRequest<SendMessageParams, SendMessageResult>('POST', 'sendMessage', payload);
@@ -198,7 +198,7 @@ export class TelegramBot {
             allow_sending_without_reply: true,
           }
         : undefined,
-      reply_markup: addReactionRow(options?.replyMarkup),
+      reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : undefined,
     };
     const photoBlob = new Blob([payload.photo], { type: 'image/png' });
     const formData = new FormData();
@@ -247,7 +247,7 @@ export class TelegramBot {
             allow_sending_without_reply: true,
           }
         : undefined,
-      reply_markup: addReactionRow(options?.replyMarkup),
+      reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : undefined,
     };
     const voiceBlob = new Blob([payload.voice], { type: 'audio/mpeg' });
     const formData = new FormData();
@@ -301,7 +301,7 @@ export class TelegramBot {
       link_preview_options: {
         is_disabled: true,
       },
-      reply_markup: addReactionRow(options?.replyMarkup),
+      reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : undefined,
     };
     try {
       const result = await TelegramBot.sendRequest<EditMessageTextParams, EditMessageTextResult>('POST', 'editMessageText', payload);
@@ -504,21 +504,7 @@ export class TelegramBot {
   }
 }
 
-export const addReactionRow = (replyMarkup: ReplyMarkup | undefined): string | undefined => {
-  if (!replyMarkup) {
-    return undefined;
-  }
-
-  const newReplyMarkup: ReplyMarkup = { ...replyMarkup };
-  const reactionRow: InlineKeyboardButton[] = [
-    { text: '👍', callback_data: 'reaction_like' },
-    { text: '👎', callback_data: 'reaction_dislike' },
-  ];
-
-  const hasReactionRow = newReplyMarkup.inline_keyboard.some((row) => row.some((button) => button.callback_data?.startsWith('reaction_')));
-
-  if (!hasReactionRow) {
-    newReplyMarkup.inline_keyboard.unshift(reactionRow);
-  }
-  return JSON.stringify(newReplyMarkup);
-};
+export const REACTiON_ROW: InlineKeyboardButton[] = [
+  { text: '👍', callback_data: 'reaction_like' },
+  { text: '👎', callback_data: 'reaction_dislike' },
+];

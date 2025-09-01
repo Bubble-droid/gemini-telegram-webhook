@@ -4,8 +4,8 @@ import { formatText } from './formatters';
 import { balanceChunkTags } from './tag_balancing';
 import { splitFormattedText } from './chunk_splitting';
 import { scheduleDeletion } from '@/utils/scheduler_task';
-import { Log, TelegramBot, TelegramError } from '@/services';
-import type { ParseMode } from '@/types';
+import { Log, REACTiON_ROW, TelegramBot, TelegramError } from '@/services';
+import type { ParseMode, ReplyMarkup } from '@/types';
 
 /**
  * 发送 Telegram 消息，支持文本分割、按块格式化回退和未闭合标签处理。
@@ -90,9 +90,14 @@ export const sendFormattedMessage = async (
           continue;
         }
 
+        const replyMarkup: ReplyMarkup = {
+          inline_keyboard: [REACTiON_ROW],
+        };
+
         const sendResult = await TelegramBot.sendMessage(chatId, balancedChunk, {
           replyToMessageId: currentReplyTo,
           parseMode: mode === null ? undefined : mode,
+          replyMarkup,
         });
 
         if (sendResult.ok) {

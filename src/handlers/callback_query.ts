@@ -1,7 +1,7 @@
 // src/handlers/callback_query.ts
 
 import { BotConfig, Log, TelegramBot } from '@/services';
-import type { CallbackQuery, InlineKeyboardButton, Message, ReplyMarkup } from '@/types';
+import type { CallbackQuery, InlineKeyboardButton, Message } from '@/types';
 import { handleMention } from './message';
 import { botCommands } from '@/configs';
 import { KvNamespace } from '@/utils';
@@ -13,7 +13,7 @@ export const handleCallbackQuery = async (query: CallbackQuery): Promise<void> =
   }
   const { rateLimitId } = BotConfig.load();
   const { id, from, message, data } = query;
-  const { chat, message_id: messageId } = message;
+  const { chat, message_id: messageId, reply_markup } = message;
 
   Log.info('Handling callback query', { chatId: chat.id, messageId, data });
 
@@ -31,41 +31,14 @@ export const handleCallbackQuery = async (query: CallbackQuery): Promise<void> =
   } else if (data.startsWith('cmd_')) {
     void TelegramBot.answerCallbackQuery(id);
     const command = data.split('_')[1];
-    if (command === 'help') {
-      const expCommand = botCommands.filter((cmd) => cmd.name.startsWith('exp_'));
-      const baseCommand = botCommands.filter((cmd) => !cmd.name.startsWith('exp_'));
-      const baseKeyboard: InlineKeyboardButton[] = baseCommand.map((cmd) => ({
-        text: cmd.name + ' - ' + cmd.name === 'start' ? '开始使用' : cmd.name === 'clear' ? '清理对话' : '模型工具',
-        callback_data: `cmd_${cmd.name}`,
-      }));
-      const expKeyboard: InlineKeyboardButton[] = expCommand.map((cmd) => ({
-        text: cmd.name + ' - ' + cmd.name === 'exp_img_gen' ? '生成图片' : '生成语音',
-        switch_inline_query_current_chat: cmd.name === 'exp_img_gen' ? '生成图片：IMAGE_GENERATION_PROMPT' : '生成语音：SPEECH_GENERATION_PROMPT',
-      }));
-      const replyText = `💡 可用命令：`;
-      const backReplyMarkup: ReplyMarkup = {
-        inline_keyboard: [
-          baseKeyboard,
-          expKeyboard,
-          [
-            {
-              text: '⬅️ Go Back',
-              callback_data: 'cmd_start',
-            },
-          ],
-        ],
-      };
-      await TelegramBot.editMessageText(chat.id, messageId, replyText, { replyMarkup: backReplyMarkup });
-    } else {
-      const targetCommand = botCommands.find((cmd) => cmd.name === command);
-      if (targetCommand) {
-        await targetCommand.action({
-          chatId: chat.id,
-          messageId,
-          userId: from?.id as number,
-          isCallback: true,
-        });
-      }
+    const targetCommand = botCommands.find((cmd) => cmd.name === command);
+    if (targetCommand) {
+      await targetCommand.action({
+        chatId: chat.id,
+        messageId,
+        userId: from?.id as number,
+        isCallback: true,
+      });
     }
   } else if (data.startsWith('reaction_')) {
     const reaction = data.split('_')[1];
@@ -75,7 +48,7 @@ export const handleCallbackQuery = async (query: CallbackQuery): Promise<void> =
     if (reactedUsers.includes(from.id)) {
       // Notify the user that they have already reacted and stop.
       void TelegramBot.answerCallbackQuery(id, {
-        callbackText: '你已做出过反应',
+        callbackText: '你已做出过回应',
       });
       return;
     }
@@ -84,8 +57,6 @@ export const handleCallbackQuery = async (query: CallbackQuery): Promise<void> =
     // Add the user to the reacted list and save it for 48 hours.
     const newReactedUsers = [...reactedUsers, from.id];
     await KvNamespace.write(rateLimitId, keyName, JSON.stringify(newReactedUsers), { expiration_ttl: 48 * 60 * 60 });
-
-    const { reply_markup } = message;
 
     // Create a deep copy of the keyboard to modify.
     const newInlineKeyboard: InlineKeyboardButton[][] = JSON.parse(JSON.stringify(reply_markup?.inline_keyboard));

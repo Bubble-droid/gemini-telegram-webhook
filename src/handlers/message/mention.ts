@@ -1,7 +1,7 @@
 // src/handlers/message/mention.ts
 
-import { BotConfig, TelegramBot, ChatContexts, Log, GeminiApi, GeminiError, TelegramError } from '@/services';
-import type { Message, GenerateContentSuccessResponse } from '@/types';
+import { BotConfig, TelegramBot, ChatContexts, Log, GeminiApi, GeminiError, TelegramError, REACTiON_ROW } from '@/services';
+import type { Message, GenerateContentSuccessResponse, ReplyMarkup } from '@/types';
 import type { Content, Part } from '@google/genai'; // 确保 Part 类型导入
 import { rateLimiterCheck, scheduleDeletion, shortenString, sleep } from '@/utils';
 import { escapeHtml } from '@/utils/formatting';
@@ -221,7 +221,10 @@ export class MentionHandler {
     if (resThoughtTexts) {
       hasDisplayedThoughts = true;
       const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escapeHtml(shortenString(resThoughtTexts))}</blockquote>`;
-      await TelegramBot.editMessageText(chatId, thinkMessageId, displayThoughtText, { parseMode: 'HTML' });
+      const replyMarkup: ReplyMarkup = {
+        inline_keyboard: [REACTiON_ROW],
+      };
+      await TelegramBot.editMessageText(chatId, thinkMessageId, displayThoughtText, { parseMode: 'HTML', replyMarkup });
     }
 
     // 根据模型是否生成了思考内容 (`hasToolThoughts`) 和是否实际显示了思考文本 (`hasDisplayedThoughts`)，
@@ -242,8 +245,12 @@ export class MentionHandler {
 
     if (!resTexts) {
       const replyText = 'Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。';
+      const replyMarkup: ReplyMarkup = {
+        inline_keyboard: [REACTiON_ROW],
+      };
       const replyResult = await TelegramBot.sendMessage(chatId, replyText, {
         replyToMessageId: userMessageId,
+        replyMarkup,
       });
       if (replyResult.ok) {
         void scheduleDeletion({ chat_id: chatId, message_id: replyResult.messageId }, 3 * 60 * 1000);

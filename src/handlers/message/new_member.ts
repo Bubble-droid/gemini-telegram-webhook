@@ -1,6 +1,6 @@
 // src/handlers/message/new_member.ts
 
-import { Log, BotConfig, TelegramBot } from '@/services';
+import { Log, BotConfig, TelegramBot, REACTiON_ROW } from '@/services';
 import type { Message, ReplyMarkup, User } from '@/types';
 import { KvNamespace, markdownToHtml, scheduleDeletion, sleep } from '@/utils';
 
@@ -127,6 +127,7 @@ const handleNewMember = async (message: Message): Promise<void> => {
 
       const replyMarkup: ReplyMarkup = {
         inline_keyboard: [
+          REACTiON_ROW,
           [
             { text: '📓 使用指南', url: 'https://gui-for-cores.github.io/zh/guide' },
             { text: '🧠 智能助理', callback_data: 'mention' },

@@ -1,7 +1,7 @@
 // src/handlers/update.ts
 
-import type { Update } from '@/types';
-import { BotConfig, Log, TelegramBot } from '@/services';
+import type { ReplyMarkup, Update } from '@/types';
+import { BotConfig, Log, REACTiON_ROW, TelegramBot } from '@/services';
 import { handleMention, handleCommand, handleNewMember, handleNormal } from '@/handlers/message';
 import { scheduleDeletion, sendErrorNotification, shortenString } from '@/utils';
 import { escapeHtml } from '@/utils/formatting';
@@ -59,7 +59,10 @@ const handleUpdate = async (update: Update): Promise<void> => {
     await sendErrorNotification(err, `Error while handling update ${JSON.stringify({ chatId: chat.id, messageId: message_id })}`);
     const errorMessage: string = err instanceof Error ? err.message : String(err);
     const shorten = `<blockquote expandable>${escapeHtml(shortenString(`❌ ${errorMessage}`))}</blockquote>`;
-    const errorResult = await TelegramBot.sendMessage(chat.id, shorten, { replyToMessageId: message_id, parseMode: 'HTML' });
+    const replyMarkup: ReplyMarkup = {
+      inline_keyboard: [REACTiON_ROW],
+    };
+    const errorResult = await TelegramBot.sendMessage(chat.id, shorten, { replyToMessageId: message_id, parseMode: 'HTML', replyMarkup });
     if (errorResult.ok) {
       void scheduleDeletion({ chat_id: chat.id, message_id: errorResult.messageId }, 3 * 60_000);
     }

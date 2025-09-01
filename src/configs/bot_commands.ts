@@ -45,8 +45,22 @@ export const botCommands: BotCommandAction[] = [
           ],
           [
             {
-              text: '❓ 使用帮助',
-              callback_data: 'cmd_help',
+              text: '📓 使用指南',
+              url: 'https://gui-for-cores.github.io/zh/guide',
+            },
+            {
+              text: '🧠 智能助理',
+              callback_data: 'mention',
+            },
+          ],
+          [
+            {
+              text: '📢 通知频道',
+              url: 'https://t.me/GUI_for_Cores_Channel',
+            },
+            {
+              text: '📄 项目地址',
+              url: 'https://github.com/GUI-for-Cores',
             },
           ],
         ],
@@ -61,11 +75,11 @@ export const botCommands: BotCommandAction[] = [
           parseMode: 'HTML',
           replyMarkup,
         });
+        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60_000);
       }
       if (startResult.ok) {
         void scheduleDeletion({ chat_id: chatId, message_id: startResult.messageId }, 3 * 60_000);
       }
-      void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60_000);
     },
   },
   {
@@ -90,6 +104,7 @@ export const botCommands: BotCommandAction[] = [
         clearingResult = await TelegramBot.editMessageText(chatId, messageId, clearingText, { replyMarkup: backReplyMarkup });
       } else {
         clearingResult = await TelegramBot.sendMessage(chatId, clearingText, { replyToMessageId: messageId });
+        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60_000);
       }
       await ChatContexts.clear(chatId, userId);
       if (clearingResult.ok) {
@@ -101,7 +116,6 @@ export const botCommands: BotCommandAction[] = [
         if (clearedResult.ok) {
           void scheduleDeletion({ chat_id: chatId, message_id: clearedResult.messageId }, 3 * 60_000);
         }
-        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60_000);
       }
     },
   },
@@ -114,7 +128,7 @@ export const botCommands: BotCommandAction[] = [
       const toolFunctions = geminiTools[0]?.functionDeclarations || [];
       const toolList =
         toolFunctions
-          ?.map((tool) => `  * **${tool.name}**`)
+          ?.map((tool) => `* **${tool.name}**\n    ${tool.description?.slice(0, 20)}...`)
           .join('\n')
           .trim() || '';
       const randomTools = sampleByShuffle<FunctionDeclaration>(toolFunctions, 4);
@@ -123,7 +137,7 @@ export const botCommands: BotCommandAction[] = [
         text: `🛠 ${tool.name}`,
         callback_data: `tool_demo_${tool.name}`,
       }));
-      const keyboard2: InlineKeyboardButton[] = randomTools.slice(2, 2).map((tool) => ({
+      const keyboard2: InlineKeyboardButton[] = randomTools.slice(2, 4).map((tool) => ({
         text: `🛠 ${tool.name}`,
         callback_data: `tool_demo_${tool.name}`,
       }));
@@ -166,11 +180,11 @@ export const botCommands: BotCommandAction[] = [
           parseMode: 'HTML',
           replyMarkup,
         });
+        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 5 * 60_000);
       }
       if (toolsResult.ok) {
         void scheduleDeletion({ chat_id: chatId, message_id: toolsResult.messageId }, 5 * 60_000);
       }
-      void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 5 * 60_000);
     },
   },
   {

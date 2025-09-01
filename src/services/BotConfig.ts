@@ -150,6 +150,7 @@ export class BotConfig {
     const loggerLevel: LoggerLevel = BotConfig.parseLoggerLevel(ENV.SERVER_LOGGER_LEVEL);
 
     const modelName: string = ENV.GEMINI_MODEL_NAME || BotConfig.DEFAULT_MODEL_NAME;
+    const modelTemperature: number = Number(ENV.MODEL_CONFIG_TEMPERATURE) || 0.3;
     const maxApiCallRounds: number = Number(ENV.MAX_API_CALL_ROUNDS) || BotConfig.DEFAULT_MAX_API_CALL_ROUNDS;
 
     const cloudflareToken: string = ENV.CLOUDFLARE_API_TOKEN;
@@ -187,6 +188,7 @@ export class BotConfig {
       listenPort,
       loggerLevel,
       modelName,
+      modelTemperature,
       maxApiCallRounds,
       cloudflareToken,
       cloudflareAccountId,

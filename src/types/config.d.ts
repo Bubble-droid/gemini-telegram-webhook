@@ -12,6 +12,7 @@ export interface Env {
   SERVER_LOGGER_LEVEL?: string; // 服务器日志级别 (可选)
 
   GEMINI_MODEL_NAME?: string;
+  MODEL_CONFIG_TEMPERATURE?: string;
   MAX_API_CALL_ROUNDS?: string;
 
   CLOUDFLARE_API_TOKEN: string; // Cloudflare API Token (必填)
@@ -52,6 +53,7 @@ export interface Config {
   loggerLevel: LoggerLevel; // 日志级别，已解析为 LoggerLevel 类型
 
   modelName: string;
+  modelTemperature: number;
   maxApiCallRounds: number;
 
   cloudflareToken: string;

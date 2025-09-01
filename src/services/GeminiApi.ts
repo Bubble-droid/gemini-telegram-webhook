@@ -32,7 +32,7 @@ export class GeminiApi {
    * @throws {GeminiError} 如果 API 密钥未找到或初始化失败。
    */
   private static async _initializeApiCallContext(chatParams: ChatParams, initialContents: Content[]): Promise<ApiCallContext> {
-    const { durableResourceId, systemPromptKeyName, geminiApiKeysKeyName, modelName } = BotConfig.load();
+    const { durableResourceId, systemPromptKeyName, geminiApiKeysKeyName, modelName, modelTemperature } = BotConfig.load();
     const { chatId, userMessageId, thinkMessageId } = chatParams;
 
     // 从 KvNamespace 读取系统提示，如果不存在则使用默认值
@@ -51,7 +51,7 @@ export class GeminiApi {
     // 构建 Gemini API 请求配置
     const config: GenerateContentConfig = {
       maxOutputTokens: 65536,
-      temperature: 0,
+      temperature: modelTemperature,
       thinkingConfig: { includeThoughts: true, thinkingBudget: -1 },
       tools: geminiTools,
       toolConfig: {

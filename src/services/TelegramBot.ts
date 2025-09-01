@@ -208,6 +208,8 @@ export class TelegramBot {
     formData.append('parse_mode', payload.parse_mode);
     formData.append('show_caption_above_media', String(payload.show_caption_above_media));
     formData.append('reply_parameters', JSON.stringify(payload.reply_parameters));
+    formData.append('reply_markup', payload.reply_markup);
+
     try {
       const result = await TelegramBot.sendRequest<FormData, SendPhotoResult>('POST', 'sendPhoto', formData, true);
       Log.info('Telegram photo message sent successfully.', {
@@ -254,6 +256,7 @@ export class TelegramBot {
     formData.append('chat_id', payload.chat_id);
     formData.append('voice', voiceBlob, `gemini_gen_voice.mp3`);
     formData.append('reply_parameters', JSON.stringify(payload.reply_parameters));
+    formData.append('reply_markup', payload.reply_markup);
     try {
       const result = await TelegramBot.sendRequest<FormData, SendVoiceResult>('POST', 'sendVoice', formData, true);
       Log.info('Telegram voice message sent successfully.', {

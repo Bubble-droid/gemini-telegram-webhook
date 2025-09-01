@@ -26,6 +26,10 @@ import type {
   ReplyMarkup,
   AnswerCallbackQueryParams,
   AnswerCallbackQueryResult,
+  MessageEntity,
+  EditMessageReplyMarkupParams,
+  EditMessageReplyMarkupResult,
+  InlineKeyboardButton,
 } from '@/types';
 import { shortenString } from '@/utils';
 import { escapeHtml } from '@/utils/formatting';
@@ -114,31 +118,32 @@ export class TelegramBot {
    * 向指定聊天发送文本消息。
    * @param {number} chatId - 接收消息的聊天 ID。
    * @param {string} text - 要发送的文本内容。
-   * @param {ParseMode} parseMode
-   * @param {number} [replyToMessageId] - 可选参数：如果此消息是对特定消息的回复，则指定被回复消息的 ID。
-   * @returns {Promise<{ ok: boolean; messageId?: number }>} 消息发送成功返回 `true`，否则返回 `false`。
+   * @param {{replyToMessageId?: number; parseMode?: ParseMode; replyMarkup?: ReplyMarkup;}} options - 可选参数
+   * @returns {Promise<{ok: boolean;messageId?: number;}>} 消息发送成功返回 `true`，否则返回 `false`。
    */
   public static async sendMessage(
     chatId: number,
     text: string,
-    replyToMessageId?: number,
-    parseMode?: ParseMode,
-    replyMarkup?: ReplyMarkup,
+    options?: {
+      replyToMessageId?: number;
+      parseMode?: ParseMode;
+      replyMarkup?: ReplyMarkup;
+    },
   ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
     const payload: SendMessageParams = {
       chat_id: chatId,
       text: text,
-      parse_mode: parseMode,
+      parse_mode: options?.parseMode,
       link_preview_options: {
         is_disabled: true,
       }, // 更现代的写法
-      reply_parameters: replyToMessageId
+      reply_parameters: options?.replyToMessageId
         ? {
-            message_id: replyToMessageId,
+            message_id: options?.replyToMessageId,
             allow_sending_without_reply: true,
           }
         : undefined,
-      reply_markup: replyMarkup ? JSON.stringify(replyMarkup) : undefined,
+      reply_markup: addReactionRow(options?.replyMarkup),
     };
     try {
       const result = await TelegramBot.sendRequest<SendMessageParams, SendMessageResult>('POST', 'sendMessage', payload);
@@ -174,24 +179,26 @@ export class TelegramBot {
   public static async sendPhoto(
     chatId: number | string,
     photoBuffer: Buffer,
-    caption?: string,
-    replyToMessageId?: number,
-    replyMarkup?: ReplyMarkup,
+    options?: {
+      caption?: string;
+      replyToMessageId?: number;
+      replyMarkup?: ReplyMarkup;
+    },
   ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
-    const shorten = `<blockquote expandable>${escapeHtml(shortenString(String(caption)))}</blockquote>`;
+    const shorten = `<blockquote expandable>${escapeHtml(shortenString(String(options?.caption)))}</blockquote>`;
     const payload: SendPhotoParams = {
       chat_id: chatId,
       photo: photoBuffer,
       caption: shorten,
       parse_mode: 'HTML',
       show_caption_above_media: true,
-      reply_parameters: replyToMessageId
+      reply_parameters: options?.replyToMessageId
         ? {
-            message_id: replyToMessageId,
+            message_id: options.replyToMessageId,
             allow_sending_without_reply: true,
           }
         : undefined,
-      reply_markup: replyMarkup ? JSON.stringify(replyMarkup) : undefined,
+      reply_markup: addReactionRow(options?.replyMarkup),
     };
     const photoBlob = new Blob([payload.photo], { type: 'image/png' });
     const formData = new FormData();
@@ -226,19 +233,21 @@ export class TelegramBot {
   public static async sendVoice(
     chatId: number | string,
     voiceBuffer: Buffer,
-    replyToMessageId?: number,
-    replyMarkup?: ReplyMarkup,
+    options?: {
+      replyToMessageId?: number;
+      replyMarkup?: ReplyMarkup;
+    },
   ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
     const payload: SendVoiceParams = {
       chat_id: chatId,
       voice: voiceBuffer,
-      reply_parameters: replyToMessageId
+      reply_parameters: options?.replyToMessageId
         ? {
-            message_id: replyToMessageId,
+            message_id: options.replyToMessageId,
             allow_sending_without_reply: true,
           }
         : undefined,
-      reply_markup: replyMarkup ? JSON.stringify(replyMarkup) : undefined,
+      reply_markup: addReactionRow(options?.replyMarkup),
     };
     const voiceBlob = new Blob([payload.voice], { type: 'audio/mpeg' });
     const formData = new FormData();
@@ -278,18 +287,21 @@ export class TelegramBot {
     chatId: number | string,
     messageId: number,
     text: string,
-    parseMode?: ParseMode,
-    replyMarkup?: ReplyMarkup,
+    options?: {
+      parseMode?: ParseMode;
+      entities?: MessageEntity[];
+      replyMarkup?: ReplyMarkup;
+    },
   ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
     const payload: EditMessageTextParams = {
       chat_id: chatId,
       message_id: messageId,
       text: text,
-      parse_mode: parseMode,
+      ...(options?.parseMode ? { parse_mode: options.parseMode } : options?.entities ? { entities: JSON.stringify(options.entities) } : {}),
       link_preview_options: {
         is_disabled: true,
       },
-      reply_markup: replyMarkup ? JSON.stringify(replyMarkup) : undefined,
+      reply_markup: addReactionRow(options?.replyMarkup),
     };
     try {
       const result = await TelegramBot.sendRequest<EditMessageTextParams, EditMessageTextResult>('POST', 'editMessageText', payload);
@@ -304,6 +316,37 @@ export class TelegramBot {
         chatId,
         messageId,
         text: text.substring(0, 100) + '...',
+      });
+      return { ok: false, error: error as TelegramError };
+    }
+  }
+
+  public static async editMessageReplyMarkup(
+    chatId: number | string,
+    messageId: number,
+    replyMarkup: ReplyMarkup,
+  ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
+    const payload: EditMessageReplyMarkupParams = {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: JSON.stringify(replyMarkup),
+    };
+    try {
+      const result = await TelegramBot.sendRequest<EditMessageReplyMarkupParams, EditMessageReplyMarkupResult>(
+        'POST',
+        'editMessageReplyMarkup',
+        payload,
+      );
+      Log.info('Telegram message reply markup edited successfully.', {
+        chatId,
+        messageId: result.message_id,
+      });
+      return { ok: true, messageId: result.message_id };
+    } catch (error: unknown) {
+      Log.error('Error editing Telegram message reply markup', {
+        err: error as Error,
+        chatId,
+        messageId,
       });
       return { ok: false, error: error as TelegramError };
     }
@@ -437,13 +480,15 @@ export class TelegramBot {
 
   public static async answerCallbackQuery(
     queryId: string,
-    callbackText?: string,
-    showAlert?: boolean,
+    options?: {
+      callbackText?: string;
+      showAlert?: boolean;
+    },
   ): Promise<{ ok: true } | { ok: false; error: TelegramError }> {
     const payload: AnswerCallbackQueryParams = {
       callback_query_id: queryId,
-      text: callbackText,
-      show_alert: showAlert,
+      text: options?.callbackText,
+      show_alert: options?.showAlert,
     };
     try {
       await TelegramBot.sendRequest<AnswerCallbackQueryParams, AnswerCallbackQueryResult>('POST', 'answerCallbackQuery', payload);
@@ -458,3 +503,22 @@ export class TelegramBot {
     }
   }
 }
+
+export const addReactionRow = (replyMarkup: ReplyMarkup | undefined): string | undefined => {
+  if (!replyMarkup) {
+    return undefined;
+  }
+
+  const newReplyMarkup: ReplyMarkup = { ...replyMarkup };
+  const reactionRow: InlineKeyboardButton[] = [
+    { text: '👍', callback_data: 'reaction_like' },
+    { text: '👎', callback_data: 'reaction_dislike' },
+  ];
+
+  const hasReactionRow = newReplyMarkup.inline_keyboard.some((row) => row.some((button) => button.callback_data?.startsWith('reaction_')));
+
+  if (!hasReactionRow) {
+    newReplyMarkup.inline_keyboard.unshift(reactionRow);
+  }
+  return JSON.stringify(newReplyMarkup);
+};

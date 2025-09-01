@@ -110,6 +110,11 @@ export class GeminiApi {
             return { ...part, thoughtSignature: 'THOUGHT_SIGNATURE' };
           } else if (part.thought) {
             return { ...part, text: 'THOUGHT_TEXT' };
+          } else if (part.functionResponse && part.functionResponse.response?.success) {
+            return {
+              ...part,
+              functionResponse: { ...part.functionResponse, response: { ...part.functionResponse.response, data: 'FUNCTION_RESPONSE_DATA' } },
+            };
           }
           return part; // 否则返回原始部分
         }),
@@ -207,7 +212,7 @@ export class GeminiApi {
         // 如果存在 thinkMessageId，更新 Telegram 消息
         if (context.thinkMessageId !== undefined) {
           const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escapeHtml(shortenString(thoughtTexts))}</blockquote>`;
-          await TelegramBot.editMessageText(context.chatId, context.thinkMessageId, displayThoughtText, 'HTML');
+          await TelegramBot.editMessageText(context.chatId, context.thinkMessageId, displayThoughtText, { parseMode: 'HTML' });
         }
       }
     }

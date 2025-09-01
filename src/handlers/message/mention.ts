@@ -70,11 +70,9 @@ export class MentionHandler {
 
     if (!checkResult.canProceed && from?.id !== adminId) {
       Log.info(`Rate limit exceeded for chat ${chat.id}. Retry after ${checkResult.retryAfterSeconds} seconds.`);
-      const rateLimitResult = await TelegramBot.sendMessage(
-        chat.id,
-        `超出速率限制，请等待 ${checkResult.retryAfterSeconds} 秒后重试。`,
-        userMessageId,
-      );
+      const rateLimitResult = await TelegramBot.sendMessage(chat.id, `超出速率限制，请等待 ${checkResult.retryAfterSeconds} 秒后重试。`, {
+        replyToMessageId: userMessageId,
+      });
       if (rateLimitResult.ok) {
         void scheduleDeletion({ chat_id: chat.id, message_id: rateLimitResult.messageId }, checkResult.retryAfterSeconds * 1_000);
       }
@@ -98,7 +96,9 @@ export class MentionHandler {
     userMessageId: number,
   ): Promise<number | null> {
     if (containsFile(message) || containsFile(replyToMessage)) {
-      const uploadingResult = await TelegramBot.sendMessage(chatId, '📄 File uploading...', userMessageId);
+      const uploadingResult = await TelegramBot.sendMessage(chatId, '📄 File uploading...', {
+        replyToMessageId: userMessageId,
+      });
       return uploadingResult.ok ? uploadingResult.messageId : null;
     }
     return null;
@@ -165,7 +165,9 @@ export class MentionHandler {
    * @throws {Error} 如果发送失败。
    */
   private static async _sendThinkingMessage(chatId: number, userMessageId: number): Promise<number> {
-    const thinkingResult = await TelegramBot.sendMessage(chatId, '✨ Thinking...', userMessageId);
+    const thinkingResult = await TelegramBot.sendMessage(chatId, '✨ Thinking...', {
+      replyToMessageId: userMessageId,
+    });
     if (!thinkingResult.ok) {
       Log.error('Failed to send thinking message.');
       throw new TelegramError('Failed to send thinking message.');
@@ -219,7 +221,7 @@ export class MentionHandler {
     if (resThoughtTexts) {
       hasDisplayedThoughts = true;
       const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escapeHtml(shortenString(resThoughtTexts))}</blockquote>`;
-      await TelegramBot.editMessageText(chatId, thinkMessageId, displayThoughtText, 'HTML');
+      await TelegramBot.editMessageText(chatId, thinkMessageId, displayThoughtText, { parseMode: 'HTML' });
     }
 
     // 根据模型是否生成了思考内容 (`hasToolThoughts`) 和是否实际显示了思考文本 (`hasDisplayedThoughts`)，
@@ -240,7 +242,9 @@ export class MentionHandler {
 
     if (!resTexts) {
       const replyText = 'Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。';
-      const replyResult = await TelegramBot.sendMessage(chatId, replyText, userMessageId);
+      const replyResult = await TelegramBot.sendMessage(chatId, replyText, {
+        replyToMessageId: userMessageId,
+      });
       if (replyResult.ok) {
         void scheduleDeletion({ chat_id: chatId, message_id: replyResult.messageId }, 3 * 60 * 1000);
       }

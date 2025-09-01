@@ -508,7 +508,7 @@ export const ToolExecutors: ToolExecutorsType = {
       const imageData = response.parts?.find((part) => part.inlineData && part.inlineData.data);
       const base64Data = imageData?.inlineData?.data as string;
       const imageBuffer = Buffer.from(base64Data, 'base64');
-      const result = await TelegramBot.sendPhoto(chatId, imageBuffer, resTexts, userMessageId);
+      const result = await TelegramBot.sendPhoto(chatId, imageBuffer, { caption: resTexts, replyToMessageId: userMessageId });
       if (!result.ok) {
         return { success: false, error: `Error replying image message, ${result.error}` };
       }
@@ -542,7 +542,7 @@ export const ToolExecutors: ToolExecutorsType = {
       Log.info('开始将 PCM 音频数据转换为 MP3...');
       const mp3AudioBuffer = await convertPcmToMp3(pcmAudioBuffer);
       Log.info('MP3 音频数据转换完成。');
-      const result = await TelegramBot.sendVoice(chatId, mp3AudioBuffer, userMessageId);
+      const result = await TelegramBot.sendVoice(chatId, mp3AudioBuffer, { replyToMessageId: userMessageId });
       if (!result.ok) {
         return { success: false, error: `Error replying speech message, ${result.error}` };
       }

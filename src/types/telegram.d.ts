@@ -11,7 +11,7 @@ export interface Update {
 export interface CallbackQuery {
   id: string;
   from: User;
-  message?: MaybeInaccessibleMessage;
+  message?: Message;
   inline_message_id?: string;
   chat_instance: string;
   data?: string;
@@ -382,17 +382,31 @@ export interface SendVoiceParams {
 
 export type SendVoiceResult = Message;
 
-export interface EditMessageTextParams {
+// 基本字段
+type EditMessageTextParamsBase = {
   chat_id: number | string;
   message_id: number;
   text: string;
-  parse_mode?: ParseMode;
-  entities?: MessageEntity[];
   link_preview_options?: LinkPreviewOptions;
   reply_markup?: string;
-}
+};
+
+// 三选一：只有 parse_mode、只有 entities、或两者都不传
+type ParseModeOnly = { parse_mode?: ParseMode; entities?: never };
+type EntitiesOnly = { entities?: string; parse_mode?: never };
+type Neither = { parse_mode?: undefined; entities?: undefined };
+
+export type EditMessageTextParams = EditMessageTextParamsBase & (ParseModeOnly | EntitiesOnly | Neither);
 
 export type EditMessageTextResult = Message;
+
+export interface EditMessageReplyMarkupParams {
+  chat_id: number | string;
+  message_id: number;
+  reply_markup: string;
+}
+
+export type EditMessageReplyMarkupResult = Message;
 
 export interface DeleteMessageParams {
   chat_id: number | string;
@@ -485,6 +499,7 @@ export type TelegramApiMethod =
   | 'sendPhoto'
   | 'sendVoice'
   | 'editMessageText'
+  | 'editMessageReplyMarkup'
   | 'deleteMessage'
   | 'deleteMessages'
   | 'setMyCommands'

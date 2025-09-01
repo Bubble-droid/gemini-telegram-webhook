@@ -54,14 +54,18 @@ export const botCommands: BotCommandAction[] = [
 
       let startResult;
       if (isCallback) {
-        startResult = await TelegramBot.editMessageText(chatId, messageId, markdownToHtml(replaceText), 'HTML', replyMarkup);
+        startResult = await TelegramBot.editMessageText(chatId, messageId, markdownToHtml(replaceText), { parseMode: 'HTML', replyMarkup });
       } else {
-        startResult = await TelegramBot.sendMessage(chatId, markdownToHtml(replaceText), messageId, 'HTML', replyMarkup);
-        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60_000);
+        startResult = await TelegramBot.sendMessage(chatId, markdownToHtml(replaceText), {
+          replyToMessageId: messageId,
+          parseMode: 'HTML',
+          replyMarkup,
+        });
       }
       if (startResult.ok) {
         void scheduleDeletion({ chat_id: chatId, message_id: startResult.messageId }, 3 * 60_000);
       }
+      void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60_000);
     },
   },
   {
@@ -71,28 +75,29 @@ export const botCommands: BotCommandAction[] = [
       Log.info('Executing /clear command.');
       const { chatId, messageId, userId, isCallback = false } = params;
       const clearingText = '🗑 Clearing...';
-      const clearingResult = await TelegramBot.sendMessage(chatId, clearingText, messageId);
+      const backReplyMarkup: ReplyMarkup = {
+        inline_keyboard: [
+          [
+            {
+              text: '⬅️ Go Back',
+              callback_data: 'cmd_start',
+            },
+          ],
+        ],
+      };
+      let clearingResult;
+      if (isCallback) {
+        clearingResult = await TelegramBot.editMessageText(chatId, messageId, clearingText, { replyMarkup: backReplyMarkup });
+      } else {
+        clearingResult = await TelegramBot.sendMessage(chatId, clearingText, { replyToMessageId: messageId });
+      }
       await ChatContexts.clear(chatId, userId);
       if (clearingResult.ok) {
         await sleep(3_000);
         const clearedText: string = '✅ 已成功清除你和我的历史对话';
-        const backReplyMarkup: ReplyMarkup = {
-          inline_keyboard: [
-            [
-              {
-                text: '⬅️ Go Back',
-                callback_data: 'cmd_start',
-              },
-            ],
-          ],
-        };
-        const clearedResult = await TelegramBot.editMessageText(
-          chatId,
-          clearingResult.messageId,
-          clearedText,
-          undefined,
-          isCallback ? backReplyMarkup : undefined,
-        );
+        const clearedResult = await TelegramBot.editMessageText(chatId, clearingResult.messageId, clearedText, {
+          replyMarkup: isCallback ? backReplyMarkup : undefined,
+        });
         if (clearedResult.ok) {
           void scheduleDeletion({ chat_id: chatId, message_id: clearedResult.messageId }, 3 * 60_000);
         }
@@ -109,18 +114,31 @@ export const botCommands: BotCommandAction[] = [
       const toolFunctions = geminiTools[0]?.functionDeclarations || [];
       const toolList =
         toolFunctions
-          ?.map((tool) => `  * **${tool.name}**: ${tool.description}\n`)
+          ?.map((tool) => `  * **${tool.name}**`)
           .join('\n')
           .trim() || '';
-      const randomTools = sampleByShuffle<FunctionDeclaration>(toolFunctions, 3);
+      const randomTools = sampleByShuffle<FunctionDeclaration>(toolFunctions, 4);
 
-      const keyboard: InlineKeyboardButton[] = randomTools.map((tool) => ({
+      const keyboard1: InlineKeyboardButton[] = randomTools.slice(0, 2).map((tool) => ({
+        text: `🛠 ${tool.name}`,
+        callback_data: `tool_demo_${tool.name}`,
+      }));
+      const keyboard2: InlineKeyboardButton[] = randomTools.slice(2, 2).map((tool) => ({
         text: `🛠 ${tool.name}`,
         callback_data: `tool_demo_${tool.name}`,
       }));
 
       const replyMarkup: ReplyMarkup = {
-        inline_keyboard: [[{ text: '✋ 工具演示', switch_inline_query_current_chat: `请演示下 TOOL_NAME 工具` }], keyboard],
+        inline_keyboard: [
+          [
+            {
+              text: '✋ 工具演示',
+              switch_inline_query_current_chat: `请演示下 TOOL_NAME 工具`,
+            },
+          ],
+          keyboard1,
+          keyboard2,
+        ],
       };
 
       const toolsText = `🛠 我可以使用以下工具：\n\n${toolList}`;
@@ -138,14 +156,21 @@ export const botCommands: BotCommandAction[] = [
             ],
           ],
         };
-        toolsResult = await TelegramBot.editMessageText(chatId, messageId, markdownToHtml(toolsText), 'HTML', backReplyMarkup);
+        toolsResult = await TelegramBot.editMessageText(chatId, messageId, markdownToHtml(toolsText), {
+          parseMode: 'HTML',
+          replyMarkup: backReplyMarkup,
+        });
       } else {
-        toolsResult = await TelegramBot.sendMessage(chatId, markdownToHtml(toolsText), messageId, 'HTML', replyMarkup);
-        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 5 * 60_000);
+        toolsResult = await TelegramBot.sendMessage(chatId, markdownToHtml(toolsText), {
+          replyToMessageId: messageId,
+          parseMode: 'HTML',
+          replyMarkup,
+        });
       }
       if (toolsResult.ok) {
         void scheduleDeletion({ chat_id: chatId, message_id: toolsResult.messageId }, 5 * 60_000);
       }
+      void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 5 * 60_000);
     },
   },
   {
@@ -162,7 +187,7 @@ export const botCommands: BotCommandAction[] = [
       const [apiKey, apiKeyId] = apiKeys[Math.floor(Math.random() * apiKeys.length)];
       Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
       if (!cleanText) {
-        const notText = await TelegramBot.sendMessage(chatId, `没有有效的图片生成提示（NO_IMAGE_DESCRIPTION）`, messageId);
+        const notText = await TelegramBot.sendMessage(chatId, `没有有效的图片生成提示（NO_IMAGE_DESCRIPTION）`, { replyToMessageId: messageId });
         if (notText.ok) {
           void scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1000);
         }
@@ -170,7 +195,7 @@ export const botCommands: BotCommandAction[] = [
         return;
       }
       let renderMessageId: number | undefined = undefined;
-      const renderResult = await TelegramBot.sendMessage(chatId, `🎨 Rendering...`, messageId);
+      const renderResult = await TelegramBot.sendMessage(chatId, `🎨 Rendering...`, { replyToMessageId: messageId });
       if (renderResult.ok) {
         renderMessageId = renderResult.messageId;
       }
@@ -204,7 +229,7 @@ export const botCommands: BotCommandAction[] = [
       const [apiKey, apiKeyId] = apiKeys[Math.floor(Math.random() * apiKeys.length)];
       Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
       if (!cleanText) {
-        const notText = await TelegramBot.sendMessage(chatId, `没有有效的语音生成提示（NO_SPEECH_DESCRIPTION）`, messageId);
+        const notText = await TelegramBot.sendMessage(chatId, `没有有效的语音生成提示（NO_SPEECH_DESCRIPTION）`, { replyToMessageId: messageId });
         if (notText.ok) {
           void scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1000);
         }
@@ -212,7 +237,7 @@ export const botCommands: BotCommandAction[] = [
         return;
       }
       let synthMessageId: number | undefined = undefined;
-      const synthResult = await TelegramBot.sendMessage(chatId, `🎙 Synthesizing...`, messageId);
+      const synthResult = await TelegramBot.sendMessage(chatId, `🎙 Synthesizing...`, { replyToMessageId: messageId });
       if (synthResult.ok) {
         synthMessageId = synthResult.messageId;
       }

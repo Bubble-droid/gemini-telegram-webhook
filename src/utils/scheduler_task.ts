@@ -2,7 +2,6 @@
 
 import { Log, BotConfig } from '@/services';
 import type { DeleteMessageParams, SendMessageParams, TelegramApiMethod } from '@/types';
-import { secureHex } from '@/utils';
 
 /**
  * 调度任意任务
@@ -12,7 +11,7 @@ import { secureHex } from '@/utils';
  */
 const scheduleTask = async <T>(action: TelegramApiMethod, params: T, delayMs: number): Promise<void> => {
   const { schedulerApiUrl, schedulerApiToken } = BotConfig.load();
-  const name = `${action}-${secureHex(8)}`;
+  const name = `${action}-${JSON.stringify(params)}`;
   const encoded = Buffer.from(schedulerApiToken, 'utf-8').toString('base64');
   try {
     await fetch(schedulerApiUrl, {

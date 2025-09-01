@@ -127,15 +127,17 @@ const handleNewMember = async (message: Message): Promise<void> => {
 
       const replyMarkup: ReplyMarkup = {
         inline_keyboard: [
-          [{ text: '📓 使用指南', url: 'https://gui-for-cores.github.io/zh/guide' }],
+          [
+            { text: '📓 使用指南', url: 'https://gui-for-cores.github.io/zh/guide' },
+            { text: '🧠 智能助理', callback_data: 'mention' },
+          ],
           [
             { text: '📢 通知频道', url: 'https://t.me/GUI_for_Cores_Channel' },
             { text: '📄 项目地址', url: 'https://github.com/GUI-for-Cores' },
           ],
-          [{ text: '🧠 智能助手', switch_inline_query_current_chat: '输入你的问题' }],
         ],
       };
-      const welcomeResult = await TelegramBot.sendMessage(chat.id, markdownToHtml(replaceText), undefined, 'HTML', replyMarkup);
+      const welcomeResult = await TelegramBot.sendMessage(chat.id, markdownToHtml(replaceText), { parseMode: 'HTML', replyMarkup });
 
       if (welcomeResult.ok) {
         void scheduleDeletion({ chat_id: chat.id, message_id: welcomeResult.messageId }, 3 * 60_000);

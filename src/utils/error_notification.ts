@@ -23,7 +23,7 @@ const sendErrorNotification = async (error: Error, context: string = ''): Promis
         `*错误信息*: \`${escapeHtml(error.message || String(error))}\`\n\n` +
         `*堆栈追踪*:\n` +
         `\`\`\`javascript\n${escapeHtml(error.stack || 'N/A')}\n\`\`\``;
-      await TelegramBot.sendMessage(adminId, markdownToHtml(errorMessage), undefined, 'HTML');
+      await TelegramBot.sendMessage(adminId, markdownToHtml(errorMessage), { parseMode: 'HTML' });
       Log.info('Error notification sent to admin.', { context, adminId });
     } else {
       Log.warn('Admin ID is not configured, unable to send error notification.', {

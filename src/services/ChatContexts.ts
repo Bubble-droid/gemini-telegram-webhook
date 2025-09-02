@@ -48,9 +48,11 @@ export class ChatContexts {
    * @param {number} userId - 用户的 ID。
    */
   public static clear = async (chatId: number, userId: number): Promise<void> => {
-    const { chatContextId } = BotConfig.load();
+    const { chatContextId, contextsExpirationSecond } = BotConfig.load();
     const keyName: string = `contexts_${chatId}_${userId}`;
-    await KvNamespace.delete(chatContextId, keyName);
+    await KvNamespace.write(chatContextId, keyName, JSON.stringify([]), {
+      expiration_ttl: contextsExpirationSecond,
+    });
     Log.info(`${keyName}: Chat contexts cleared success.`);
   };
 }

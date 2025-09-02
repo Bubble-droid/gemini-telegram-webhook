@@ -25,8 +25,8 @@ const handleCommand = async (message: Message): Promise<void> => {
   if (targetCommand) {
     await targetCommand.action({
       chatId: chat.id,
-      messageId,
       userId: from?.id as number,
+      messageId,
       cleanText,
     });
   }

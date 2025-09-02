@@ -4,6 +4,7 @@ import type { Content } from '@google/genai';
 
 export interface ChatParams {
   chatId: number;
+  userId: number;
   userMessageId: number;
   thinkMessageId: number;
 }
@@ -26,6 +27,7 @@ export interface GenerateContentSuccessResponse {
  */
 export interface ApiCallContext {
   chatId: number;
+  userId: number;
   userMessageId: number;
   thinkMessageId?: number; // 考虑到可能没有 thinkMessageId 的情况，设为可选
   systemPrompt: string;

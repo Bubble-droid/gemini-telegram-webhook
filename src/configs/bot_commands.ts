@@ -17,30 +17,42 @@ export const botCommands: BotCommandAction[] = [
     description: '开始使用',
     action: async (params) => {
       Log.info('Executing /start command.');
-      const { chatId, messageId, isCallback = false } = params;
+      const { chatId, userId, messageId, isCallback = false } = params;
       const { modelName, durableResourceId, startReplyTextKeyName } = BotConfig.load();
       const startReplyText = await KvNamespace.read<string>(durableResourceId, startReplyTextKeyName, 'text');
       const replaceText = startReplyText?.replace('MODEL_NAME', modelName) as string;
+      const totalReactionsKeyName = `total_reactions_${chatId}`;
+      const totalReactions = await KvNamespace.read<{ like: number; dislike: number }>(durableResourceId, totalReactionsKeyName, 'json');
       const replyMarkup: ReplyMarkup = {
         inline_keyboard: [
           [
             {
+              text: `群组总 👍 ${totalReactions?.like || 0}`,
+              callback_data: 'PLACEHOLDER',
+            },
+            {
+              text: `群组总 👎 ${totalReactions?.dislike || 0}`,
+              callback_data: 'PLACEHOLDER',
+            },
+          ],
+          [
+            {
               text: '🖼️ 生成图片',
-              switch_inline_query_current_chat: '生成图片：IMAGE_GENERATION_PROMPT',
+              switch_inline_query_current_chat: '请生成一幅图像：IMAGE_GENERATION_PROMPT',
             },
             {
               text: '🗣️ 生成语音',
-              switch_inline_query_current_chat: '生成语音：SPEECH_GENERATION_PROMPT',
+              switch_inline_query_current_chat: '请生成一段语音：SPEECH_GENERATION_PROMPT',
             },
           ],
           [
             {
               text: '🗑 清理对话',
-              callback_data: 'cmd_clear',
+              callback_data: `cmd_clear_${userId}`,
             },
             {
               text: '🛠 模型工具',
-              callback_data: 'cmd_tools',
+              callback_data: `cmd_tools_${userId}`,
             },
           ],
           [
@@ -49,8 +61,8 @@ export const botCommands: BotCommandAction[] = [
               url: 'https://gui-for-cores.github.io/zh/guide',
             },
             {
-              text: '🧠 智能助理',
-              callback_data: 'mention',
+              text: '❓ 常见问题',
+              callback_data: `mention_faq_${userId}`,
             },
           ],
           [
@@ -87,14 +99,14 @@ export const botCommands: BotCommandAction[] = [
     description: '清理对话历史',
     action: async (params) => {
       Log.info('Executing /clear command.');
-      const { chatId, messageId, userId, isCallback = false } = params;
+      const { chatId, userId, messageId, isCallback = false } = params;
       const clearingText = '🗑 Clearing...';
       const backReplyMarkup: ReplyMarkup = {
         inline_keyboard: [
           [
             {
               text: '⬅️ Go Back',
-              callback_data: 'cmd_start',
+              callback_data: `cmd_start_${userId}`,
             },
           ],
         ],
@@ -124,7 +136,7 @@ export const botCommands: BotCommandAction[] = [
     description: '模型可用工具',
     action: async (params) => {
       Log.info('Executing /tools command.');
-      const { chatId, messageId, isCallback = false } = params;
+      const { chatId, userId, messageId, isCallback = false } = params;
       const toolFunctions = geminiTools[0]?.functionDeclarations || [];
       const toolList =
         toolFunctions
@@ -135,11 +147,11 @@ export const botCommands: BotCommandAction[] = [
 
       const keyboard1: InlineKeyboardButton[] = randomTools.slice(0, 2).map((tool) => ({
         text: `🛠 ${tool.name}`,
-        callback_data: `tool_demo_${tool.name}`,
+        callback_data: `tool_demo_${tool.name}_${userId}`,
       }));
       const keyboard2: InlineKeyboardButton[] = randomTools.slice(2, 4).map((tool) => ({
         text: `🛠 ${tool.name}`,
-        callback_data: `tool_demo_${tool.name}`,
+        callback_data: `tool_demo_${tool.name}_${userId}`,
       }));
 
       const replyMarkup: ReplyMarkup = {
@@ -147,7 +159,7 @@ export const botCommands: BotCommandAction[] = [
           [
             {
               text: '✋ 工具演示',
-              switch_inline_query_current_chat: `请演示下 TOOL_NAME 工具`,
+              switch_inline_query_current_chat: `请简单演示下 TOOL_NAME 工具`,
             },
           ],
           keyboard1,
@@ -165,7 +177,7 @@ export const botCommands: BotCommandAction[] = [
             [
               {
                 text: '⬅️ Go Back',
-                callback_data: 'cmd_start',
+                callback_data: `cmd_start_${userId}`,
               },
             ],
           ],
@@ -192,7 +204,7 @@ export const botCommands: BotCommandAction[] = [
     description: '生成图片',
     action: async (params) => {
       Log.info('Executing /exp_img_gen command.');
-      const { chatId, messageId, cleanText } = params;
+      const { chatId, userId, messageId, cleanText } = params;
       const { durableResourceId, geminiApiKeysKeyName } = BotConfig.load();
       const apiKeys = await KvNamespace.read<[string, string][]>(durableResourceId, geminiApiKeysKeyName, 'json');
       if (!apiKeys || apiKeys.length === 0) {
@@ -215,6 +227,7 @@ export const botCommands: BotCommandAction[] = [
       }
       const args = {
         chatId,
+        userId,
         userMessageId: messageId,
         currentApiKey: apiKey,
         prompt: cleanText,
@@ -234,7 +247,7 @@ export const botCommands: BotCommandAction[] = [
     description: '生成语音',
     action: async (params) => {
       Log.info('Executing /exp_tts_gen command.');
-      const { chatId, messageId, cleanText } = params;
+      const { chatId, userId, messageId, cleanText } = params;
       const { durableResourceId, geminiApiKeysKeyName } = BotConfig.load();
       const apiKeys = await KvNamespace.read<[string, string][]>(durableResourceId, geminiApiKeysKeyName, 'json');
       if (!apiKeys || apiKeys.length === 0) {
@@ -257,6 +270,7 @@ export const botCommands: BotCommandAction[] = [
       }
       const args = {
         chatId,
+        userId,
         userMessageId: messageId,
         currentApiKey: apiKey,
         prompt: cleanText,

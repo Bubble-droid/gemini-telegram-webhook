@@ -33,7 +33,7 @@ export class GeminiApi {
    */
   private static async _initializeApiCallContext(chatParams: ChatParams, initialContents: Content[]): Promise<ApiCallContext> {
     const { durableResourceId, systemPromptKeyName, geminiApiKeysKeyName, modelName, modelTemperature } = BotConfig.load();
-    const { chatId, userMessageId, thinkMessageId } = chatParams;
+    const { chatId, userId, userMessageId, thinkMessageId } = chatParams;
 
     // 从 KvNamespace 读取系统提示，如果不存在则使用默认值
     const systemPrompt = (await KvNamespace.read<string>(durableResourceId, systemPromptKeyName, 'text')) || 'You are a helpful assistant.';
@@ -67,6 +67,7 @@ export class GeminiApi {
     // 返回初始化后的上下文对象
     return {
       chatId,
+      userId,
       userMessageId,
       thinkMessageId,
       systemPrompt,
@@ -175,6 +176,9 @@ export class GeminiApi {
           await sleep(delay);
           Log.info(`Gemini API 客户端错误，进行第 ${attempt + 1} 次重试...`);
         } else {
+          if (context.thinkMessageId) {
+            await TelegramBot.deleteMessage(context.chatId, context.thinkMessageId);
+          }
           // 达到最大客户端错误重试次数
           const finalError = new GeminiError(
             `Gemini API 客户端错误，已达最大重试次数 (${GeminiApi.MAX_RETRIES_COMMON})。\n\n${err}`,
@@ -228,6 +232,7 @@ export class GeminiApi {
       const functionArgs = functionCall.functionCall?.args;
       const toolExecArgs = {
         chatId: context.chatId,
+        userId: context.userId,
         userMessageId: context.userMessageId,
         currentApiKey: context.apiKeys[0][0],
         ...functionArgs,
@@ -386,6 +391,9 @@ export class GeminiApi {
             throw error as GeminiError;
           }
         } else {
+          if (context.thinkMessageId) {
+            await TelegramBot.deleteMessage(context.chatId, context.thinkMessageId);
+          }
           // 达到最大无效回复重试次数
           const errorMsg = `Gemini API 未返回有效结果，已达最大无效回复重试次数 (${GeminiApi.MAX_RETRIES_COMMON})，请稍后再重新提问。`;
           Log.error(errorMsg);

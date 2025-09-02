@@ -74,7 +74,7 @@ const createRoutes = async (route: FastifyInstance): Promise<void> => {
       Log.info('Webhook Verification successful');
       const update = request.body as Update;
       setImmediate(() => {
-        void handleUpdate(update);
+        handleUpdate(update);
       });
       return reply.code(202).type('application/json').send({ code: 202, message: `OK` });
     },

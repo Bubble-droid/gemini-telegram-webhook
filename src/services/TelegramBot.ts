@@ -30,6 +30,10 @@ import type {
   EditMessageReplyMarkupParams,
   EditMessageReplyMarkupResult,
   InlineKeyboardButton,
+  AnswerInlineQueryParams,
+  AnswerInlineQueryResult,
+  InlineQueryResult,
+  InlineQueryResultsButton,
 } from '@/types';
 import { shortenString } from '@/utils';
 import { escapeHtml } from '@/utils/formatting';
@@ -236,6 +240,7 @@ export class TelegramBot {
     chatId: number | string,
     voiceBuffer: Buffer,
     options?: {
+      caption?: string;
       replyToMessageId?: number;
       replyMarkup?: ReplyMarkup;
     },
@@ -243,6 +248,7 @@ export class TelegramBot {
     const payload: SendVoiceParams = {
       chat_id: chatId,
       voice: voiceBuffer,
+      caption: options?.caption,
       reply_parameters: options?.replyToMessageId
         ? {
             message_id: options.replyToMessageId,
@@ -255,6 +261,7 @@ export class TelegramBot {
     const formData = new FormData();
     formData.append('chat_id', payload.chat_id);
     formData.append('voice', voiceBlob, `gemini_gen_voice.mp3`);
+    if (payload.caption) formData.append('caption', payload.caption);
     formData.append('reply_parameters', JSON.stringify(payload.reply_parameters));
     formData.append('reply_markup', payload.reply_markup);
     try {
@@ -482,25 +489,57 @@ export class TelegramBot {
   }
 
   public static async answerCallbackQuery(
-    queryId: string,
+    callbackQueryId: string,
     options?: {
       callbackText?: string;
       showAlert?: boolean;
     },
   ): Promise<{ ok: true } | { ok: false; error: TelegramError }> {
     const payload: AnswerCallbackQueryParams = {
-      callback_query_id: queryId,
+      callback_query_id: callbackQueryId,
       text: options?.callbackText,
       show_alert: options?.showAlert,
     };
     try {
       await TelegramBot.sendRequest<AnswerCallbackQueryParams, AnswerCallbackQueryResult>('POST', 'answerCallbackQuery', payload);
-      Log.info('Callback query answered successfully.', { queryId });
+      Log.info('Callback query answered successfully.', { callbackQueryId, callbackText: options?.callbackText });
       return { ok: true };
     } catch (err: unknown) {
       Log.error('Error answering callback query', {
         err: err as Error,
-        queryId,
+        callbackQueryId,
+        callbackText: options?.callbackText,
+      });
+      return { ok: false, error: err as TelegramError };
+    }
+  }
+
+  public static async answerInlineQuery(
+    inlineQueryId: string,
+    inlineResult: InlineQueryResult[],
+    options?: {
+      cacheTime?: number;
+      isPersonal?: boolean;
+      nextOffset?: string;
+      button?: InlineQueryResultsButton;
+    },
+  ): Promise<{ ok: true } | { ok: false; error: TelegramError }> {
+    const payload: AnswerInlineQueryParams = {
+      inline_query_id: inlineQueryId,
+      results: JSON.stringify(inlineResult),
+      cache_time: options?.cacheTime,
+      is_personal: options?.isPersonal,
+      next_offset: options?.nextOffset,
+      button: options?.button ? JSON.stringify(options.button) : undefined,
+    };
+    try {
+      await TelegramBot.sendRequest<AnswerInlineQueryParams, AnswerInlineQueryResult>('POST', 'answerInlineQuery', payload);
+      Log.info('Inline query answered successfully.', { inlineQueryId });
+      return { ok: true };
+    } catch (err: unknown) {
+      Log.error('Error answering inline query', {
+        err: err as Error,
+        inlineQueryId,
       });
       return { ok: false, error: err as TelegramError };
     }
@@ -508,6 +547,36 @@ export class TelegramBot {
 }
 
 export const REACTiON_ROW: InlineKeyboardButton[] = [
-  { text: '👍', callback_data: 'reaction_like' },
-  { text: '👎', callback_data: 'reaction_dislike' },
+  {
+    text: '👍',
+    callback_data: 'reaction_like',
+  },
+  {
+    text: '👎',
+    callback_data: 'reaction_dislike',
+  },
 ];
+
+const DELETE_ROW: InlineKeyboardButton[] = [
+  {
+    text: '🗑 删除消息',
+    callback_data: 'delete_message_USER_ID',
+  },
+];
+
+export const BASE_INLINE_KEYBOARD: InlineKeyboardButton[][] = [REACTiON_ROW, DELETE_ROW];
+
+export const makeInlineKeyboard = (userId: number): InlineKeyboardButton[][] => {
+  return BASE_INLINE_KEYBOARD.map((row) =>
+    row.map((button) => {
+      if (button.callback_data?.includes('USER_ID')) {
+        return {
+          ...button,
+          callback_data: button.callback_data.replace('USER_ID', String(userId)),
+        };
+      } else {
+        return button;
+      }
+    }),
+  );
+};

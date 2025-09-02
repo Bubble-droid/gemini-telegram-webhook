@@ -5,7 +5,16 @@ export interface Update {
   message?: Message;
   edited_message?: Message;
   chat_member?: ChatMemberUpdated;
+  inline_query?: InlineQuery;
   callback_query?: CallbackQuery;
+}
+
+export interface InlineQuery {
+  id: string;
+  from: User;
+  query: string;
+  offset: string;
+  chat_type: ChatType;
 }
 
 export interface CallbackQuery {
@@ -297,8 +306,8 @@ export interface BotCommandAction {
 
 export interface CommandActionParams {
   chatId: number;
-  messageId: number;
   userId: number;
+  messageId: number;
   isCallback?: boolean;
   cleanText?: string;
 }
@@ -494,6 +503,59 @@ export interface AnswerCallbackQueryParams {
 
 export type AnswerCallbackQueryResult = boolean;
 
+export interface AnswerInlineQueryParams {
+  inline_query_id: string;
+  results: string;
+  cache_time?: number;
+  is_personal?: boolean;
+  next_offset?: string;
+  button?: string;
+}
+
+export type InlineQueryResult = InlineQueryResultArticle | InlineQueryResultVoice;
+
+export interface InlineQueryResultArticle {
+  type: 'article';
+  id: string;
+  title: string;
+  input_message_content: InputMessageContent;
+  reply_markup?: InlineKeyboardMarkup;
+  url?: string;
+  description?: string;
+  thumb_url?: string;
+  thumb_width?: number;
+  thumb_height?: number;
+}
+
+export interface InlineQueryResultVoice {
+  type: 'voice';
+  id: string;
+  voice_url: string;
+  title: string;
+  caption?: string;
+  parse_mode?: ParseMode;
+  caption_entities?: MessageEntity[];
+  voice_duration?: number;
+  reply_markup?: InlineKeyboardMarkup;
+  input_message_content?: InputMessageContent;
+}
+
+export type InputMessageContent = InputTextMessageContent;
+
+export interface InputTextMessageContent {
+  message_text: string;
+  parse_mode?: ParseMode;
+  entities?: MessageEntity[];
+  link_preview_options?: LinkPreviewOptions;
+}
+
+export interface InlineQueryResultsButton {
+  text: string;
+  start_parameter: string;
+}
+
+export type AnswerInlineQueryResult = boolean;
+
 export type TelegramApiMethod =
   | 'sendMessage'
   | 'sendPhoto'
@@ -505,6 +567,7 @@ export type TelegramApiMethod =
   | 'setMyCommands'
   | 'getFile'
   | 'getChatMember'
+  | 'answerInlineQuery'
   | 'answerCallbackQuery';
 
 export interface ApiSuccessResponse<T> {

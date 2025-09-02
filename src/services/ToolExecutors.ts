@@ -1,6 +1,6 @@
 // src/configs/tool_executors.ts
 
-import { GeminiApi, GeminiError, Log, REACTiON_ROW, simpleGeminiApiResponse, TelegramBot } from '@/services';
+import { GeminiApi, GeminiError, Log, makeInlineKeyboard, simpleGeminiApiResponse, TelegramBot } from '@/services';
 import type {
   GetCommitDetailsResult,
   GetCurrentTimeResult,
@@ -492,7 +492,7 @@ export const ToolExecutors: ToolExecutorsType = {
 
   generateImage: async (args) => {
     Log.info('执行工具: sendPhotoMessage');
-    const { chatId, userMessageId, currentApiKey, prompt } = args;
+    const { chatId, userId, userMessageId, currentApiKey, prompt } = args;
     const modelName: string = 'gemini-2.0-flash-preview-image-generation';
     const modelConfig: GenerateContentConfig = {
       responseModalities: ['IMAGE', 'TEXT'],
@@ -510,7 +510,7 @@ export const ToolExecutors: ToolExecutorsType = {
       const base64Data = imageData?.inlineData?.data as string;
       const imageBuffer = Buffer.from(base64Data, 'base64');
       const replyMarkup: ReplyMarkup = {
-        inline_keyboard: [REACTiON_ROW],
+        inline_keyboard: makeInlineKeyboard(userId),
       };
       const result = await TelegramBot.sendPhoto(chatId, imageBuffer, { caption: resTexts, replyToMessageId: userMessageId, replyMarkup });
       if (!result.ok) {
@@ -526,7 +526,7 @@ export const ToolExecutors: ToolExecutorsType = {
 
   generateSpeech: async (args) => {
     Log.info('执行工具: sendVoiceMessage');
-    const { chatId, userMessageId, currentApiKey, prompt } = args;
+    const { chatId, userId, userMessageId, currentApiKey, prompt } = args;
     const modelName: string = 'gemini-2.5-flash-preview-tts';
     const modelConfig: GenerateContentConfig = {
       responseModalities: ['AUDIO'],
@@ -547,7 +547,7 @@ export const ToolExecutors: ToolExecutorsType = {
       const mp3AudioBuffer = await convertPcmToMp3(pcmAudioBuffer);
       Log.info('MP3 音频数据转换完成。');
       const replyMarkup: ReplyMarkup = {
-        inline_keyboard: [REACTiON_ROW],
+        inline_keyboard: makeInlineKeyboard(userId),
       };
       const result = await TelegramBot.sendVoice(chatId, mp3AudioBuffer, { replyToMessageId: userMessageId, replyMarkup });
       if (!result.ok) {

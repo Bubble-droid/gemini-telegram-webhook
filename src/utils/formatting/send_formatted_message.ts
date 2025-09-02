@@ -4,7 +4,7 @@ import { formatText } from './formatters';
 import { balanceChunkTags } from './tag_balancing';
 import { splitFormattedText } from './chunk_splitting';
 import { scheduleDeletion } from '@/utils/scheduler_task';
-import { Log, REACTiON_ROW, TelegramBot, TelegramError } from '@/services';
+import { Log, makeInlineKeyboard, TelegramBot, TelegramError } from '@/services';
 import type { ParseMode, ReplyMarkup } from '@/types';
 
 /**
@@ -21,6 +21,7 @@ export const sendFormattedMessage = async (
   chatId: number,
   standardMarkdownText: string,
   replyToMessageId: number,
+  userId: number,
 ): Promise<{ ok: true; messageId?: number } | { ok: false; error: TelegramError }> => {
   const modesToTry: (ParseMode | null)[] = ['HTML', 'MarkdownV2', 'Markdown', null]; // null 代表纯文本模式
   let lastMessageId: number | undefined = undefined;
@@ -91,7 +92,7 @@ export const sendFormattedMessage = async (
         }
 
         const replyMarkup: ReplyMarkup = {
-          inline_keyboard: [REACTiON_ROW],
+          inline_keyboard: makeInlineKeyboard(userId),
         };
 
         const sendResult = await TelegramBot.sendMessage(chatId, balancedChunk, {

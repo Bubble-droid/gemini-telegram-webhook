@@ -1,8 +1,9 @@
 import Fastify from "fastify";
 import { isIP } from "node:net";
 import process$1 from "node:process";
-import { randomBytes } from "node:crypto";
-import { GoogleGenAI, Type, Behavior, HarmBlockThreshold, HarmCategory, FunctionCallingConfigMode } from "@google/genai";
+import "node:crypto";
+import * as lame from "@breezystack/lamejs";
+import { Type, Behavior, HarmBlockThreshold, HarmCategory, FunctionCallingConfigMode, GoogleGenAI } from "@google/genai";
 import { Logger } from "tslog";
 import Cloudflare from "cloudflare";
 const LOGGER_LEVELS = ["trace", "debug", "info", "warn", "error", "fatal"];
@@ -84,6 +85,7 @@ class BotConfig {
     const listenPort = BotConfig.parsePort(ENV.SERVER_LISTEN_PORT);
     const loggerLevel = BotConfig.parseLoggerLevel(ENV.SERVER_LOGGER_LEVEL);
     const modelName = ENV.GEMINI_MODEL_NAME || BotConfig.DEFAULT_MODEL_NAME;
+    const modelTemperature = Number(ENV.MODEL_CONFIG_TEMPERATURE) || 0.3;
     const maxApiCallRounds = Number(ENV.MAX_API_CALL_ROUNDS) || BotConfig.DEFAULT_MAX_API_CALL_ROUNDS;
     const cloudflareToken = ENV.CLOUDFLARE_API_TOKEN;
     const cloudflareAccountId = ENV.CLOUDFLARE_ACCOUNT_ID;
@@ -111,6 +113,7 @@ class BotConfig {
       listenPort,
       loggerLevel,
       modelName,
+      modelTemperature,
       maxApiCallRounds,
       cloudflareToken,
       cloudflareAccountId,
@@ -763,7 +766,7 @@ const splitFormattedText = (formattedText, parseMode) => {
 };
 const scheduleTask = async (action, params, delayMs) => {
   const { schedulerApiUrl, schedulerApiToken } = BotConfig.load();
-  const name = `${action}-${secureHex(8)}`;
+  const name = `${action}-${JSON.stringify(params)}`;
   const encoded = Buffer.from(schedulerApiToken, "utf-8").toString("base64");
   try {
     await fetch(schedulerApiUrl, {
@@ -787,7 +790,7 @@ const scheduleTask = async (action, params, delayMs) => {
 const scheduleDeletion = (params, delayMs) => {
   void scheduleTask("deleteMessage", params, delayMs);
 };
-const sendFormattedMessage = async (chatId, standardMarkdownText, replyToMessageId) => {
+const sendFormattedMessage = async (chatId, standardMarkdownText, replyToMessageId, userId) => {
   const modesToTry = ["HTML", "MarkdownV2", "Markdown", null];
   let lastMessageId = void 0;
   let lastError = null;
@@ -832,7 +835,14 @@ const sendFormattedMessage = async (chatId, standardMarkdownText, replyToMessage
           lastError = null;
           continue;
         }
-        const sendResult = await TelegramBot.sendMessage(chatId, balancedChunk, mode === null ? void 0 : mode, currentReplyTo, false);
+        const replyMarkup = {
+          inline_keyboard: makeInlineKeyboard(userId)
+        };
+        const sendResult = await TelegramBot.sendMessage(chatId, balancedChunk, {
+          replyToMessageId: currentReplyTo,
+          parseMode: mode === null ? void 0 : mode,
+          replyMarkup
+        });
         if (sendResult.ok) {
           Log.info(`消息块发送成功 (格式: ${mode === null ? "纯文本" : mode}).`);
           void scheduleDeletion({ chat_id: chatId, message_id: sendResult.messageId }, 24 * 60 * 6e4);
@@ -869,7 +879,6 @@ const markdownToHtml = (markdownText) => {
     BOLD_ASTERISK: /\*\*(?!\s)(.*?)(?<!\s)\*\*/g,
     UNDERLINE_UNDERSCORE: /__(?!\s)(.*?)(?<!\s)__/g,
     ITALIC_ASTERISK: /\*(?!\s)(.*?)(?<!\s)\*/g,
-    ITALIC_UNDERSCORE: /_(?!\s)(.*?)(?<!\s)_/g,
     STRIKETHROUGH: /~(?!\s)(.*?)(?<!\s)~/g,
     SPOILER: /\|\|(?!\s)(.*?)(?<!\s)\|\|/g,
     BLOCKQUOTE_LINE: /^(>>|>)\s*(.*)$/gm
@@ -888,7 +897,6 @@ const markdownToHtml = (markdownText) => {
     htmlText = htmlText.replace(REGEX.BOLD_ASTERISK, (_, content) => `<b>${escapeHtml(content)}</b>`);
     htmlText = htmlText.replace(REGEX.UNDERLINE_UNDERSCORE, (_, content) => `<u>${escapeHtml(content)}</u>`);
     htmlText = htmlText.replace(REGEX.ITALIC_ASTERISK, (_, content) => `<i>${escapeHtml(content)}</i>`);
-    htmlText = htmlText.replace(REGEX.ITALIC_UNDERSCORE, (_, content) => `<i>${escapeHtml(content)}</i>`);
     htmlText = htmlText.replace(REGEX.STRIKETHROUGH, (_, content) => `<s>${escapeHtml(content)}</s>`);
     htmlText = htmlText.replace(REGEX.SPOILER, (_, content) => `<span class="tg-spoiler">${escapeHtml(content)}</span>`);
     const lines = htmlText.split("\n");
@@ -957,17 +965,7 @@ const formatTime = (time = Date.now()) => {
   );
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} UTC+8`;
 };
-const secureHex = (length = 16) => {
-  if (length < 0) {
-    throw new Error("secureHex: length 必须是非负数。");
-  }
-  const byteLength = Math.ceil(length / 2);
-  return randomBytes(byteLength).toString("hex").slice(0, length);
-};
 const sleep = async (delayMs) => {
-  if (delayMs < 0) {
-    throw new Error("sleep: delayMs 必须是非负数。");
-  }
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 };
 const rotateArray = (arr, steps = 1, direction = "left") => {
@@ -978,6 +976,16 @@ const rotateArray = (arr, steps = 1, direction = "left") => {
     actualSteps = (len - actualSteps) % len;
   }
   return arr.slice(actualSteps).concat(arr.slice(0, actualSteps));
+};
+const sampleByShuffle = (arr, k = 3) => {
+  if (k <= 0) return [];
+  if (k >= arr.length) return arr.slice();
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a.slice(0, k);
 };
 const shortenString = (input) => {
   const MAX = 4096;
@@ -996,6 +1004,27 @@ const shortenString = (input) => {
 
 ${tailPart}`;
 };
+const convertPcmToMp3 = async (pcmBuffer) => {
+  const sampleRate = 24e3;
+  const channels = 1;
+  const kbps = 128;
+  const mp3encoder = new lame.Mp3Encoder(channels, sampleRate, kbps);
+  const pcm16 = new Int16Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.length / 2);
+  const mp3Data = [];
+  const samplesPerFrame = 1152;
+  for (let i = 0; i < pcm16.length; i += samplesPerFrame) {
+    const chunk = pcm16.subarray(i, i + samplesPerFrame);
+    const mp3buf2 = mp3encoder.encodeBuffer(chunk);
+    if (mp3buf2.length > 0) {
+      mp3Data.push(Buffer.from(mp3buf2));
+    }
+  }
+  const mp3buf = mp3encoder.flush();
+  if (mp3buf.length > 0) {
+    mp3Data.push(Buffer.from(mp3buf));
+  }
+  return Buffer.concat(mp3Data);
+};
 const sendErrorNotification = async (error, context = "") => {
   const { adminId } = BotConfig.load();
   try {
@@ -1005,15 +1034,15 @@ const sendErrorNotification = async (error, context = "") => {
 
 *发生时间*: \`${currentTime}\`
 
-*错误上下文*: \`${context}\`
+*错误上下文*: \`${escapeHtml(context)}\`
 
-*错误信息*: \`${error.message || String(error)}\`
+*错误信息*: \`${escapeHtml(error.message || String(error))}\`
 
 *堆栈追踪*:
 \`\`\`javascript
-${error.stack || "N/A"}
+${escapeHtml(error.stack || "N/A")}
 \`\`\``;
-      await TelegramBot.sendMessage(adminId, errorMessage, "HTML");
+      await TelegramBot.sendMessage(adminId, markdownToHtml(errorMessage), { parseMode: "HTML" });
       Log.info("Error notification sent to admin.", { context, adminId });
     } else {
       Log.warn("Admin ID is not configured, unable to send error notification.", {
@@ -1220,9 +1249,11 @@ class ChatContexts {
     Log.info(`${keyName}: Chat context updated success, current length ${newContexts.length}`);
   };
   static clear = async (chatId, userId) => {
-    const { chatContextId } = BotConfig.load();
+    const { chatContextId, contextsExpirationSecond } = BotConfig.load();
     const keyName = `contexts_${chatId}_${userId}`;
-    await KvNamespace.delete(chatContextId, keyName);
+    await KvNamespace.write(chatContextId, keyName, JSON.stringify([]), {
+      expiration_ttl: contextsExpirationSecond
+    });
     Log.info(`${keyName}: Chat contexts cleared success.`);
   };
 }
@@ -1269,35 +1300,117 @@ const botCommands = [
     description: "开始使用",
     action: async (params) => {
       Log.info("Executing /start command.");
-      const { chatId, messageId } = params;
+      const { chatId, userId, messageId, isCallback = false } = params;
       const { modelName, durableResourceId, startReplyTextKeyName } = BotConfig.load();
       const startReplyText = await KvNamespace.read(durableResourceId, startReplyTextKeyName, "text");
       const replaceText = startReplyText?.replace("MODEL_NAME", modelName);
-      const startResult = await TelegramBot.sendMessage(chatId, replaceText, "HTML", messageId);
+      const totalReactionsKeyName = `total_reactions_${chatId}`;
+      const totalReactions = await KvNamespace.read(durableResourceId, totalReactionsKeyName, "json");
+      const replyMarkup = {
+        inline_keyboard: [
+          [
+            {
+              text: `群组总 👍 ${totalReactions?.like || 0}`,
+              callback_data: "PLACEHOLDER"
+            },
+            {
+              text: `群组总 👎 ${totalReactions?.dislike || 0}`,
+              callback_data: "PLACEHOLDER"
+            }
+          ],
+          [
+            {
+              text: "🖼️ 生成图片",
+              switch_inline_query_current_chat: "请生成一幅图像：IMAGE_GENERATION_PROMPT"
+            },
+            {
+              text: "🗣️ 生成语音",
+              switch_inline_query_current_chat: "请生成一段语音：SPEECH_GENERATION_PROMPT"
+            }
+          ],
+          [
+            {
+              text: "🗑 清理对话",
+              callback_data: `cmd_clear_${userId}`
+            },
+            {
+              text: "🛠 模型工具",
+              callback_data: `cmd_tools_${userId}`
+            }
+          ],
+          [
+            {
+              text: "📓 使用指南",
+              url: "https://gui-for-cores.github.io/zh/guide"
+            },
+            {
+              text: "❓ 常见问题",
+              callback_data: `mention_faq_${userId}`
+            }
+          ],
+          [
+            {
+              text: "📢 通知频道",
+              url: "https://t.me/GUI_for_Cores_Channel"
+            },
+            {
+              text: "📄 项目地址",
+              url: "https://github.com/GUI-for-Cores"
+            }
+          ]
+        ]
+      };
+      let startResult;
+      if (isCallback) {
+        startResult = await TelegramBot.editMessageText(chatId, messageId, markdownToHtml(replaceText), { parseMode: "HTML", replyMarkup });
+      } else {
+        startResult = await TelegramBot.sendMessage(chatId, markdownToHtml(replaceText), {
+          replyToMessageId: messageId,
+          parseMode: "HTML",
+          replyMarkup
+        });
+        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 6e4);
+      }
       if (startResult.ok) {
         void scheduleDeletion({ chat_id: chatId, message_id: startResult.messageId }, 3 * 6e4);
       }
-      void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 6e4);
     }
   },
   {
     name: "clear",
-    description: "清理对话上下文",
+    description: "清理对话历史",
     action: async (params) => {
       Log.info("Executing /clear command.");
-      const { chatId, messageId, userId } = params;
-      const clearingResult = await TelegramBot.sendMessage(chatId, "🗑 Clearing...", "HTML", messageId);
+      const { chatId, userId, messageId, isCallback = false } = params;
+      const clearingText = "🗑 Clearing...";
+      const backReplyMarkup = {
+        inline_keyboard: [
+          [
+            {
+              text: "⬅️ Go Back",
+              callback_data: `cmd_start_${userId}`
+            }
+          ]
+        ]
+      };
+      let clearingResult;
+      if (isCallback) {
+        clearingResult = await TelegramBot.editMessageText(chatId, messageId, clearingText, { replyMarkup: backReplyMarkup });
+      } else {
+        clearingResult = await TelegramBot.sendMessage(chatId, clearingText, { replyToMessageId: messageId });
+        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 6e4);
+      }
       await ChatContexts.clear(chatId, userId);
       if (clearingResult.ok) {
         await sleep(3e3);
-        await TelegramBot.deleteMessage(chatId, clearingResult.messageId);
+        const clearedText = "✅ 已成功清除你和我的历史对话";
+        const clearedResult = await TelegramBot.editMessageText(chatId, clearingResult.messageId, clearedText, {
+          replyMarkup: isCallback ? backReplyMarkup : void 0
+        });
+        if (clearedResult.ok) {
+          void scheduleDeletion({ chat_id: chatId, message_id: clearedResult.messageId }, 3 * 6e4);
+        }
       }
-      const clearedText = "✅ 已成功清除你和我的历史对话";
-      const clearedResult = await TelegramBot.sendMessage(chatId, clearedText, "HTML", messageId);
-      if (clearedResult.ok) {
-        void scheduleDeletion({ chat_id: chatId, message_id: clearedResult.messageId }, 3 * 6e4);
-      }
-      void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 6e4);
     }
   },
   {
@@ -1305,17 +1418,62 @@ const botCommands = [
     description: "模型可用工具",
     action: async (params) => {
       Log.info("Executing /tools command.");
-      const { chatId, messageId } = params;
-      const toolList = geminiTools[0].functionDeclarations?.map((tool) => `  * **${tool.name}**: ${tool.description}
-`).join("\n").trim();
+      const { chatId, userId, messageId, isCallback = false } = params;
+      const toolFunctions = geminiTools[0]?.functionDeclarations || [];
+      const toolList = toolFunctions?.map((tool) => `* **${tool.name}**
+    ${tool.description?.slice(0, 40)}...`).join("\n").trim() || "";
+      const randomTools = sampleByShuffle(toolFunctions, 4);
+      const keyboard1 = randomTools.slice(0, 2).map((tool) => ({
+        text: `🛠 ${tool.name}`,
+        callback_data: `tool_demo_${tool.name}_${userId}`
+      }));
+      const keyboard2 = randomTools.slice(2, 4).map((tool) => ({
+        text: `🛠 ${tool.name}`,
+        callback_data: `tool_demo_${tool.name}_${userId}`
+      }));
+      const replyMarkup = {
+        inline_keyboard: [
+          [
+            {
+              text: "✋ 工具演示",
+              switch_inline_query_current_chat: `请简单演示下 TOOL_NAME 工具`
+            }
+          ],
+          keyboard1,
+          keyboard2
+        ]
+      };
       const toolsText = `🛠 我可以使用以下工具：
 
 ${toolList}`;
-      const toolsResult = await TelegramBot.sendMessage(chatId, toolsText, "HTML", messageId);
+      let toolsResult;
+      if (isCallback) {
+        const backReplyMarkup = {
+          inline_keyboard: [
+            ...replyMarkup.inline_keyboard,
+            [
+              {
+                text: "⬅️ Go Back",
+                callback_data: `cmd_start_${userId}`
+              }
+            ]
+          ]
+        };
+        toolsResult = await TelegramBot.editMessageText(chatId, messageId, markdownToHtml(toolsText), {
+          parseMode: "HTML",
+          replyMarkup: backReplyMarkup
+        });
+      } else {
+        toolsResult = await TelegramBot.sendMessage(chatId, markdownToHtml(toolsText), {
+          replyToMessageId: messageId,
+          parseMode: "HTML",
+          replyMarkup
+        });
+        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 5 * 6e4);
+      }
       if (toolsResult.ok) {
         void scheduleDeletion({ chat_id: chatId, message_id: toolsResult.messageId }, 5 * 6e4);
       }
-      void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 5 * 6e4);
     }
   },
   {
@@ -1323,88 +1481,84 @@ ${toolList}`;
     description: "生成图片",
     action: async (params) => {
       Log.info("Executing /exp_img_gen command.");
-      const { chatId, messageId, message } = params;
-      const { durableResourceId, geminiApiKeysKeyName, botName } = BotConfig.load();
+      const { chatId, userId, messageId, cleanText } = params;
+      const { durableResourceId, geminiApiKeysKeyName } = BotConfig.load();
       const apiKeys = await KvNamespace.read(durableResourceId, geminiApiKeysKeyName, "json");
       if (!apiKeys || apiKeys.length === 0) {
         throw new GeminiError("未找到有效的 API 密钥，请检查配置。", "GEMINI_API_KEY_NOT_FOUND", false);
       }
       const [apiKey, apiKeyId] = apiKeys[Math.floor(Math.random() * apiKeys.length)];
-      const ai = new GoogleGenAI({ apiKey });
       Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
-      const contents = [];
-      const parts = [];
-      const config = {
-        responseModalities: ["IMAGE", "TEXT"],
-        temperature: 1,
-        safetySettings: GeminiApi.SAFETY_SETTINGS
-      };
-      const messageText = message.text || message.caption;
-      const cleanText = messageText.replace(`/exp_img_gen@${botName}`, "").trim();
-      if (!cleanText) throw new GeminiError(`没有有效的图片生成提示`, `NO_IMAGE_DESCRIPTION`);
-      parts.push({ text: cleanText });
-      contents.push({
-        role: "user",
-        parts
-      });
+      if (!cleanText) {
+        const notText = await TelegramBot.sendMessage(chatId, `没有有效的图片生成提示（NO_IMAGE_DESCRIPTION）`, { replyToMessageId: messageId });
+        if (notText.ok) {
+          void scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1e3);
+        }
+        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60 * 1e3);
+        return;
+      }
       let renderMessageId = void 0;
-      const renderResult = await TelegramBot.sendMessage(chatId, `🎨 Rendering...`, "HTML", messageId);
+      const renderResult = await TelegramBot.sendMessage(chatId, `🎨 Rendering...`, { replyToMessageId: messageId });
       if (renderResult.ok) {
         renderMessageId = renderResult.messageId;
       }
-      try {
-        const response = await ai.models.generateContent({
-          model: "gemini-2.0-flash-preview-image-generation",
-          contents,
-          config
-        });
-        Log.info(`Gemini API 响应: `, {
-          response: {
-            ...response,
-            candidates: response.candidates?.map((candidate2) => ({
-              ...candidate2,
-              content: {
-                ...candidate2.content,
-                parts: candidate2.content?.parts?.map((part) => {
-                  if (part.inlineData && part.inlineData.data) {
-                    return { ...part, inlineData: { ...part.inlineData, data: "BASE64_ENCODED_DATA" } };
-                  } else if (part.text) {
-                    return { ...part, text: "TEXT_CONTENT" };
-                  }
-                  return part;
-                })
-              }
-            }))
-          }
-        });
-        const candidate = response.candidates?.[0];
-        if (!candidate || !candidate.content || !candidate.content.parts) {
-          throw new GeminiError("Gemini API 返回结果不包含有效的 candidate 或 content", "INVALID_RESPONSE", false);
+      const args = {
+        chatId,
+        userId,
+        userMessageId: messageId,
+        currentApiKey: apiKey,
+        prompt: cleanText
+      };
+      const response = await ToolExecutors.generateImage(args);
+      if (renderMessageId) {
+        await TelegramBot.deleteMessage(chatId, renderMessageId);
+        renderMessageId = void 0;
+      }
+      if (!response.success) {
+        throw new TelegramError(response.error);
+      }
+    }
+  },
+  {
+    name: "exp_tts_gen",
+    description: "生成语音",
+    action: async (params) => {
+      Log.info("Executing /exp_tts_gen command.");
+      const { chatId, userId, messageId, cleanText } = params;
+      const { durableResourceId, geminiApiKeysKeyName } = BotConfig.load();
+      const apiKeys = await KvNamespace.read(durableResourceId, geminiApiKeysKeyName, "json");
+      if (!apiKeys || apiKeys.length === 0) {
+        throw new GeminiError("未找到有效的 API 密钥，请检查配置。", "GEMINI_API_KEY_NOT_FOUND", false);
+      }
+      const [apiKey, apiKeyId] = apiKeys[Math.floor(Math.random() * apiKeys.length)];
+      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
+      if (!cleanText) {
+        const notText = await TelegramBot.sendMessage(chatId, `没有有效的语音生成提示（NO_SPEECH_DESCRIPTION）`, { replyToMessageId: messageId });
+        if (notText.ok) {
+          void scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1e3);
         }
-        if (renderMessageId) {
-          await TelegramBot.deleteMessage(chatId, renderMessageId);
-          renderMessageId = void 0;
-        }
-        const parts2 = candidate.content.parts;
-        const resTexts = parts2.map((part) => part.text).join("");
-        const imageData = parts2.find((part) => part.inlineData);
-        if (!imageData) {
-          throw new GeminiError("Gemini API 未返回图片数据", "INVALID_RESPONSE", false);
-        }
-        const base64Data = imageData.inlineData?.data;
-        const buffer = Buffer.from(base64Data, "base64");
-        const shorten = shortenString(resTexts);
-        const quoteCaption = `<blockquote expandable>${escapeHtml(shorten)}</blockquote>`;
-        const result = await TelegramBot.sendPhoto(chatId, buffer, quoteCaption, "HTML", messageId, false);
-        if (result.ok) {
-          void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 30 * 60 * 1e3);
-        }
-      } catch (error) {
-        if (renderMessageId) {
-          await TelegramBot.deleteMessage(chatId, renderMessageId);
-        }
-        const errorMessage = error instanceof GeminiError ? error.message : String(error);
-        throw new GeminiError(errorMessage, "API_CLIENT_ERROR", false);
+        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60 * 1e3);
+        return;
+      }
+      let synthMessageId = void 0;
+      const synthResult = await TelegramBot.sendMessage(chatId, `🎙 Synthesizing...`, { replyToMessageId: messageId });
+      if (synthResult.ok) {
+        synthMessageId = synthResult.messageId;
+      }
+      const args = {
+        chatId,
+        userId,
+        userMessageId: messageId,
+        currentApiKey: apiKey,
+        prompt: cleanText
+      };
+      const response = await ToolExecutors.generateSpeech(args);
+      if (synthMessageId) {
+        await TelegramBot.deleteMessage(chatId, synthMessageId);
+        synthMessageId = void 0;
+      }
+      if (!response.success) {
+        throw new TelegramError(response.error);
       }
     }
   }
@@ -1676,7 +1830,7 @@ const functionForGet = [
       properties: {
         filePaths: {
           type: Type.ARRAY,
-          description: '需要查询的文件路径列表，例如 ["MetaCubeX/Meta-docs/refs/heads/main/docs/api/index.md", "SagerNet/sing-box/refs/heads/dev-next/src/main.go", ...]',
+          description: '需要查询的文件路径列表，例如 ["MetaCubeX/Meta-docs/refs/heads/main/docs/api/index.md", "SagerNet/sing-box/refs/heads/dev-next/src/main.go", ...]，每次查询最少 4 个文件 ',
           items: {
             type: Type.STRING,
             title: "File Path Item",
@@ -1784,9 +1938,74 @@ const functionForGet = [
     behavior: Behavior.BLOCKING
   }
 ];
+const functionForGenerate = [
+  {
+    name: "generateImage",
+    description: "使用此工具生成图片并用图片回复用户。",
+    behavior: Behavior.BLOCKING,
+    parameters: {
+      type: Type.OBJECT,
+      title: "Generate Image Parameters",
+      properties: {
+        prompt: {
+          type: Type.STRING,
+          title: "Image Generation Prompt",
+          description: "用于生成图片的文本提示。",
+          example: `A photorealistic [shot type] of [subject], [action or expression], set in
+[environment]. The scene is illuminated by [lighting description], creating
+a [mood] atmosphere. Captured with a [camera/lens details], emphasizing
+[key textures and details]. The image should be in a [aspect ratio] format.
+
+A [style] sticker of a [subject], featuring [key characteristics] and a
+[color palette]. The design should have [line style] and [shading style].
+The background must be transparent.
+
+A single comic book panel in a [art style] style. In the foreground,
+[character description and action]. In the background, [setting details].
+The panel has a [dialogue/caption box] with the text "[Text]". The lighting
+creates a [mood] mood. [Aspect ratio].
+
+A high-resolution, studio-lit product photograph of a [product description]
+on a [background surface/description]. The lighting is a [lighting setup,
+e.g., three-point softbox setup] to [lighting purpose]. The camera angle is
+a [angle type] to showcase [specific feature]. Ultra-realistic, with sharp
+focus on [key detail]. [Aspect ratio].`
+        }
+      },
+      required: ["prompt"]
+    }
+  },
+  {
+    name: "generateSpeech",
+    description: "使用此工具生成语音并用语音回复用户。",
+    behavior: Behavior.BLOCKING,
+    parameters: {
+      type: Type.OBJECT,
+      title: "Generate Speech Parameters",
+      properties: {
+        prompt: {
+          type: Type.STRING,
+          title: "Speech Generation Prompt",
+          description: `用于生成语音的文本提示，可以使用自然语言提示来控制语音的样式、语调、口音和语速。`,
+          example: `Say in a helpless tone:
+"拜托！我不会算命啊！"
+
+Say in an spooky whisper:
+"By the pricking of my thumbs...
+Something wicked this way comes"
+
+Make Speaker1 sound tired and bored, and Speaker2 sound excited and happy:
+Speaker1: So... what's on the agenda today?
+Speaker2: You're never going to guess!`
+        }
+      },
+      required: ["prompt"]
+    }
+  }
+];
 const geminiTools = [
   {
-    functionDeclarations: [...functionForSearch, ...functionForList, ...functionForGet]
+    functionDeclarations: [...functionForSearch, ...functionForList, ...functionForGet, ...functionForGenerate]
   }
 ];
 class GeminiApi {
@@ -1800,8 +2019,8 @@ class GeminiApi {
     { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE }
   ];
   static async _initializeApiCallContext(chatParams, initialContents) {
-    const { durableResourceId, systemPromptKeyName, geminiApiKeysKeyName, modelName } = BotConfig.load();
-    const { chatId, thinkMessageId } = chatParams;
+    const { durableResourceId, systemPromptKeyName, geminiApiKeysKeyName, modelName, modelTemperature } = BotConfig.load();
+    const { chatId, userId, userMessageId, thinkMessageId } = chatParams;
     const systemPrompt = await KvNamespace.read(durableResourceId, systemPromptKeyName, "text") || "You are a helpful assistant.";
     const apiKeys = await KvNamespace.read(durableResourceId, geminiApiKeysKeyName, "json");
     if (!apiKeys || apiKeys.length === 0) {
@@ -1811,7 +2030,7 @@ class GeminiApi {
     Log.info(`系统提示 (systemPrompt):`, { systemPrompt: systemPrompt.slice(0, 200) });
     const config = {
       maxOutputTokens: 65536,
-      temperature: 0,
+      temperature: modelTemperature,
       thinkingConfig: { includeThoughts: true, thinkingBudget: -1 },
       tools: geminiTools,
       toolConfig: {
@@ -1825,6 +2044,8 @@ class GeminiApi {
     };
     return {
       chatId,
+      userId,
+      userMessageId,
       thinkMessageId,
       systemPrompt,
       apiKeys,
@@ -1858,6 +2079,11 @@ class GeminiApi {
             return { ...part, thoughtSignature: "THOUGHT_SIGNATURE" };
           } else if (part.thought) {
             return { ...part, text: "THOUGHT_TEXT" };
+          } else if (part.functionResponse && part.functionResponse.response?.success) {
+            return {
+              ...part,
+              functionResponse: { ...part.functionResponse, response: { ...part.functionResponse.response, data: "FUNCTION_RESPONSE_DATA" } }
+            };
           }
           return part;
         })
@@ -1876,23 +2102,7 @@ class GeminiApi {
     });
     context.metrics.totalUsageToken = response.usageMetadata?.totalTokenCount && !isNaN(response.usageMetadata.totalTokenCount) ? context.metrics.totalUsageToken + response.usageMetadata.totalTokenCount : context.metrics.totalUsageToken;
     Log.info(`Gemini API 响应: `, {
-      response: {
-        ...response,
-        candidates: response.candidates?.map((candidate) => ({
-          ...candidate,
-          content: {
-            ...candidate.content,
-            parts: candidate.content?.parts?.map((part) => {
-              if (part.thought) {
-                return { ...part, text: "THOUGHT_TEXT" };
-              } else if (part.thoughtSignature) {
-                return { ...part, thoughtSignature: "THOUGHT_SIGNATURE" };
-              }
-              return part;
-            })
-          }
-        }))
-      }
+      response: simpleGeminiApiResponse(response)
     });
     return response;
   }
@@ -1908,15 +2118,15 @@ class GeminiApi {
           const delay = Math.floor(GeminiApi.BASE_RETRY_DELAY_MS * Math.pow(2, attempt + 1) * (0.8 + Math.random() * 0.4));
           context.metrics.errorRetryCount++;
           if (context.thinkMessageId !== void 0) {
-            await TelegramBot.editMessageText(
-              context.chatId,
-              context.thinkMessageId,
-              `Gemini API 客户端错误，将在 ${Math.floor(delay / 1e3)} 秒后，进行第 ${attempt + 1} 次重试...`
-            );
+            const errorRetryText = `Gemini API 客户端错误，将在 ${Math.floor(delay / 1e3)} 秒后，进行第 ${attempt + 1} 次重试...`;
+            await TelegramBot.editMessageText(context.chatId, context.thinkMessageId, errorRetryText);
           }
           await sleep(delay);
           Log.info(`Gemini API 客户端错误，进行第 ${attempt + 1} 次重试...`);
         } else {
+          if (context.thinkMessageId) {
+            await TelegramBot.deleteMessage(context.chatId, context.thinkMessageId);
+          }
           const finalError = new GeminiError(
             `Gemini API 客户端错误，已达最大重试次数 (${GeminiApi.MAX_RETRIES_COMMON})。
 
@@ -1938,17 +2148,11 @@ ${err}`,
       const thoughtTexts = functionTexts.map((part) => part.text).join("").trim();
       if (thoughtTexts) {
         context.metrics.hasToolThoughts = true;
-        const displayThoughtText = shortenString(thoughtTexts);
         if (context.thinkMessageId !== void 0) {
-          await TelegramBot.editMessageText(
-            context.chatId,
-            context.thinkMessageId,
-            `<b>Thoughts</b>:
+          const displayThoughtText = `<b>Thoughts</b>:
 
-<blockquote expandable>${escapeHtml(displayThoughtText)}</blockquote>`,
-            "HTML",
-            false
-          );
+<blockquote expandable>${escapeHtml(shortenString(thoughtTexts))}</blockquote>`;
+          await TelegramBot.editMessageText(context.chatId, context.thinkMessageId, displayThoughtText, { parseMode: "HTML" });
         }
       }
     }
@@ -1958,10 +2162,17 @@ ${err}`,
     for (const functionCall of functionCalls) {
       const functionName = functionCall.functionCall?.name;
       const functionArgs = functionCall.functionCall?.args;
+      const toolExecArgs = {
+        chatId: context.chatId,
+        userId: context.userId,
+        userMessageId: context.userMessageId,
+        currentApiKey: context.apiKeys[0][0],
+        ...functionArgs
+      };
       if (typeof functionName === "string" && functionName in ToolExecutors) {
         try {
           const executor = ToolExecutors[functionName];
-          const toolResult = await executor(functionArgs);
+          const toolResult = await executor(toolExecArgs);
           toolResponseParts.push({
             functionResponse: {
               name: functionName,
@@ -2049,11 +2260,8 @@ ${err}`,
           context.metrics.emptyReplyRetryCount++;
           currentEmptyReplyAttempt++;
           if (context.thinkMessageId !== void 0) {
-            await TelegramBot.editMessageText(
-              context.chatId,
-              context.thinkMessageId,
-              `Gemini API 响应为空，将在 ${Math.floor(delay / 1e3)} 秒后，进行第 ${currentEmptyReplyAttempt} 次重试...`
-            );
+            const emptyReplyRetryText = `Gemini API 响应为空，将在 ${Math.floor(delay / 1e3)} 秒后，进行第 ${currentEmptyReplyAttempt} 次重试...`;
+            await TelegramBot.editMessageText(context.chatId, context.thinkMessageId, emptyReplyRetryText);
           }
           Log.warn(
             `Gemini API 返回结果不包含有效的 candidate 或 content，尝试重试 (无效回复重试 ${currentEmptyReplyAttempt}/${GeminiApi.MAX_RETRIES_COMMON})。`,
@@ -2067,6 +2275,9 @@ ${err}`,
             throw error;
           }
         } else {
+          if (context.thinkMessageId) {
+            await TelegramBot.deleteMessage(context.chatId, context.thinkMessageId);
+          }
           const errorMsg2 = `Gemini API 未返回有效结果，已达最大无效回复重试次数 (${GeminiApi.MAX_RETRIES_COMMON})，请稍后再重新提问。`;
           Log.error(errorMsg2);
           await GeminiApi._writeApiKeysToKv(context.apiKeys);
@@ -2130,6 +2341,30 @@ ${err}`,
     throw new GeminiError(errorMsg, "MAX_CALL_ROUNDS_REACHED", context.metrics.hasToolThoughts);
   };
 }
+const simpleGeminiApiResponse = (response) => {
+  const simpleResponse = {
+    ...response,
+    candidates: response.candidates?.map((candidate) => ({
+      ...candidate,
+      content: {
+        ...candidate.content,
+        parts: candidate.content?.parts?.map((part) => {
+          if (part.thought) {
+            return { ...part, text: "THOUGHT_TEXT" };
+          } else if (part.thoughtSignature) {
+            return { ...part, thoughtSignature: "THOUGHT_SIGNATURE" };
+          } else if (part.inlineData && part.inlineData.data) {
+            return { ...part, inlineData: { ...part.inlineData, data: "BASE64_ENCODED_DATA" } };
+          } else if (part.text) {
+            return { ...part, text: "TEXT_CONTENT" };
+          }
+          return part;
+        })
+      }
+    }))
+  };
+  return simpleResponse;
+};
 let tslogInstance = null;
 const mapLoggerLevelToNumber = (levelStr) => {
   switch (levelStr) {
@@ -2311,18 +2546,19 @@ class TelegramBot {
       );
     }
   }
-  static async sendMessage(chatId, text, parseMode, replyToMessageId, isFormat = true) {
+  static async sendMessage(chatId, text, options) {
     const payload = {
       chat_id: chatId,
-      text: isFormat ? markdownToHtml(text) : text,
-      parse_mode: parseMode,
+      text,
+      parse_mode: options?.parseMode,
       link_preview_options: {
         is_disabled: true
       },
-      reply_parameters: replyToMessageId ? {
-        message_id: replyToMessageId,
+      reply_parameters: options?.replyToMessageId ? {
+        message_id: options?.replyToMessageId,
         allow_sending_without_reply: true
-      } : void 0
+      } : void 0,
+      reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : void 0
     };
     try {
       const result = await TelegramBot.sendRequest("POST", "sendMessage", payload);
@@ -2346,17 +2582,19 @@ class TelegramBot {
       };
     }
   }
-  static async sendPhoto(chatId, photoBuffer, caption, parseMode, replyToMessageId, isFormat = true) {
+  static async sendPhoto(chatId, photoBuffer, options) {
+    const shorten = `<blockquote expandable>${escapeHtml(shortenString(String(options?.caption)))}</blockquote>`;
     const payload = {
       chat_id: chatId,
       photo: photoBuffer,
-      caption: isFormat && caption ? markdownToHtml(caption) : caption,
-      parse_mode: parseMode,
+      caption: shorten,
+      parse_mode: "HTML",
       show_caption_above_media: true,
-      reply_parameters: replyToMessageId ? {
-        message_id: replyToMessageId,
+      reply_parameters: options?.replyToMessageId ? {
+        message_id: options.replyToMessageId,
         allow_sending_without_reply: true
-      } : void 0
+      } : void 0,
+      reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : void 0
     };
     const photoBlob = new Blob([payload.photo], { type: "image/png" });
     const formData = new FormData();
@@ -2366,6 +2604,7 @@ class TelegramBot {
     formData.append("parse_mode", payload.parse_mode);
     formData.append("show_caption_above_media", String(payload.show_caption_above_media));
     formData.append("reply_parameters", JSON.stringify(payload.reply_parameters));
+    formData.append("reply_markup", payload.reply_markup);
     try {
       const result = await TelegramBot.sendRequest("POST", "sendPhoto", formData, true);
       Log.info("Telegram photo message sent successfully.", {
@@ -2379,8 +2618,7 @@ class TelegramBot {
     } catch (error) {
       Log.error("Error sending Telegram photo message", {
         err: error,
-        chatId,
-        text: payload.caption?.substring(0, 100) + "..."
+        chatId
       });
       return {
         ok: false,
@@ -2388,15 +2626,55 @@ class TelegramBot {
       };
     }
   }
-  static async editMessageText(chatId, messageId, text, parseMode, isFormat = true) {
+  static async sendVoice(chatId, voiceBuffer, options) {
+    const payload = {
+      chat_id: chatId,
+      voice: voiceBuffer,
+      caption: options?.caption,
+      reply_parameters: options?.replyToMessageId ? {
+        message_id: options.replyToMessageId,
+        allow_sending_without_reply: true
+      } : void 0,
+      reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : void 0
+    };
+    const voiceBlob = new Blob([payload.voice], { type: "audio/mpeg" });
+    const formData = new FormData();
+    formData.append("chat_id", payload.chat_id);
+    formData.append("voice", voiceBlob, `gemini_gen_voice.mp3`);
+    if (payload.caption) formData.append("caption", payload.caption);
+    formData.append("reply_parameters", JSON.stringify(payload.reply_parameters));
+    formData.append("reply_markup", payload.reply_markup);
+    try {
+      const result = await TelegramBot.sendRequest("POST", "sendVoice", formData, true);
+      Log.info("Telegram voice message sent successfully.", {
+        chatId,
+        messageId: result.message_id
+      });
+      return {
+        ok: true,
+        messageId: result.message_id
+      };
+    } catch (error) {
+      Log.error("Error sending Telegram voice message", {
+        err: error,
+        chatId
+      });
+      return {
+        ok: false,
+        error
+      };
+    }
+  }
+  static async editMessageText(chatId, messageId, text, options) {
     const payload = {
       chat_id: chatId,
       message_id: messageId,
-      text: isFormat ? markdownToHtml(text) : text,
-      parse_mode: parseMode,
+      text,
+      ...options?.parseMode ? { parse_mode: options.parseMode } : options?.entities ? { entities: JSON.stringify(options.entities) } : {},
       link_preview_options: {
         is_disabled: true
-      }
+      },
+      reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : void 0
     };
     try {
       const result = await TelegramBot.sendRequest("POST", "editMessageText", payload);
@@ -2411,6 +2689,32 @@ class TelegramBot {
         chatId,
         messageId,
         text: text.substring(0, 100) + "..."
+      });
+      return { ok: false, error };
+    }
+  }
+  static async editMessageReplyMarkup(chatId, messageId, replyMarkup) {
+    const payload = {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: JSON.stringify(replyMarkup)
+    };
+    try {
+      const result = await TelegramBot.sendRequest(
+        "POST",
+        "editMessageReplyMarkup",
+        payload
+      );
+      Log.info("Telegram message reply markup edited successfully.", {
+        chatId,
+        messageId: result.message_id
+      });
+      return { ok: true, messageId: result.message_id };
+    } catch (error) {
+      Log.error("Error editing Telegram message reply markup", {
+        err: error,
+        chatId,
+        messageId
       });
       return { ok: false, error };
     }
@@ -2504,7 +2808,78 @@ class TelegramBot {
       return { ok: false, error };
     }
   }
+  static async answerCallbackQuery(callbackQueryId, options) {
+    const payload = {
+      callback_query_id: callbackQueryId,
+      text: options?.callbackText,
+      show_alert: options?.showAlert
+    };
+    try {
+      await TelegramBot.sendRequest("POST", "answerCallbackQuery", payload);
+      Log.info("Callback query answered successfully.", { callbackQueryId, callbackText: options?.callbackText });
+      return { ok: true };
+    } catch (err) {
+      Log.error("Error answering callback query", {
+        err,
+        callbackQueryId,
+        callbackText: options?.callbackText
+      });
+      return { ok: false, error: err };
+    }
+  }
+  static async answerInlineQuery(inlineQueryId, inlineResult, options) {
+    const payload = {
+      inline_query_id: inlineQueryId,
+      results: JSON.stringify(inlineResult),
+      cache_time: options?.cacheTime,
+      is_personal: options?.isPersonal,
+      next_offset: options?.nextOffset,
+      button: options?.button ? JSON.stringify(options.button) : void 0
+    };
+    try {
+      await TelegramBot.sendRequest("POST", "answerInlineQuery", payload);
+      Log.info("Inline query answered successfully.", { inlineQueryId });
+      return { ok: true };
+    } catch (err) {
+      Log.error("Error answering inline query", {
+        err,
+        inlineQueryId
+      });
+      return { ok: false, error: err };
+    }
+  }
 }
+const REACTiON_ROW = [
+  {
+    text: "👍",
+    callback_data: "reaction_like"
+  },
+  {
+    text: "👎",
+    callback_data: "reaction_dislike"
+  }
+];
+const DELETE_ROW = [
+  {
+    text: "🗑 删除消息",
+    callback_data: "delete_message_USER_ID"
+  }
+];
+const BASE_INLINE_KEYBOARD = [REACTiON_ROW, DELETE_ROW];
+const makeInlineKeyboard = (userId) => {
+  return BASE_INLINE_KEYBOARD.map(
+    (row) => row.map((button) => {
+      if (button.callback_data?.includes("USER_ID")) {
+        return {
+          ...button,
+          callback_data: button.callback_data.replace("USER_ID", String(userId))
+        };
+      } else {
+        return button;
+      }
+    })
+  );
+};
 const ToolExecutors = {
   searchFilesInRepo: async (args) => {
     Log.info("执行工具: searchFilesInRepo, 参数:", { args });
@@ -2843,7 +3218,94 @@ const ToolExecutors = {
     const currentTime = formatTime(Date.now());
     Log.info("getCurrentTime 工具执行完毕，当前时间:", { currentTime });
     return { success: true, data: { currentTime } };
+  },
+  generateImage: async (args) => {
+    Log.info("执行工具: sendPhotoMessage");
+    const { chatId, userId, userMessageId, currentApiKey, prompt } = args;
+    const modelName = "gemini-2.0-flash-preview-image-generation";
+    const modelConfig = {
+      responseModalities: ["IMAGE", "TEXT"]
+    };
+    const contents = [
+      {
+        role: "user",
+        parts: [{ text: prompt }]
+      }
+    ];
+    try {
+      const response = await callMultiModalModels(currentApiKey, modelName, modelConfig, contents);
+      const resTexts = response.parts?.map((part) => part.text).join("") || "";
+      const imageData = response.parts?.find((part) => part.inlineData && part.inlineData.data);
+      const base64Data = imageData?.inlineData?.data;
+      const imageBuffer = Buffer.from(base64Data, "base64");
+      const replyMarkup = {
+        inline_keyboard: makeInlineKeyboard(userId)
+      };
+      const result = await TelegramBot.sendPhoto(chatId, imageBuffer, { caption: resTexts, replyToMessageId: userMessageId, replyMarkup });
+      if (!result.ok) {
+        return { success: false, error: `Error replying image message, ${result.error}` };
+      }
+      void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1e3);
+      return { success: true, data: "Image generate and reply message successfully." };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return { success: false, error: errorMessage };
+    }
+  },
+  generateSpeech: async (args) => {
+    Log.info("执行工具: sendVoiceMessage");
+    const { chatId, userId, userMessageId, currentApiKey, prompt } = args;
+    const modelName = "gemini-2.5-flash-preview-tts";
+    const modelConfig = {
+      responseModalities: ["AUDIO"],
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Leda" } } }
+    };
+    const contents = [
+      {
+        role: "user",
+        parts: [{ text: prompt }]
+      }
+    ];
+    try {
+      const response = await callMultiModalModels(currentApiKey, modelName, modelConfig, contents);
+      const audioData = response.parts?.find((part) => part.inlineData && part.inlineData.data);
+      const base64Data = audioData?.inlineData?.data;
+      const pcmAudioBuffer = Buffer.from(base64Data, "base64");
+      Log.info("开始将 PCM 音频数据转换为 MP3...");
+      const mp3AudioBuffer = await convertPcmToMp3(pcmAudioBuffer);
+      Log.info("MP3 音频数据转换完成。");
+      const replyMarkup = {
+        inline_keyboard: makeInlineKeyboard(userId)
+      };
+      const result = await TelegramBot.sendVoice(chatId, mp3AudioBuffer, { replyToMessageId: userMessageId, replyMarkup });
+      if (!result.ok) {
+        return { success: false, error: `Error replying speech message, ${result.error}` };
+      }
+      void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1e3);
+      return { success: true, data: "Speech generate and reply message successfully." };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return { success: false, error: errorMessage };
+    }
   }
+};
+const callMultiModalModels = async (apiKey, model, modelConfig, contents) => {
+  const ai = new GoogleGenAI({ apiKey });
+  const config = {
+    ...modelConfig,
+    safetySettings: GeminiApi.SAFETY_SETTINGS
+  };
+  Log.info("发送 Gemini API 请求...");
+  Log.info("当前发送的 contents:", { contents });
+  const response = await ai.models.generateContent({ model, contents, config });
+  Log.info(`Gemini API 响应: `, {
+    response: simpleGeminiApiResponse(response)
+  });
+  const candidate = response.candidates?.[0];
+  if (!candidate || !candidate.content || !candidate.content.parts) {
+    throw new GeminiError("Gemini API 返回结果不包含有效的内容", "INVALID_RESPONSE");
+  }
+  return candidate.content;
 };
 const handleCommand = async (message) => {
   const { message_id: messageId, from, chat } = message;
@@ -2854,13 +3316,14 @@ const handleCommand = async (message) => {
   const fullCommandText = messageText.substring(commandEntity.offset, commandEntity.offset + commandEntity.length);
   void TelegramBot.setBotCommands(chat.id, from?.id);
   const commandName = fullCommandText.slice(1).split("@")[0].trim();
+  const cleanText = messageText.replace(fullCommandText, "").trim();
   const targetCommand = botCommands.find((cmd) => cmd.name === commandName);
   if (targetCommand) {
     await targetCommand.action({
       chatId: chat.id,
-      messageId,
       userId: from?.id,
-      message
+      messageId,
+      cleanText
     });
   }
 };
@@ -3052,12 +3515,9 @@ class MentionHandler {
     const checkResult = await rateLimiterCheck(chat.id);
     if (!checkResult.canProceed && from?.id !== adminId) {
       Log.info(`Rate limit exceeded for chat ${chat.id}. Retry after ${checkResult.retryAfterSeconds} seconds.`);
-      const rateLimitResult = await TelegramBot.sendMessage(
-        chat.id,
-        `超出速率限制，请等待 ${checkResult.retryAfterSeconds} 秒后重试。`,
-        "HTML",
-        userMessageId
-      );
+      const rateLimitResult = await TelegramBot.sendMessage(chat.id, `超出速率限制，请等待 ${checkResult.retryAfterSeconds} 秒后重试。`, {
+        replyToMessageId: userMessageId
+      });
       if (rateLimitResult.ok) {
         void scheduleDeletion({ chat_id: chat.id, message_id: rateLimitResult.messageId }, checkResult.retryAfterSeconds * 1e3);
       }
@@ -3067,7 +3527,9 @@ class MentionHandler {
   }
   static async _sendFileUploadMessage(message, replyToMessage, chatId, userMessageId) {
     if (containsFile(message) || containsFile(replyToMessage)) {
-      const uploadingResult = await TelegramBot.sendMessage(chatId, "📄 File uploading...", "HTML", userMessageId);
+      const uploadingResult = await TelegramBot.sendMessage(chatId, "📄 File uploading...", {
+        replyToMessageId: userMessageId
+      });
       return uploadingResult.ok ? uploadingResult.messageId : null;
     }
     return null;
@@ -3105,7 +3567,9 @@ ${currentMessage.text || currentMessage.caption}`;
     return completeContents;
   }
   static async _sendThinkingMessage(chatId, userMessageId) {
-    const thinkingResult = await TelegramBot.sendMessage(chatId, "✨ Thinking...", "HTML", userMessageId);
+    const thinkingResult = await TelegramBot.sendMessage(chatId, "✨ Thinking...", {
+      replyToMessageId: userMessageId
+    });
     if (!thinkingResult.ok) {
       Log.error("Failed to send thinking message.");
       throw new TelegramError("Failed to send thinking message.");
@@ -3129,16 +3593,13 @@ ${currentMessage.text || currentMessage.caption}`;
     const resThoughtTexts = resThoughtParts?.map((part) => part.text).join("").trim();
     if (resThoughtTexts) {
       hasDisplayedThoughts = true;
-      const displayThoughtText = shortenString(resThoughtTexts);
-      await TelegramBot.editMessageText(
-        chatId,
-        thinkMessageId,
-        `<b>Thoughts</b>:
+      const displayThoughtText = `<b>Thoughts</b>:
 
-<blockquote expandable>${escapeHtml(displayThoughtText)}</blockquote>`,
-        "HTML",
-        false
-      );
+<blockquote expandable>${escapeHtml(shortenString(resThoughtTexts))}</blockquote>`;
+      const replyMarkup = {
+        inline_keyboard: makeInlineKeyboard(fromUserId)
+      };
+      await TelegramBot.editMessageText(chatId, thinkMessageId, displayThoughtText, { parseMode: "HTML", replyMarkup });
     }
     if (!hasToolThoughts && !hasDisplayedThoughts) {
       await TelegramBot.deleteMessage(chatId, thinkMessageId);
@@ -3146,27 +3607,43 @@ ${currentMessage.text || currentMessage.caption}`;
       void scheduleDeletion({ chat_id: chatId, message_id: thinkMessageId }, 30 * 6e4);
     }
     const resTextParts = response.parts?.filter((part) => part.text && !part.thought);
-    const resTexts = resTextParts?.map((part) => part.text).join("").trim();
+    const resTexts = resTextParts?.map((part) => part.text).join("").trim() || "";
+    if (!resTexts) {
+      const replyText = "Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。";
+      const replyMarkup = {
+        inline_keyboard: makeInlineKeyboard(fromUserId)
+      };
+      const replyResult = await TelegramBot.sendMessage(chatId, replyText, {
+        replyToMessageId: userMessageId,
+        replyMarkup
+      });
+      if (replyResult.ok) {
+        void scheduleDeletion({ chat_id: chatId, message_id: replyResult.messageId }, 3 * 60 * 1e3);
+      }
+      return hasDisplayedThoughts;
+    }
     const fullText = `🤖 模型：\`${modelName}\`
 
-${resTexts || "Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。"}
+${resTexts}
 
 ✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}
 
 ⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。`;
-    const { ok: sendOk, error: sendError } = await sendFormattedMessage(chatId, fullText, userMessageId);
-    if (!sendOk) {
-      const error = sendError ? sendError : new TelegramError("发送消息时发生未知错误");
+    const finalReplyResult = await sendFormattedMessage(chatId, fullText, userMessageId, fromUserId);
+    if (!finalReplyResult.ok) {
+      const error = finalReplyResult.error || new TelegramError("发送最终回复时发生未知错误");
       throw error;
     }
-    const botResponseContent = {
-      role: "model",
-      parts: response.parts
-    };
-    await ChatContexts.update(chatId, fromUserId, [
-      ...completeContentsBeforeCall,
-      botResponseContent
-    ]);
+    if (resTexts) {
+      const botResponseContent = {
+        role: "model",
+        parts: response.parts
+      };
+      await ChatContexts.update(chatId, fromUserId, [
+        ...completeContentsBeforeCall,
+        botResponseContent
+      ]);
+    }
     return hasDisplayedThoughts;
   }
   static async handleMention(message, isChat = false) {
@@ -3195,6 +3672,8 @@ ${resTexts || "Gemini API 未返回有效文本回复：模型可能只生成了
       thinkMessageId = await MentionHandler._sendThinkingMessage(chat.id, userMessageId);
       const geminiResponse = await GeminiApi.generateContent(completeContents, {
         chatId: chat.id,
+        userId: from?.id,
+        userMessageId,
         thinkMessageId
       });
       hasResThought = await MentionHandler._processGeminiResponse(
@@ -3284,7 +3763,6 @@ const handleNewMember = async (message) => {
   if (!new_chat_members || new_chat_members.length === 0) return;
   const newMemberIds = new_chat_members?.map((member) => member.id);
   Log.info("Handling new chat member message", { chatId: chat.id, newMemberIds });
-  await sleep(5e3);
   const pollingTasks = new_chat_members.map((member) => pollChatMemberStatus(chat.id, member, POLLING_TIMEOUT_MS, POLLING_INTERVAL_MS));
   const results = await Promise.all(pollingTasks);
   for (const { userId, isVerified } of results) {
@@ -3299,7 +3777,22 @@ const handleNewMember = async (message) => {
       const newMemberWelcomeText = await KvNamespace.read(durableResourceId, newMemberWelcomeTextKeyName, "text");
       const replaceText = newMemberWelcomeText?.replace("NEW_MEMBER_MENTION", newMemberMention).replace("CHAT_TITLE", chat.title).replace("BOT_NAME", botName);
       Log.info(`向已验证的新成员 ${newMemberFullName}(${newMember.id}) 发送欢迎消息。`, { chatId: chat.id, newMemberId: newMember.id });
-      const welcomeResult = await TelegramBot.sendMessage(chat.id, replaceText, "HTML");
+      const replyMarkup = {
+        inline_keyboard: [
+          [
+            { text: "📓 使用指南", url: "https://gui-for-cores.github.io/zh/guide" },
+            {
+              text: "🧠 智能助理",
+              callback_data: `cmd_start_${newMember.id}`
+            }
+          ],
+          [
+            { text: "📢 通知频道", url: "https://t.me/GUI_for_Cores_Channel" },
+            { text: "📄 项目地址", url: "https://github.com/GUI-for-Cores" }
+          ]
+        ]
+      };
+      const welcomeResult = await TelegramBot.sendMessage(chat.id, markdownToHtml(replaceText), { parseMode: "HTML", replyMarkup });
       if (welcomeResult.ok) {
         void scheduleDeletion({ chat_id: chat.id, message_id: welcomeResult.messageId }, 3 * 6e4);
       }
@@ -3323,9 +3816,144 @@ const handleNormal = async (message) => {
   }
   return await handleMention(cleanMessage, true);
 };
+const handleCallbackQuery = async (callbackQuery) => {
+  if (!callbackQuery.message || !callbackQuery.data) {
+    Log.info("Invalid callback query", { queryId: callbackQuery.id });
+    return;
+  }
+  const { durableResourceId, rateLimitId } = BotConfig.load();
+  const { id: queryId, from, message, data } = callbackQuery;
+  const { chat, message_id: messageId, date, reply_markup } = message;
+  Log.info("Handling callback query", { chatId: chat.id, messageId, userId: from.id, data });
+  switch (true) {
+    case data === "PLACEHOLDER": {
+      TelegramBot.answerCallbackQuery(queryId);
+      break;
+    }
+    case data.startsWith("mention_"): {
+      const [, ask, allowUserId] = data.split("_");
+      if (from.id !== Number(allowUserId)) {
+        TelegramBot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
+        return;
+      }
+      TelegramBot.answerCallbackQuery(queryId, { callbackText: "询问请求..." });
+      let newMessageText = "简单说明下你能做什么？";
+      if (ask === "faq") {
+        newMessageText = "请整理、提炼出 GUI.for.Cores 的常见问题及解决方案的精华部分，并列出简化后的内容";
+      }
+      const newMessage = { ...message, from, text: newMessageText };
+      await handleMention(newMessage);
+      break;
+    }
+    case data.startsWith("tool_"): {
+      const [, action, tool, allowUserId] = data.split("_");
+      if (from.id !== Number(allowUserId)) {
+        TelegramBot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
+        return;
+      }
+      if (action === "demo") {
+        TelegramBot.answerCallbackQuery(queryId, { callbackText: "开始演示工具..." });
+        const newText = `请简单演示下 ${tool} 工具`;
+        const newMessage = { ...message, from, text: newText };
+        delete newMessage.reply_to_message;
+        await handleMention(newMessage);
+      }
+      break;
+    }
+    case data.startsWith("cmd_"): {
+      const [, command, allowUserId] = data.split("_");
+      if (from.id !== Number(allowUserId)) {
+        TelegramBot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
+        return;
+      }
+      TelegramBot.answerCallbackQuery(queryId, { callbackText: "开始执行..." });
+      const targetCommand = botCommands.find((cmd) => cmd.name === command);
+      if (targetCommand) {
+        await targetCommand.action({
+          chatId: chat.id,
+          messageId,
+          userId: allowUserId ? Number(allowUserId) : from.id,
+          isCallback: true
+        });
+      }
+      break;
+    }
+    case data.startsWith("reaction_"): {
+      const reaction = data.split("_")[1];
+      const keyName = `reacted_${chat.id}_${messageId}`;
+      const reactedUsers = await KvNamespace.read(rateLimitId, keyName, "json") || [];
+      if (reactedUsers.includes(from.id)) {
+        TelegramBot.answerCallbackQuery(queryId, {
+          callbackText: "你已做出过反应"
+        });
+        return;
+      }
+      TelegramBot.answerCallbackQuery(queryId, { callbackText: "反应成功" });
+      const newReactedUsers = [...reactedUsers, from.id];
+      await KvNamespace.write(rateLimitId, keyName, JSON.stringify(newReactedUsers), { expiration_ttl: 48 * 60 * 60 });
+      const newInlineKeyboard = JSON.parse(JSON.stringify(reply_markup?.inline_keyboard));
+      let keyboardUpdated = false;
+      for (const row of newInlineKeyboard) {
+        for (const button of row) {
+          if (button.callback_data === `reaction_${reaction}`) {
+            const currentText = button.text;
+            const parts = currentText.split(" ");
+            const emoji = parts[0];
+            const currentCount = parseInt(parts[1] || "0", 10);
+            if (!isNaN(currentCount)) {
+              const newCount = currentCount + 1;
+              button.text = `${emoji} ${newCount}`;
+              keyboardUpdated = true;
+              break;
+            }
+          }
+        }
+        if (keyboardUpdated) {
+          break;
+        }
+      }
+      if (keyboardUpdated) {
+        await TelegramBot.editMessageReplyMarkup(chat.id, messageId, {
+          inline_keyboard: newInlineKeyboard
+        });
+      }
+      const totalReactionsKeyName = `total_reactions_${chat.id}`;
+      const oldTotalReactions = await KvNamespace.read(durableResourceId, totalReactionsKeyName, "json") || {
+        like: 0,
+        dislike: 0
+      };
+      const newTotalReactions = {
+        like: reaction === "like" ? oldTotalReactions.like + 1 : oldTotalReactions.like,
+        dislike: reaction === "dislike" ? oldTotalReactions.dislike + 1 : oldTotalReactions.dislike
+      };
+      await KvNamespace.write(durableResourceId, totalReactionsKeyName, JSON.stringify(newTotalReactions));
+      break;
+    }
+    case data.startsWith("delete_"): {
+      const [, content, allowUserId] = data.split("_");
+      if (from.id !== Number(allowUserId)) {
+        TelegramBot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
+        return;
+      }
+      if (content === "message") {
+        if (Date.now() - date * 1e3 <= 30 * 60 * 1e3) {
+          TelegramBot.answerCallbackQuery(queryId, { callbackText: "消息锁定中，无法删除" });
+          return;
+        }
+        TelegramBot.answerCallbackQuery(queryId, { callbackText: "删除成功" });
+        await TelegramBot.deleteMessage(chat.id, messageId);
+      }
+      break;
+    }
+  }
+};
 const handleUpdate = async (update) => {
   Log.info("Handling Telegram update", { update });
   const { botName, allowGroups } = BotConfig.load();
+  if (update.callback_query) {
+    const { callback_query } = update;
+    if (callback_query && callback_query.message && callback_query.data) return await handleCallbackQuery(callback_query);
+  }
   if (!update.message) return;
   const { update_id, message } = update;
   if (message.sticker) return;
@@ -3361,7 +3989,11 @@ const handleUpdate = async (update) => {
     Log.error("Error while handling update", { err, updateId: update_id });
     await sendErrorNotification(err, `Error while handling update ${JSON.stringify({ chatId: chat.id, messageId: message_id })}`);
     const errorMessage = err instanceof Error ? err.message : String(err);
-    const errorResult = await TelegramBot.sendMessage(message.chat.id, `❌ ${errorMessage}`, "HTML", message_id);
+    const shorten = `<blockquote expandable>${escapeHtml(shortenString(`❌ ${errorMessage}`))}</blockquote>`;
+    const replyMarkup = {
+      inline_keyboard: [REACTiON_ROW]
+    };
+    const errorResult = await TelegramBot.sendMessage(chat.id, shorten, { replyToMessageId: message_id, parseMode: "HTML", replyMarkup });
     if (errorResult.ok) {
       void scheduleDeletion({ chat_id: chat.id, message_id: errorResult.messageId }, 3 * 6e4);
     }
@@ -3421,7 +4053,7 @@ const createRoutes = async (route) => {
       Log.info("Webhook Verification successful");
       const update = request.body;
       setImmediate(() => {
-        void handleUpdate(update);
+        handleUpdate(update);
       });
       return reply.code(202).type("application/json").send({ code: 202, message: `OK` });
     }

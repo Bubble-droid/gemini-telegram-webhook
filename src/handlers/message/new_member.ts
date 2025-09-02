@@ -1,6 +1,6 @@
 // src/handlers/message/new_member.ts
 
-import { Log, BotConfig, TelegramBot, REACTiON_ROW } from '@/services';
+import { Log, BotConfig, TelegramBot } from '@/services';
 import type { Message, ReplyMarkup, User } from '@/types';
 import { KvNamespace, markdownToHtml, scheduleDeletion, sleep } from '@/utils';
 
@@ -99,8 +99,6 @@ const handleNewMember = async (message: Message): Promise<void> => {
   if (!new_chat_members || new_chat_members.length === 0) return;
   const newMemberIds = new_chat_members?.map((member) => member.id) as number[];
   Log.info('Handling new chat member message', { chatId: chat.id, newMemberIds });
-  await sleep(5_000);
-  // 为每个新成员创建异步轮询任务
   const pollingTasks = new_chat_members.map((member) => pollChatMemberStatus(chat.id, member, POLLING_TIMEOUT_MS, POLLING_INTERVAL_MS));
 
   // 使用 Promise.all 并行等待所有轮询任务完成
@@ -127,10 +125,12 @@ const handleNewMember = async (message: Message): Promise<void> => {
 
       const replyMarkup: ReplyMarkup = {
         inline_keyboard: [
-          REACTiON_ROW,
           [
             { text: '📓 使用指南', url: 'https://gui-for-cores.github.io/zh/guide' },
-            { text: '🧠 智能助理', callback_data: 'mention' },
+            {
+              text: '🧠 智能助理',
+              callback_data: `cmd_start_${newMember.id}`,
+            },
           ],
           [
             { text: '📢 通知频道', url: 'https://t.me/GUI_for_Cores_Channel' },

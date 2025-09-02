@@ -14,6 +14,7 @@ import type {
 
 export interface ToolExecArgs {
   chatId: number;
+  userId: number;
   userMessageId: number;
   currentApiKey: string;
   keyword: string;

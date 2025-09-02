@@ -1,6 +1,6 @@
 // src/handlers/message/mention.ts
 
-import { BotConfig, TelegramBot, ChatContexts, Log, GeminiApi, GeminiError, TelegramError, REACTiON_ROW } from '@/services';
+import { BotConfig, TelegramBot, ChatContexts, Log, GeminiApi, GeminiError, TelegramError, makeInlineKeyboard } from '@/services';
 import type { Message, GenerateContentSuccessResponse, ReplyMarkup } from '@/types';
 import type { Content, Part } from '@google/genai'; // 确保 Part 类型导入
 import { rateLimiterCheck, scheduleDeletion, shortenString, sleep } from '@/utils';
@@ -222,7 +222,7 @@ export class MentionHandler {
       hasDisplayedThoughts = true;
       const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escapeHtml(shortenString(resThoughtTexts))}</blockquote>`;
       const replyMarkup: ReplyMarkup = {
-        inline_keyboard: [REACTiON_ROW],
+        inline_keyboard: makeInlineKeyboard(fromUserId),
       };
       await TelegramBot.editMessageText(chatId, thinkMessageId, displayThoughtText, { parseMode: 'HTML', replyMarkup });
     }
@@ -246,7 +246,7 @@ export class MentionHandler {
     if (!resTexts) {
       const replyText = 'Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。';
       const replyMarkup: ReplyMarkup = {
-        inline_keyboard: [REACTiON_ROW],
+        inline_keyboard: makeInlineKeyboard(fromUserId),
       };
       const replyResult = await TelegramBot.sendMessage(chatId, replyText, {
         replyToMessageId: userMessageId,
@@ -267,7 +267,7 @@ ${resTexts}
 ⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。`;
 
     // 调用新的分块发送函数来处理回复消息
-    const finalReplyResult = await sendFormattedMessage(chatId, fullText, userMessageId);
+    const finalReplyResult = await sendFormattedMessage(chatId, fullText, userMessageId, fromUserId);
 
     if (!finalReplyResult.ok) {
       const error = finalReplyResult.error || new TelegramError('发送最终回复时发生未知错误');
@@ -339,6 +339,7 @@ ${resTexts}
       // 6. 调用 Gemini API
       const geminiResponse: GenerateContentSuccessResponse = await GeminiApi.generateContent(completeContents, {
         chatId: chat.id,
+        userId: from?.id as number,
         userMessageId,
         thinkMessageId,
       });

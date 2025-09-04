@@ -1,8 +1,9 @@
 // src/handlers/message/new_member.ts
 
-import { Log, BotConfig, TelegramBot } from '@/services';
+import { Log, config, bot } from '@/services';
 import type { Message, ReplyMarkup, User } from '@/types';
-import { KvNamespace, markdownToHtml, scheduleDeletion, sleep } from '@/utils';
+import { kv, scheduleDeletion, sleep } from '@/utils';
+import { formatters } from '@/utils/formatting';
 
 // 定义轮询参数，这些可以根据实际需求调整
 const POLLING_TIMEOUT_MS = 3 * 60 * 1000; // 3 分钟的超时时间
@@ -31,15 +32,12 @@ const pollChatMemberStatus = async (
   Log.info(`开始轮询用户 ${userName}(${userId}) 在聊天 ${chatId} 中的状态...`);
 
   while (Date.now() - startTime < timeoutMs) {
-    const result = await TelegramBot.getChatMember(chatId, userId);
+    const result = await bot.getChatMember(chatId, userId);
 
     if (!result.ok) {
-      // 捕获 getChatMember 返回的错误
-      const error = result.error;
-      Log.error(`获取用户 ${userName}(${userId}) 聊天成员信息失败: ${error.message || '未知错误'} (Code: ${error.code || 'N/A'})`, {
+      Log.error(`获取用户 ${userName}(${userId}) 聊天成员信息失败: ${result.error || '未知错误'}`, {
         chatId,
         userId,
-        error,
       });
 
       // 等待后重试，避免单次错误导致轮询中断
@@ -94,8 +92,8 @@ const pollChatMemberStatus = async (
  * @returns {Promise<void>}
  */
 const handleNewMember = async (message: Message): Promise<void> => {
-  const { botName, durableResourceId, newMemberWelcomeTextKeyName } = BotConfig.load();
-  const { chat, new_chat_members } = message;
+  const { botName, durableResourceId, newMemberWelcomeTextKeyName } = config.load();
+  const { message_id, chat, new_chat_members } = message;
   if (!new_chat_members || new_chat_members.length === 0) return;
   const newMemberIds = new_chat_members?.map((member) => member.id) as number[];
   Log.info('Handling new chat member message', { chatId: chat.id, newMemberIds });
@@ -115,11 +113,13 @@ const handleNewMember = async (message: Message): Promise<void> => {
       // 成员已通过验证，发送欢迎消息
       const newMemberFullName = `${newMember.first_name} ${newMember.last_name || ''}`.trim();
       const newMemberMention = `[${newMemberFullName}](tg://user?id=${newMember.id})`;
-      const newMemberWelcomeText = await KvNamespace.read<string>(durableResourceId, newMemberWelcomeTextKeyName, 'text');
-      const replaceText = newMemberWelcomeText
-        ?.replace('NEW_MEMBER_MENTION', newMemberMention)
+      const newMemberWelcome = await kv.read<string>(durableResourceId, newMemberWelcomeTextKeyName, 'text');
+      if (!newMemberWelcome.success) return;
+      const replaceText = newMemberWelcome.data
+        .replace('NEW_MEMBER_MENTION', newMemberMention)
         .replace('CHAT_TITLE', chat.title as string)
-        .replace('BOT_NAME', botName) as string;
+        .replace('BOT_NAME', botName)
+        .trim();
 
       Log.info(`向已验证的新成员 ${newMemberFullName}(${newMember.id}) 发送欢迎消息。`, { chatId: chat.id, newMemberId: newMember.id });
 
@@ -128,8 +128,8 @@ const handleNewMember = async (message: Message): Promise<void> => {
           [
             { text: '📓 使用指南', url: 'https://gui-for-cores.github.io/zh/guide' },
             {
-              text: '🧠 智能助理',
-              callback_data: `cmd_start_${newMember.id}`,
+              text: '❓ 常见问题',
+              callback_data: `cmd_faq_${newMember.id}`,
             },
           ],
           [
@@ -138,7 +138,11 @@ const handleNewMember = async (message: Message): Promise<void> => {
           ],
         ],
       };
-      const welcomeResult = await TelegramBot.sendMessage(chat.id, markdownToHtml(replaceText), { parseMode: 'HTML', replyMarkup });
+      const welcomeResult = await bot.sendMessage(chat.id, formatters.Html(replaceText), {
+        replyToMessageId: message_id,
+        parseMode: 'HTML',
+        replyMarkup,
+      });
 
       if (welcomeResult.ok) {
         void scheduleDeletion({ chat_id: chat.id, message_id: welcomeResult.messageId }, 3 * 60_000);

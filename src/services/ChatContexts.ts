@@ -1,7 +1,7 @@
 // src/services/ChatContexts.ts
 
-import { Log, BotConfig } from '@/services';
-import { KvNamespace } from '@/utils';
+import { Log, config } from '@/services';
+import { kv } from '@/utils';
 import type { Content } from '@google/genai';
 
 export class ChatContexts {
@@ -12,12 +12,11 @@ export class ChatContexts {
    * @param {number} userId - 用户的 ID。
    * @returns {Promise<Content[]>} 对话上下文内容数组。
    */
-  public static get = async (chatId: number, userId: number): Promise<Content[]> => {
-    const { chatContextId } = BotConfig.load();
+  public get = async (chatId: number, userId: number): Promise<Content[]> => {
+    const { chatContextId } = config.load();
     const keyName: string = `contexts_${chatId}_${userId}`;
-    const contexts = (await KvNamespace.read<Content[]>(chatContextId, keyName, 'json')) || [];
-
-    return contexts;
+    const contexts = await kv.read<Content[]>(chatContextId, keyName, 'json');
+    return contexts.success ? contexts.data : [];
   };
 
   /**
@@ -27,15 +26,15 @@ export class ChatContexts {
    * @param {number} userId - 用户的 ID。
    * @param {Content[]} contexts - 要保存的对话上下文内容数组。
    */
-  public static update = async (chatId: number, userId: number, contexts: Content[]): Promise<void> => {
-    const { chatContextId, maxContextLength, contextsExpirationSecond } = BotConfig.load();
+  public update = async (chatId: number, userId: number, contexts: Content[]): Promise<void> => {
+    const { chatContextId, maxContextLength, contextsExpirationSecond } = config.load();
     const keyName: string = `contexts_${chatId}_${userId}`;
-    const historyContexts = await ChatContexts.get(chatId, userId);
+    const historyContexts = await this.get(chatId, userId);
     const newContexts = [...historyContexts, ...contexts];
     if (newContexts.length > maxContextLength) {
       newContexts.splice(0, newContexts.length - maxContextLength);
     }
-    await KvNamespace.write(chatContextId, keyName, JSON.stringify(newContexts), {
+    await kv.write(chatContextId, keyName, JSON.stringify(newContexts), {
       expiration_ttl: contextsExpirationSecond,
     });
     Log.info(`${keyName}: Chat context updated success, current length ${newContexts.length}`);
@@ -47,12 +46,14 @@ export class ChatContexts {
    * @param {number} chatId - 聊天的 ID。
    * @param {number} userId - 用户的 ID。
    */
-  public static clear = async (chatId: number, userId: number): Promise<void> => {
-    const { chatContextId, contextsExpirationSecond } = BotConfig.load();
+  public clear = async (chatId: number, userId: number): Promise<void> => {
+    const { chatContextId, contextsExpirationSecond } = config.load();
     const keyName: string = `contexts_${chatId}_${userId}`;
-    await KvNamespace.write(chatContextId, keyName, JSON.stringify([]), {
+    await kv.write(chatContextId, keyName, JSON.stringify([]), {
       expiration_ttl: contextsExpirationSecond,
     });
     Log.info(`${keyName}: Chat contexts cleared success.`);
   };
 }
+
+export const contexts: ChatContexts = new ChatContexts();

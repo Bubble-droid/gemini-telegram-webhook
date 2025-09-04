@@ -1,42 +1,9 @@
-import { BotConfig, TelegramError, Log } from '@/services';
-import { botCommands } from '@/configs';
-import type {
-  TelegramApiMethod,
-  TelegramApiResponse,
-  HttpMethod,
-  ParseMode,
-  File,
-  SendMessageParams,
-  SendMessageResult,
-  EditMessageTextParams,
-  EditMessageTextResult,
-  DeleteMessageParams,
-  DeleteMessageResult,
-  SetBotCommandParams,
-  SetBotCommandResult,
-  GetFileParams,
-  GetFileResult,
-  DeleteMessagesParams,
-  GetChatMemberResult,
-  GetChatMemberParams,
-  SendPhotoParams,
-  SendPhotoResult,
-  SendVoiceParams,
-  SendVoiceResult,
-  ReplyMarkup,
-  AnswerCallbackQueryParams,
-  AnswerCallbackQueryResult,
-  MessageEntity,
-  EditMessageReplyMarkupParams,
-  EditMessageReplyMarkupResult,
-  InlineKeyboardButton,
-  AnswerInlineQueryParams,
-  AnswerInlineQueryResult,
-  InlineQueryResult,
-  InlineQueryResultsButton,
-} from '@/types';
+import { config, TelegramError, Log } from '@/services';
+import { BotCommands } from '@/configs';
+import type { HttpMethod } from '@/types';
+import type * as Bot from '@/types/telegram';
 import { shortenString } from '@/utils';
-import { escapeHtml } from '@/utils/formatting';
+import { escapers } from '@/utils/formatting';
 
 /**
  * @class TelegramBot
@@ -47,12 +14,12 @@ export class TelegramBot {
    * 发送 API 请求的通用方法。
    * @private
    * @param {HttpMethod} httpMethod
-   * @param {TelegramApiMethod} apiMethod Telegram Bot API 方法名 (例如 'sendMessage')
+   * @param {Bot.ApiMethod} apiMethod Telegram Bot API 方法名 (例如 'sendMessage')
    * @param {P} body - 请求体参数
    * @returns {Promise<T>} API 响应对象
    */
-  private static async sendRequest<P, T>(httpMethod: HttpMethod, apiMethod: TelegramApiMethod, body: P, isFormData: boolean = false): Promise<T> {
-    const { botApiUrl } = BotConfig.load();
+  private async sendRequest<P, T>(httpMethod: HttpMethod, apiMethod: Bot.ApiMethod, body: P, isFormData: boolean = false): Promise<T> {
+    const { botApiUrl } = config.load();
     const url = `${botApiUrl}/${apiMethod}`;
     try {
       const response = await fetch(url, {
@@ -67,7 +34,7 @@ export class TelegramBot {
         body: isFormData ? (body as FormData) : JSON.stringify(body),
       });
 
-      const parsed = (await response.json()) as TelegramApiResponse<T>;
+      const parsed = (await response.json()) as Bot.ApiResponse<T>;
 
       if (!parsed.ok) {
         const desc = parsed.description;
@@ -125,16 +92,16 @@ export class TelegramBot {
    * @param {{replyToMessageId?: number; parseMode?: ParseMode; replyMarkup?: ReplyMarkup;}} options - 可选参数
    * @returns {Promise<{ok: boolean;messageId?: number;}>} 消息发送成功返回 `true`，否则返回 `false`。
    */
-  public static async sendMessage(
+  public async sendMessage(
     chatId: number,
     text: string,
     options?: {
       replyToMessageId?: number;
-      parseMode?: ParseMode;
-      replyMarkup?: ReplyMarkup;
+      parseMode?: Bot.ParseMode;
+      replyMarkup?: Bot.ReplyMarkup;
     },
-  ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
-    const payload: SendMessageParams = {
+  ): Promise<{ ok: true; messageId: number } | { ok: false; error: string }> {
+    const payload: Bot.SendMessageParams = {
       chat_id: chatId,
       text: text,
       parse_mode: options?.parseMode,
@@ -150,7 +117,7 @@ export class TelegramBot {
       reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : undefined,
     };
     try {
-      const result = await TelegramBot.sendRequest<SendMessageParams, SendMessageResult>('POST', 'sendMessage', payload);
+      const result = await this.sendRequest<Bot.SendMessageParams, Bot.SendMessageResult>('POST', 'sendMessage', payload);
       Log.info('Telegram message sent successfully.', {
         chatId,
         messageId: result.message_id,
@@ -160,14 +127,15 @@ export class TelegramBot {
         messageId: result.message_id,
       };
     } catch (error: unknown) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error('Error sending Telegram message', {
-        err: error as Error,
+        err: errorMessage,
         chatId,
-        text: text.substring(0, 100) + '...',
+        text: text.substring(0, 20) + '...',
       });
       return {
         ok: false,
-        error: error as TelegramError,
+        error: errorMessage,
       };
     }
   }
@@ -180,17 +148,17 @@ export class TelegramBot {
    * @param replyToMessageId
    * @param isFormat
    */
-  public static async sendPhoto(
+  public async sendPhoto(
     chatId: number | string,
     photoBuffer: Buffer,
     options?: {
       caption?: string;
       replyToMessageId?: number;
-      replyMarkup?: ReplyMarkup;
+      replyMarkup?: Bot.ReplyMarkup;
     },
-  ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
-    const shorten = `<blockquote expandable>${escapeHtml(shortenString(String(options?.caption)))}</blockquote>`;
-    const payload: SendPhotoParams = {
+  ): Promise<{ ok: true; messageId: number } | { ok: false; error: string }> {
+    const shorten = `<blockquote expandable>${escapers.Html(shortenString(String(options?.caption)))}</blockquote>`;
+    const payload: Bot.SendPhotoParams = {
       chat_id: chatId,
       photo: photoBuffer,
       caption: shorten,
@@ -215,7 +183,7 @@ export class TelegramBot {
     formData.append('reply_markup', payload.reply_markup);
 
     try {
-      const result = await TelegramBot.sendRequest<FormData, SendPhotoResult>('POST', 'sendPhoto', formData, true);
+      const result = await this.sendRequest<FormData, Bot.SendPhotoResult>('POST', 'sendPhoto', formData, true);
       Log.info('Telegram photo message sent successfully.', {
         chatId,
         messageId: result.message_id,
@@ -225,27 +193,28 @@ export class TelegramBot {
         messageId: result.message_id,
       };
     } catch (error: unknown) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error('Error sending Telegram photo message', {
-        err: error as Error,
+        err: errorMessage,
         chatId,
       });
       return {
         ok: false,
-        error: error as TelegramError,
+        error: errorMessage,
       };
     }
   }
 
-  public static async sendVoice(
+  public async sendVoice(
     chatId: number | string,
     voiceBuffer: Buffer,
     options?: {
       caption?: string;
       replyToMessageId?: number;
-      replyMarkup?: ReplyMarkup;
+      replyMarkup?: Bot.ReplyMarkup;
     },
-  ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
-    const payload: SendVoiceParams = {
+  ): Promise<{ ok: true; messageId: number } | { ok: false; error: string }> {
+    const payload: Bot.SendVoiceParams = {
       chat_id: chatId,
       voice: voiceBuffer,
       caption: options?.caption,
@@ -265,7 +234,7 @@ export class TelegramBot {
     formData.append('reply_parameters', JSON.stringify(payload.reply_parameters));
     formData.append('reply_markup', payload.reply_markup);
     try {
-      const result = await TelegramBot.sendRequest<FormData, SendVoiceResult>('POST', 'sendVoice', formData, true);
+      const result = await this.sendRequest<FormData, Bot.SendVoiceResult>('POST', 'sendVoice', formData, true);
       Log.info('Telegram voice message sent successfully.', {
         chatId,
         messageId: result.message_id,
@@ -275,13 +244,14 @@ export class TelegramBot {
         messageId: result.message_id,
       };
     } catch (error: unknown) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error('Error sending Telegram voice message', {
-        err: error as Error,
+        err: errorMessage,
         chatId,
       });
       return {
         ok: false,
-        error: error as TelegramError,
+        error: errorMessage,
       };
     }
   }
@@ -293,17 +263,17 @@ export class TelegramBot {
    * @param {string} text - 新的文本内容。
    * @returns {Promise<{ ok: boolean; messageId?: number }>} 消息编辑成功返回 `true`，否则返回 `false`。
    */
-  public static async editMessageText(
+  public async editMessageText(
     chatId: number | string,
     messageId: number,
     text: string,
     options?: {
-      parseMode?: ParseMode;
-      entities?: MessageEntity[];
-      replyMarkup?: ReplyMarkup;
+      parseMode?: Bot.ParseMode;
+      entities?: Bot.MessageEntity[];
+      replyMarkup?: Bot.ReplyMarkup;
     },
-  ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
-    const payload: EditMessageTextParams = {
+  ): Promise<{ ok: true; messageId: number } | { ok: false; error: string }> {
+    const payload: Bot.EditMessageTextParams = {
       chat_id: chatId,
       message_id: messageId,
       text: text,
@@ -314,35 +284,36 @@ export class TelegramBot {
       reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : undefined,
     };
     try {
-      const result = await TelegramBot.sendRequest<EditMessageTextParams, EditMessageTextResult>('POST', 'editMessageText', payload);
+      const result = await this.sendRequest<Bot.EditMessageTextParams, Bot.EditMessageTextResult>('POST', 'editMessageText', payload);
       Log.info('Telegram message edited successfully.', {
         chatId,
         messageId: result.message_id,
       });
       return { ok: true, messageId: result.message_id };
     } catch (error: unknown) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error('Error editing Telegram message', {
-        err: error as Error,
+        err: errorMessage,
         chatId,
         messageId,
-        text: text.substring(0, 100) + '...',
+        text: text.substring(0, 20) + '...',
       });
-      return { ok: false, error: error as TelegramError };
+      return { ok: false, error: errorMessage };
     }
   }
 
-  public static async editMessageReplyMarkup(
+  public async editMessageReplyMarkup(
     chatId: number | string,
     messageId: number,
-    replyMarkup: ReplyMarkup,
-  ): Promise<{ ok: true; messageId: number } | { ok: false; error: TelegramError }> {
-    const payload: EditMessageReplyMarkupParams = {
+    replyMarkup: Bot.ReplyMarkup,
+  ): Promise<{ ok: true; messageId: number } | { ok: false; error: string }> {
+    const payload: Bot.EditMessageReplyMarkupParams = {
       chat_id: chatId,
       message_id: messageId,
       reply_markup: JSON.stringify(replyMarkup),
     };
     try {
-      const result = await TelegramBot.sendRequest<EditMessageReplyMarkupParams, EditMessageReplyMarkupResult>(
+      const result = await this.sendRequest<Bot.EditMessageReplyMarkupParams, Bot.EditMessageReplyMarkupResult>(
         'POST',
         'editMessageReplyMarkup',
         payload,
@@ -353,12 +324,13 @@ export class TelegramBot {
       });
       return { ok: true, messageId: result.message_id };
     } catch (error: unknown) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error('Error editing Telegram message reply markup', {
-        err: error as Error,
+        err: errorMessage,
         chatId,
         messageId,
       });
-      return { ok: false, error: error as TelegramError };
+      return { ok: false, error: errorMessage };
     }
   }
 
@@ -368,22 +340,23 @@ export class TelegramBot {
    * @param {number} messageId - 消息ID。
    * @returns {Promise<{ ok: boolean }>} 成功返回 `{ ok: true }`，失败返回 `{ ok: false }`。
    */
-  public static async deleteMessage(chatId: number | string, messageId: number): Promise<{ ok: true } | { ok: false; error: TelegramError }> {
-    const payload: DeleteMessageParams = {
+  public async deleteMessage(chatId: number | string, messageId: number): Promise<{ ok: true } | { ok: false; error: string }> {
+    const payload: Bot.DeleteMessageParams = {
       chat_id: chatId,
       message_id: messageId,
     };
     try {
-      await TelegramBot.sendRequest<DeleteMessageParams, DeleteMessageResult>('POST', 'deleteMessage', payload);
+      await this.sendRequest<Bot.DeleteMessageParams, Bot.DeleteMessageResult>('POST', 'deleteMessage', payload);
       Log.info('Telegram message deleted successfully.', { chatId, messageId });
       return { ok: true };
     } catch (error: unknown) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error('Error deleting Telegram message', {
-        err: error as Error,
+        err: errorMessage,
         chatId,
         messageId,
       });
-      return { ok: false, error: error as TelegramError };
+      return { ok: false, error: errorMessage };
     }
   }
 
@@ -393,22 +366,23 @@ export class TelegramBot {
    * @param {number[]} messageIds - 消息ID列表
    * @returns {Promise<{ ok: boolean }>} 成功返回 `{ ok: true }`，失败返回 `{ ok: false }`。
    */
-  public static async deleteMessages(chatId: number | string, messageIds: number[]): Promise<{ ok: true } | { ok: false; error: TelegramError }> {
-    const payload: DeleteMessagesParams = {
+  public async deleteMessages(chatId: number | string, messageIds: number[]): Promise<{ ok: true } | { ok: false; error: string }> {
+    const payload: Bot.DeleteMessagesParams = {
       chat_id: chatId,
       message_ids: messageIds,
     };
     try {
-      await TelegramBot.sendRequest<DeleteMessagesParams, DeleteMessageResult>('POST', 'deleteMessages', payload);
+      await this.sendRequest<Bot.DeleteMessagesParams, Bot.DeleteMessageResult>('POST', 'deleteMessages', payload);
       Log.info('Telegram message deleted successfully.', { chatId, messageIds });
       return { ok: true };
     } catch (error: unknown) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error('Error deleting Telegram message', {
-        err: error as Error,
+        err: errorMessage,
         chatId,
         messageIds,
       });
-      return { ok: false, error: error as TelegramError };
+      return { ok: false, error: errorMessage };
     }
   }
 
@@ -417,9 +391,9 @@ export class TelegramBot {
    * @param {number} chatId - 聊天 ID，用于指定命令范围。
    * @returns {Promise<{ ok: boolean }>} 成功返回 `{ ok: true }`，否则返回 `{ ok: false }`。
    */
-  public static async setBotCommands(chatId: number | string, userId: number): Promise<{ ok: true } | { ok: false; error: TelegramError }> {
-    const payload: SetBotCommandParams = {
-      commands: botCommands.map((command) => ({
+  public async setBotCommands(chatId: number | string, userId: number): Promise<{ ok: true } | { ok: false; error: string }> {
+    const payload: Bot.SetBotCommandParams = {
+      commands: BotCommands.map((command) => ({
         command: command.name,
         description: command.description,
       })),
@@ -430,33 +404,35 @@ export class TelegramBot {
       },
     };
     try {
-      await TelegramBot.sendRequest<SetBotCommandParams, SetBotCommandResult>('POST', 'setMyCommands', payload);
+      await this.sendRequest<Bot.SetBotCommandParams, Bot.SetBotCommandResult>('POST', 'setMyCommands', payload);
       Log.info('Bot commands set successfully.', { chatId });
       return { ok: true };
     } catch (error: unknown) {
-      Log.error('Error setting bot commands', { err: error as Error, chatId });
-      return { ok: false, error: error as TelegramError };
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
+      Log.error('Error setting bot commands', { err: errorMessage });
+      return { ok: false, error: errorMessage };
     }
   }
 
   /**
    * 获取文件信息，包括文件路径。
    * @param {string} fileId - 文件的唯一 ID。
-   * @returns {Promise<File| undefined>} 文件信息对象，如果获取失败则返回 `undefined`。
+   * @returns {Promise<{ ok: true; data: Bot.File } | { ok: false; error: string }>} 文件信息对象，如果获取失败则返回 `undefined`。
    */
-  public static async getFile(fileId: string): Promise<{ ok: true; data: File } | { ok: false; error: TelegramError }> {
+  public async getFile(fileId: string): Promise<{ ok: true; data: Bot.File } | { ok: false; error: string }> {
     Log.info(`Getting file info for file_id: ${fileId}`);
     try {
-      const result = await TelegramBot.sendRequest<GetFileParams, GetFileResult>('POST', 'getFile', {
+      const result = await this.sendRequest<Bot.GetFileParams, Bot.GetFileResult>('POST', 'getFile', {
         file_id: fileId,
       });
       return { ok: true, data: result };
     } catch (error: unknown) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error(`Error in getFile for file_id ${fileId}`, {
-        err: error as Error,
+        err: errorMessage,
         fileId,
       });
-      return { ok: false, error: error as TelegramError };
+      return { ok: false, error: errorMessage };
     }
   }
 
@@ -466,65 +442,67 @@ export class TelegramBot {
    * @param {number} userId - 用户 ID。
    * @returns {Promise<GetChatMemberResult>} 聊天成员信息对象。
    */
-  public static async getChatMember(
+  public async getChatMember(
     chatId: number | string,
     userId: number,
-  ): Promise<{ ok: true; data: GetChatMemberResult } | { ok: false; error: TelegramError }> {
+  ): Promise<{ ok: true; data: Bot.GetChatMemberResult } | { ok: false; error: string }> {
     // Log.info(`Getting chat member info for chat_id: ${chatId}, user_id: ${userId}`);
-    const payload: GetChatMemberParams = {
+    const payload: Bot.GetChatMemberParams = {
       chat_id: chatId,
       user_id: userId,
     };
     try {
-      const result = await TelegramBot.sendRequest<GetChatMemberParams, GetChatMemberResult>('POST', 'getChatMember', payload);
+      const result = await this.sendRequest<Bot.GetChatMemberParams, Bot.GetChatMemberResult>('POST', 'getChatMember', payload);
       return { ok: true, data: result };
     } catch (error: unknown) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error(`Error in getChatMember for chat_id ${chatId}, user_id ${userId}`, {
-        err: error as Error,
+        err: errorMessage,
         chatId,
         userId,
       });
-      return { ok: false, error: error as TelegramError };
+      return { ok: false, error: errorMessage };
     }
   }
 
-  public static async answerCallbackQuery(
+  public async answerCallbackQuery(
     callbackQueryId: string,
     options?: {
       callbackText?: string;
       showAlert?: boolean;
     },
-  ): Promise<{ ok: true } | { ok: false; error: TelegramError }> {
-    const payload: AnswerCallbackQueryParams = {
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    const payload: Bot.AnswerCallbackQueryParams = {
       callback_query_id: callbackQueryId,
       text: options?.callbackText,
       show_alert: options?.showAlert,
     };
     try {
-      await TelegramBot.sendRequest<AnswerCallbackQueryParams, AnswerCallbackQueryResult>('POST', 'answerCallbackQuery', payload);
+      await this.sendRequest<Bot.AnswerCallbackQueryParams, Bot.AnswerCallbackQueryResult>('POST', 'answerCallbackQuery', payload);
       Log.info('Callback query answered successfully.', { callbackQueryId, callbackText: options?.callbackText });
       return { ok: true };
-    } catch (err: unknown) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error('Error answering callback query', {
-        err: err as Error,
+        err: errorMessage,
         callbackQueryId,
         callbackText: options?.callbackText,
       });
-      return { ok: false, error: err as TelegramError };
+      return { ok: false, error: errorMessage };
     }
   }
 
-  public static async answerInlineQuery(
+  public async answerInlineQuery(
     inlineQueryId: string,
-    inlineResult: InlineQueryResult[],
+    inlineResult: Bot.InlineQueryResult[],
     options?: {
       cacheTime?: number;
       isPersonal?: boolean;
       nextOffset?: string;
-      button?: InlineQueryResultsButton;
+      button?: Bot.InlineQueryResultsButton;
     },
-  ): Promise<{ ok: true } | { ok: false; error: TelegramError }> {
-    const payload: AnswerInlineQueryParams = {
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    const payload: Bot.AnswerInlineQueryParams = {
       inline_query_id: inlineQueryId,
       results: JSON.stringify(inlineResult),
       cache_time: options?.cacheTime,
@@ -533,20 +511,23 @@ export class TelegramBot {
       button: options?.button ? JSON.stringify(options.button) : undefined,
     };
     try {
-      await TelegramBot.sendRequest<AnswerInlineQueryParams, AnswerInlineQueryResult>('POST', 'answerInlineQuery', payload);
+      await this.sendRequest<Bot.AnswerInlineQueryParams, Bot.AnswerInlineQueryResult>('POST', 'answerInlineQuery', payload);
       Log.info('Inline query answered successfully.', { inlineQueryId });
       return { ok: true };
-    } catch (err: unknown) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error('Error answering inline query', {
-        err: err as Error,
+        err: errorMessage,
         inlineQueryId,
       });
-      return { ok: false, error: err as TelegramError };
+      return { ok: false, error: errorMessage };
     }
   }
 }
 
-export const REACTiON_ROW: InlineKeyboardButton[] = [
+export const bot: TelegramBot = new TelegramBot();
+
+export const REACTiON_ROW: Bot.InlineKeyboardButton[] = [
   {
     text: '👍',
     callback_data: 'reaction_like',
@@ -557,16 +538,16 @@ export const REACTiON_ROW: InlineKeyboardButton[] = [
   },
 ];
 
-const DELETE_ROW: InlineKeyboardButton[] = [
+const DELETE_ROW: Bot.InlineKeyboardButton[] = [
   {
     text: '🗑 删除消息',
     callback_data: 'delete_message_USER_ID',
   },
 ];
 
-export const BASE_INLINE_KEYBOARD: InlineKeyboardButton[][] = [REACTiON_ROW, DELETE_ROW];
+export const BASE_INLINE_KEYBOARD: Bot.InlineKeyboardButton[][] = [REACTiON_ROW, DELETE_ROW];
 
-export const makeInlineKeyboard = (userId: number): InlineKeyboardButton[][] => {
+export const makeInlineKeyboard = (userId: number): Bot.InlineKeyboardButton[][] => {
   return BASE_INLINE_KEYBOARD.map((row) =>
     row.map((button) => {
       if (button.callback_data?.includes('USER_ID')) {

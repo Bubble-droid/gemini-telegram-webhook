@@ -16,22 +16,22 @@ export type LoggerLevel = (typeof LOGGER_LEVELS)[number];
  */
 export class BotConfig {
   // 定义默认配置常量，用于当对应的环境变量未设置时提供回退值
-  private static readonly DEFAULT_LISTEN_HOST: string = '127.0.0.1';
-  private static readonly DEFAULT_LISTEN_PORT: number = 39001;
-  private static readonly DEFAULT_LOGGER_LEVEL: LoggerLevel = 'info';
-  private static readonly DEFAULT_MODEL_NAME: string = 'gemini-2.5-flash';
-  private static readonly DEFAULT_CONTEXT_EXPIRATION_DAY: number = 7;
-  private static readonly DEFAULT_MAX_CONTEXT_LENGTH: number = 8;
-  private static readonly DEFAULT_REQUEST_INTERVAL_SECOND: number = 30;
-  private static readonly DEFAULT_MAX_API_CALL_ROUNDS: number = 12;
-  private static readonly DEFAULT_SYSTEM_PROMPT_KEY_NAME: string = 'system_prompt';
-  private static readonly DEFAULT_GEMINI_API_KEYS_KEY_NAME: string = 'gemini_api_keys';
-  private static readonly DEFAULT_START_REPLY_TEXT_KEY_NAME: string = 'start_reply_text';
-  private static readonly DEFAULT_NEW_MEMBER_WELCOME_TEXT_KEY_NAME: string = 'new_member_welcome_text';
+  private readonly DEFAULT_LISTEN_HOST: string = '127.0.0.1';
+  private readonly DEFAULT_LISTEN_PORT: number = 39001;
+  private readonly DEFAULT_LOGGER_LEVEL: LoggerLevel = 'info';
+  private readonly DEFAULT_MODEL_NAME: string = 'gemini-2.5-flash';
+  private readonly DEFAULT_CONTEXT_EXPIRATION_DAY: number = 7;
+  private readonly DEFAULT_MAX_CONTEXT_LENGTH: number = 8;
+  private readonly DEFAULT_REQUEST_INTERVAL_SECOND: number = 30;
+  private readonly DEFAULT_MAX_API_CALL_ROUNDS: number = 12;
+  private readonly DEFAULT_SYSTEM_PROMPT_KEY_NAME: string = 'system_prompt';
+  private readonly DEFAULT_GEMINI_API_KEYS_KEY_NAME: string = 'gemini_api_keys';
+  private readonly DEFAULT_START_REPLY_TEXT_KEY_NAME: string = 'start_reply_text';
+  private readonly DEFAULT_NEW_MEMBER_WELCOME_TEXT_KEY_NAME: string = 'new_member_welcome_text';
 
   // 定义必填环境变量的键名列表。
   // 在加载配置时，会检查这些环境变量是否都已设置且非空。
-  private static readonly REQUIRED_ENV_VARS: (keyof Env)[] = [
+  private readonly REQUIRED_ENV_VARS: (keyof Env)[] = [
     'CLOUDFLARE_API_TOKEN',
     'CLOUDFLARE_ACCOUNT_ID',
     'SCHEDULER_API_URL',
@@ -39,6 +39,7 @@ export class BotConfig {
     'DURABLE_RESOURCE_NAMESPACE_ID',
     'SYSTEM_PROMPT_KEY_NAME',
     'GEMINI_API_KEYS_KEY_NAME',
+    'SCRIPTS_STORAGE_NAMESPACE_ID',
     'RATE_LIMIT_NAMESPACE_ID',
     'CHAT_CONTEXT_NAMESPACE_ID',
     'GITHUB_ACCESS_TOKEN',
@@ -53,11 +54,11 @@ export class BotConfig {
    * 解析并验证监听主机地址。
    * @private
    * @param {string | undefined} val - 环境变量 `SERVER_LISTEN_HOST` 的原始值。
-   * @param {string} [fallback=BotConfig.DEFAULT_LISTEN_HOST] - 当环境变量未设置或为空时使用的默认值。
+   * @param {string} [fallback=this.DEFAULT_LISTEN_HOST] - 当环境变量未设置或为空时使用的默认值。
    * @returns {string} 经过验证的有效监听主机地址（IPv4 或 IPv6）。
    * @throws {ConfigError} 如果主机地址无效（例如不是有效的 IP 地址）。
    */
-  private static parseListenHost = (val: string | undefined, fallback: string = BotConfig.DEFAULT_LISTEN_HOST): string => {
+  private parseListenHost = (val: string | undefined, fallback: string = this.DEFAULT_LISTEN_HOST): string => {
     if (!val || val.trim() === '') {
       return fallback;
     }
@@ -73,11 +74,11 @@ export class BotConfig {
    * 解析并验证监听端口号。
    * @private
    * @param {string | undefined} val - 环境变量 `SERVER_LISTEN_PORT` 的原始值。
-   * @param {number} [fallback=BotConfig.DEFAULT_LISTEN_PORT] - 当环境变量未设置或为空时使用的默认值。
+   * @param {number} [fallback=this.DEFAULT_LISTEN_PORT] - 当环境变量未设置或为空时使用的默认值。
    * @returns {number} 经过验证的有效监听端口号。
    * @throws {ConfigError} 如果端口号无效（例如不是数字、超出范围 1-65535）。
    */
-  private static parsePort = (val: string | undefined, fallback: number = BotConfig.DEFAULT_LISTEN_PORT): number => {
+  private parsePort = (val: string | undefined, fallback: number = this.DEFAULT_LISTEN_PORT): number => {
     if (!val || val.trim() === '') {
       return fallback;
     }
@@ -105,11 +106,11 @@ export class BotConfig {
    * 解析并验证日志级别。
    * @private
    * @param {string | undefined} val - 环境变量 `SERVER_LOGGER_LEVEL` 的原始值。
-   * @param {LoggerLevel} [fallback=BotConfig.DEFAULT_LOGGER_LEVEL] - 当环境变量未设置或为空时使用的默认值。
+   * @param {LoggerLevel} [fallback=this.DEFAULT_LOGGER_LEVEL] - 当环境变量未设置或为空时使用的默认值。
    * @returns {LoggerLevel} 经过验证的有效日志级别。
    * @throws {ConfigError} 如果日志级别非法（不在预定义的 `LOGGER_LEVELS` 中）。
    */
-  private static parseLoggerLevel = (val: string | undefined, fallback: LoggerLevel = BotConfig.DEFAULT_LOGGER_LEVEL): LoggerLevel => {
+  private parseLoggerLevel = (val: string | undefined, fallback: LoggerLevel = this.DEFAULT_LOGGER_LEVEL): LoggerLevel => {
     if (!val || val.trim() === '') {
       return fallback;
     }
@@ -128,14 +129,14 @@ export class BotConfig {
    * @returns {Config} 应用程序的强类型配置对象。
    * @throws {ConfigError} 如果缺少必要的环境变量或任何环境变量的值无效。
    */
-  public static load = (): Config => {
+  public load = (): Config => {
     // 将 `process.env` 断言为 `Env` 类型，以便进行类型安全的属性访问。
     // 这是一个运行时断言，不会在编译时检查 `process.env` 的实际内容，
     // 因此依赖于后续的运行时验证来确保数据完整性。
     const ENV = process.env as unknown as Env;
 
     // 检查所有必填环境变量是否都已设置且不为空字符串
-    const missing: (keyof Env)[] = BotConfig.REQUIRED_ENV_VARS.filter(
+    const missing: (keyof Env)[] = this.REQUIRED_ENV_VARS.filter(
       (k) => !ENV[k] || (ENV[k] as string).trim() === '', // 将值强制转换为 string 以便使用 trim()
     );
 
@@ -145,13 +146,13 @@ export class BotConfig {
     }
 
     // 解析各个配置项，并使用私有静态方法进行验证和转换，确保数据类型和有效性
-    const listenHost: string = BotConfig.parseListenHost(ENV.SERVER_LISTEN_HOST);
-    const listenPort: number = BotConfig.parsePort(ENV.SERVER_LISTEN_PORT);
-    const loggerLevel: LoggerLevel = BotConfig.parseLoggerLevel(ENV.SERVER_LOGGER_LEVEL);
+    const listenHost: string = this.parseListenHost(ENV.SERVER_LISTEN_HOST);
+    const listenPort: number = this.parsePort(ENV.SERVER_LISTEN_PORT);
+    const loggerLevel: LoggerLevel = this.parseLoggerLevel(ENV.SERVER_LOGGER_LEVEL);
 
-    const modelName: string = ENV.GEMINI_MODEL_NAME || BotConfig.DEFAULT_MODEL_NAME;
+    const modelName: string = ENV.GEMINI_MODEL_NAME || this.DEFAULT_MODEL_NAME;
     const modelTemperature: number = Number(ENV.MODEL_CONFIG_TEMPERATURE) || 0.3;
-    const maxApiCallRounds: number = Number(ENV.MAX_API_CALL_ROUNDS) || BotConfig.DEFAULT_MAX_API_CALL_ROUNDS;
+    const maxApiCallRounds: number = Number(ENV.MAX_API_CALL_ROUNDS) || this.DEFAULT_MAX_API_CALL_ROUNDS;
 
     const cloudflareToken: string = ENV.CLOUDFLARE_API_TOKEN;
     const cloudflareAccountId: string = ENV.CLOUDFLARE_ACCOUNT_ID;
@@ -160,17 +161,19 @@ export class BotConfig {
     const schedulerApiToken: string = ENV.SCHEDULER_API_TOKEN;
 
     const durableResourceId: string = ENV.DURABLE_RESOURCE_NAMESPACE_ID;
-    const systemPromptKeyName: string = ENV.SYSTEM_PROMPT_KEY_NAME || BotConfig.DEFAULT_SYSTEM_PROMPT_KEY_NAME;
-    const geminiApiKeysKeyName: string = ENV.GEMINI_API_KEYS_KEY_NAME || BotConfig.DEFAULT_GEMINI_API_KEYS_KEY_NAME;
-    const startReplyTextKeyName: string = ENV.START_REPLY_TEXT_KEY_NAME || BotConfig.DEFAULT_START_REPLY_TEXT_KEY_NAME;
-    const newMemberWelcomeTextKeyName: string = ENV.NEW_MEMBER_WELCOME_TEXT_KEY_NAME || BotConfig.DEFAULT_NEW_MEMBER_WELCOME_TEXT_KEY_NAME;
+    const systemPromptKeyName: string = ENV.SYSTEM_PROMPT_KEY_NAME || this.DEFAULT_SYSTEM_PROMPT_KEY_NAME;
+    const geminiApiKeysKeyName: string = ENV.GEMINI_API_KEYS_KEY_NAME || this.DEFAULT_GEMINI_API_KEYS_KEY_NAME;
+    const startReplyTextKeyName: string = ENV.START_REPLY_TEXT_KEY_NAME || this.DEFAULT_START_REPLY_TEXT_KEY_NAME;
+    const newMemberWelcomeTextKeyName: string = ENV.NEW_MEMBER_WELCOME_TEXT_KEY_NAME || this.DEFAULT_NEW_MEMBER_WELCOME_TEXT_KEY_NAME;
+
+    const scriptsStorageId: string = ENV.SCRIPTS_STORAGE_NAMESPACE_ID;
 
     const rateLimitId: string = ENV.RATE_LIMIT_NAMESPACE_ID;
     const chatContextId: string = ENV.CHAT_CONTEXT_NAMESPACE_ID;
 
-    const contextsExpirationSecond: number = (Number(ENV.CONTEXT_EXPIRATION_DAY) || BotConfig.DEFAULT_CONTEXT_EXPIRATION_DAY) * 24 * 60 * 60;
-    const maxContextLength: number = Number(ENV.MAX_CONTEXT_LENGTH) || BotConfig.DEFAULT_MAX_CONTEXT_LENGTH;
-    const requestIntervalSecond: number = Number(ENV.REQUEST_INTERVAL_SECOND) || BotConfig.DEFAULT_REQUEST_INTERVAL_SECOND;
+    const contextsExpirationSecond: number = (Number(ENV.CONTEXT_EXPIRATION_DAY) || this.DEFAULT_CONTEXT_EXPIRATION_DAY) * 24 * 60 * 60;
+    const maxContextLength: number = Number(ENV.MAX_CONTEXT_LENGTH) || this.DEFAULT_MAX_CONTEXT_LENGTH;
+    const requestIntervalSecond: number = Number(ENV.REQUEST_INTERVAL_SECOND) || this.DEFAULT_REQUEST_INTERVAL_SECOND;
 
     const githubToken: string = ENV.GITHUB_ACCESS_TOKEN;
 
@@ -199,6 +202,7 @@ export class BotConfig {
       geminiApiKeysKeyName,
       startReplyTextKeyName,
       newMemberWelcomeTextKeyName,
+      scriptsStorageId,
       rateLimitId,
       chatContextId,
       contextsExpirationSecond,
@@ -214,3 +218,5 @@ export class BotConfig {
     };
   };
 }
+
+export const config: BotConfig = new BotConfig();

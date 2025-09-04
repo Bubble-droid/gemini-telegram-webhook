@@ -310,6 +310,7 @@ export interface CommandActionParams {
   messageId: number;
   isCallback?: boolean;
   cleanText?: string;
+  message?: Message;
 }
 
 export interface BotCommand {
@@ -437,6 +438,8 @@ export interface SetBotCommandParams {
   language_code?: string;
 }
 
+export type SetBotCommandResult = boolean;
+
 export type BotCommandScope =
   | BotCommandScopeDefault
   | BotCommandScopeAllPrivateChats
@@ -477,8 +480,6 @@ export interface BotCommandScopeChatMember {
   chat_id: number | string;
   user_id: number;
 }
-
-export type SetBotCommandResult = boolean;
 
 export interface GetFileParams {
   file_id: string;
@@ -556,7 +557,7 @@ export interface InlineQueryResultsButton {
 
 export type AnswerInlineQueryResult = boolean;
 
-export type TelegramApiMethod =
+export type ApiMethod =
   | 'sendMessage'
   | 'sendPhoto'
   | 'sendVoice'
@@ -570,15 +571,15 @@ export type TelegramApiMethod =
   | 'answerInlineQuery'
   | 'answerCallbackQuery';
 
-export interface ApiSuccessResponse<T> {
+export interface ApiResponseSuccess<T> {
   ok: true;
   result: T;
 }
 
-export interface ApiErrorResponse {
+export interface ApiResponseError {
   ok: false;
   error_code: number;
   description: string;
 }
 
-export type TelegramApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
+export type ApiResponse<T> = ApiResponseSuccess<T> | ApiResponseError;

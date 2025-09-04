@@ -1,8 +1,9 @@
 // src/handlers/message/normal.ts
 
-import { Log, BotConfig } from '@/services';
+import { Log, config } from '@/services';
 import type { Message } from '@/types/telegram';
 import { handleMention } from './mention';
+import { BotCommands } from '@/configs';
 
 /**
  * @function handleNormal
@@ -13,7 +14,25 @@ import { handleMention } from './mention';
  * @returns {Promise<void>}
  */
 const handleNormal = async (message: Message): Promise<void> => {
-  const { botName } = BotConfig.load();
+  const { botName } = config.load();
+  if (message.text?.startsWith(':') || message.caption?.startsWith(':')) {
+    const { message_id: messageId, text, caption, from, chat } = message;
+    const messageText = text || caption || '';
+    const [commandAlias, ...cleanText] = messageText.replace(':', '').split(' ');
+    const commandAction = BotCommands.find(
+      (command) => command.name === commandAlias || command.name === `script_${commandAlias}` || command.name === `gen_${commandAlias}`,
+    );
+    if (commandAction) {
+      Log.info('Handling commands message...', { chatId: chat.id, messageId });
+      return await commandAction.action({
+        chatId: chat.id,
+        userId: from?.id as number,
+        messageId,
+        cleanText: cleanText.join(' ').trim(),
+        message,
+      });
+    }
+  }
   if (!message.reply_to_message) return;
   const { chat, message_id, reply_to_message } = message;
   if (!reply_to_message.from || reply_to_message.from.username !== botName) return;

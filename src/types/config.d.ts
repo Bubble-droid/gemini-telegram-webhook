@@ -27,6 +27,8 @@ export interface Env {
   START_REPLY_TEXT_KEY_NAME: string;
   NEW_MEMBER_WELCOME_TEXT_KEY_NAME: string;
 
+  SCRIPTS_STORAGE_NAMESPACE_ID: string;
+
   RATE_LIMIT_NAMESPACE_ID: string;
   REQUEST_INTERVAL_SECOND?: string;
 
@@ -67,6 +69,8 @@ export interface Config {
   geminiApiKeysKeyName: string;
   startReplyTextKeyName: string;
   newMemberWelcomeTextKeyName: string;
+
+  scriptsStorageId: string;
 
   rateLimitId: string;
   requestIntervalSecond: number;

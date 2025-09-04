@@ -36,7 +36,8 @@
     "@google/genai": "^1.14.0",
     "cloudflare": "^4.5.0",
     "fastify": "^5.5.0",
-    "tslog": "^4.9.3"
+    "tslog": "^4.9.3",
+    "vm2": "^3.9.19"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",

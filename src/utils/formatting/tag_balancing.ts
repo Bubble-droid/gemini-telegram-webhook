@@ -5,7 +5,7 @@ import type { ParseMode } from '@/types';
 
 /**
  * 获取指定格式模式下，给定标记类型的开放标记字符串。
- * @param {string} type - 标记类型 (例如 'b', 'i', 'code', 'mv2_bold', 'mv2_italic', 'legacy_bold', 'legacy_italic', 'link_text', 'link_url', 'spoiler', 'strikethrough', 'pre', 'blockquote', 'blockquote_expandable')。
+ * @param {string} type - 标记类型
  * @param {ParseMode | null} parseMode - 解析模式。
  * @returns {string} 开放标记字符串。
  */
@@ -15,9 +15,6 @@ const getOpeningTagString = (type: string, parseMode: ParseMode | null): string 
       case 'b':
       case 'strong':
         return '<b>';
-      case 'i':
-      case 'em':
-        return '<i>';
       case 'u':
       case 'ins':
         return '<u>';
@@ -51,8 +48,6 @@ const getOpeningTagString = (type: string, parseMode: ParseMode | null): string 
     switch (type) {
       case 'mv2_bold':
         return '*';
-      case 'mv2_italic':
-        return '_';
       case 'mv2_underline':
         return '__';
       case 'mv2_strikethrough':
@@ -78,8 +73,6 @@ const getOpeningTagString = (type: string, parseMode: ParseMode | null): string 
     switch (type) {
       case 'legacy_bold':
         return '*';
-      case 'legacy_italic':
-        return '_';
       case 'legacy_code_inline':
         return '`';
       case 'legacy_code_block':
@@ -105,9 +98,6 @@ const getClosingTagString = (type: string, parseMode: ParseMode | null): string 
       case 'b':
       case 'strong':
         return '</b>';
-      case 'i':
-      case 'em':
-        return '</i>';
       case 'u':
       case 'ins':
         return '</u>';
@@ -138,8 +128,6 @@ const getClosingTagString = (type: string, parseMode: ParseMode | null): string 
     switch (type) {
       case 'mv2_bold':
         return '*';
-      case 'mv2_italic':
-        return '_';
       case 'mv2_underline':
         return '__';
       case 'mv2_strikethrough':
@@ -163,8 +151,6 @@ const getClosingTagString = (type: string, parseMode: ParseMode | null): string 
     switch (type) {
       case 'legacy_bold':
         return '*';
-      case 'legacy_italic':
-        return '_';
       case 'legacy_code_inline':
         return '`';
       case 'legacy_code_block':
@@ -227,8 +213,6 @@ const balanceChunkTags = (
         const supportedTags = [
           'b',
           'strong',
-          'i',
-          'em',
           'u',
           'ins',
           's',
@@ -291,9 +275,7 @@ const balanceChunkTags = (
           '||': 'mv2_spoiler',
           __: 'mv2_underline',
           // formatToMarkdownV2 会将 `**` 转换为 `*`，将 `~~` 转换为 `~`。
-          // 所以这里平衡时应查找单字符 `*` 和 `~`。
           '*': 'mv2_bold',
-          _: 'mv2_italic',
           '~': 'mv2_strikethrough', // MV2 删除线在格式化后是单字符 `~`
           '`': 'mv2_code_inline',
           '[': 'mv2_link',
@@ -303,7 +285,6 @@ const balanceChunkTags = (
         const legacyMarkersMap: Record<string, string> = {
           '```': 'legacy_code_block',
           '*': 'legacy_bold',
-          _: 'legacy_italic',
           '`': 'legacy_code_inline',
           '[': 'legacy_link',
           ')': 'legacy_link_end',
@@ -359,7 +340,7 @@ const balanceChunkTags = (
             } else if (marker === '[') {
               // 链接开放标记
               currentStack.push(type);
-            } else if (marker === '`' || marker === '*' || marker === '_' || (parseMode === 'MarkdownV2' && marker === '~')) {
+            } else if (marker === '`' || marker === '*' || (parseMode === 'MarkdownV2' && marker === '~')) {
               // 行内代码、粗体、斜体、删除线 (MV2)
               // 简化处理：如果栈顶是同类型标记，则弹出（闭合）；否则压入（开放）。
               if (top === type) {

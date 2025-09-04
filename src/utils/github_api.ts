@@ -1,15 +1,15 @@
 // src/utils/github_api.ts
 
-import type { GitHubApiRequestOptions, GitHubApiResponse } from '@/types';
-import { BotConfig, Log } from '@/services';
+import type * as Github from '@/types/github';
+import { config, Log } from '@/services';
 
 /**
  * 封装通用的 GitHub API 请求。
- * @param {GitHubApiRequestOptions} options - 请求的 URL。
- * @returns {Promise<GitHubApiResponse<T>>} 包含成功数据或错误信息的 Promise。
+ * @param {Github.ApiRequestOptions} options - 请求的 URL。
+ * @returns {Promise<Github.ApiResponse<T>>} 包含成功数据或错误信息的 Promise。
  */
-const makeGitHubApiRequest = async <T>(options: GitHubApiRequestOptions): Promise<GitHubApiResponse<T>> => {
-  const { githubToken } = BotConfig.load();
+const makeGitHubApiRequest = async <T>(options: Github.ApiRequestOptions): Promise<Github.ApiResponse<T>> => {
+  const { githubToken } = config.load();
   const { method, urlPath, queryParams } = options;
   const apiUrl: string = `https://api.github.com/${urlPath}${queryParams ? `?${queryParams}` : ''}`;
   Log.info(`尝试通过 GitHub API 请求: ${apiUrl}`);
@@ -46,11 +46,11 @@ const makeGitHubApiRequest = async <T>(options: GitHubApiRequestOptions): Promis
 /**
  * 封装对 GitHub 原始文件内容的请求（如 raw.githubusercontent.com）。
  * @param {string} rawPath - 原始文件内容的 URL。
- * @returns {Promise<GitHubApiResponse<string>>} 包含文件内容字符串或错误信息的 Promise。
+ * @returns {Promise<Github.ApiResponse<string>>} 包含文件内容字符串或错误信息的 Promise。
  */
-const makeRawFileRequest = async (rawPath: string): Promise<GitHubApiResponse<string>> => {
+const makeRawFileRequest = async (rawPath: string): Promise<Github.ApiResponse<string>> => {
   Log.info(`尝试获取原始文件内容: ${rawPath}`);
-  const { githubToken } = BotConfig.load();
+  const { githubToken } = config.load();
   const rawUrl = `https://raw.githubusercontent.com/${rawPath}`;
   try {
     const response = await fetch(rawUrl, {

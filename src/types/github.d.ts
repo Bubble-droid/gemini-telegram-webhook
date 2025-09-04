@@ -1,6 +1,6 @@
 // src/types/github.d.ts
 
-export interface GitHubApiRequestOptions {
+export interface ApiRequestOptions {
   method: HttpMethod;
   urlPath: string;
   queryParams?: string;
@@ -9,14 +9,14 @@ export interface GitHubApiRequestOptions {
 /**
  * GitHub API 通用响应结构
  */
-export type GitHubApiResponse<T> = GitHubApiSuccess<T> | GithubApiError;
+export type ApiResponse<T> = ApiResponseSuccess<T> | ApiResponseError;
 
-interface GitHubApiSuccess<T> {
+interface ApiResponseSuccess<T> {
   success: true;
   data: T;
 }
 
-interface GithubApiError {
+interface ApiResponseError {
   success: false;
   error: string;
 }

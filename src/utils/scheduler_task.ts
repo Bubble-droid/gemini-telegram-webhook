@@ -1,16 +1,16 @@
 // src/utils/scheduler_task.ts
 
-import { Log, BotConfig } from '@/services';
-import type { DeleteMessageParams, SendMessageParams, TelegramApiMethod } from '@/types';
+import { Log, config } from '@/services';
+import type { DeleteMessageParams, SendMessageParams, ApiMethod } from '@/types';
 
 /**
  * 调度任意任务
- * @param {TelegramApiMethod} action - 任务类型，如 'deleteMessage'
+ * @param {ApiMethod} action - 任务类型，如 'deleteMessage'
  * @param {T} params - 任务参数对象
  * @param {number} delayMs - 延迟毫秒数
  */
-const scheduleTask = async <T>(action: TelegramApiMethod, params: T, delayMs: number): Promise<void> => {
-  const { schedulerApiUrl, schedulerApiToken } = BotConfig.load();
+const scheduleTask = async <T>(action: ApiMethod, params: T, delayMs: number): Promise<void> => {
+  const { schedulerApiUrl, schedulerApiToken } = config.load();
   const name = `${action}-${JSON.stringify(params)}`;
   const encoded = Buffer.from(schedulerApiToken, 'utf-8').toString('base64');
   try {

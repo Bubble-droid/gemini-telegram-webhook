@@ -1,37 +1,37 @@
 // src/configs/bot_commands.ts
 
-import { BotConfig, TelegramBot, ChatContexts, Log, GeminiError, ToolExecutors, TelegramError } from '@/services';
+import { config, bot, contexts, Log, ToolExecutors, TelegramError, KvNamespaceError, ScriptError } from '@/services';
 import { geminiTools } from '@/configs';
-import { scheduleDeletion, sleep, KvNamespace, markdownToHtml, sampleByShuffle } from '@/utils';
-import type { BotCommandAction, InlineKeyboardButton, ReplyMarkup, ToolExecArgs } from '@/types';
+import { scheduleDeletion, sleep, kv, sampleByShuffle } from '@/utils';
+import { formatters } from '@/utils/formatting';
+import type { BotCommandAction, InlineKeyboardButton, Message, ReplyMarkup, ToolExecArgs } from '@/types';
 import type { FunctionDeclaration } from '@google/genai';
+import { scriptManager } from '@/script';
 
-/**
- * @constant botCommands
- * @description 定义所有 Telegram Bot 命令的数组。
- *              每个命令都包含名称和执行动作。
- */
-export const botCommands: BotCommandAction[] = [
+const BaseCommands: BotCommandAction[] = [
   {
     name: 'start',
     description: '开始使用',
     action: async (params) => {
-      Log.info('Executing /start command.');
+      Log.info('Executing start command.');
       const { chatId, userId, messageId, isCallback = false } = params;
-      const { modelName, durableResourceId, startReplyTextKeyName } = BotConfig.load();
-      const startReplyText = await KvNamespace.read<string>(durableResourceId, startReplyTextKeyName, 'text');
-      const replaceText = startReplyText?.replace('MODEL_NAME', modelName) as string;
+      const { modelName, durableResourceId, startReplyTextKeyName } = config.load();
+      const startReply = await kv.read<string>(durableResourceId, startReplyTextKeyName, 'text');
+      if (!startReply.success) {
+        throw new KvNamespaceError(`Start 命令回复内容读取失败，${startReply.error}`, 'START_REPLY_NOT_FOUND');
+      }
+      const replaceText = startReply.data.replace('MODEL_NAME', modelName).trim();
       const totalReactionsKeyName = `total_reactions_${chatId}`;
-      const totalReactions = await KvNamespace.read<{ like: number; dislike: number }>(durableResourceId, totalReactionsKeyName, 'json');
+      const totalReactions = await kv.read<{ like: number; dislike: number }>(durableResourceId, totalReactionsKeyName, 'json');
       const replyMarkup: ReplyMarkup = {
         inline_keyboard: [
           [
             {
-              text: `群组总 👍 ${totalReactions?.like || 0}`,
+              text: `群组 👍 ${totalReactions.success ? totalReactions.data.like || 0 : 0}`,
               callback_data: 'PLACEHOLDER',
             },
             {
-              text: `群组总 👎 ${totalReactions?.dislike || 0}`,
+              text: `群组 👎 ${totalReactions.success ? totalReactions.data.dislike || 0 : 0}`,
               callback_data: 'PLACEHOLDER',
             },
           ],
@@ -62,7 +62,7 @@ export const botCommands: BotCommandAction[] = [
             },
             {
               text: '❓ 常见问题',
-              callback_data: `mention_faq_${userId}`,
+              callback_data: `cmd_faq_${userId}`,
             },
           ],
           [
@@ -80,17 +80,51 @@ export const botCommands: BotCommandAction[] = [
 
       let startResult;
       if (isCallback) {
-        startResult = await TelegramBot.editMessageText(chatId, messageId, markdownToHtml(replaceText), { parseMode: 'HTML', replyMarkup });
+        startResult = await bot.editMessageText(chatId, messageId, formatters.Html(replaceText), { parseMode: 'HTML', replyMarkup });
       } else {
-        startResult = await TelegramBot.sendMessage(chatId, markdownToHtml(replaceText), {
+        startResult = await bot.sendMessage(chatId, formatters.Html(replaceText), {
           replyToMessageId: messageId,
           parseMode: 'HTML',
           replyMarkup,
         });
-        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60_000);
       }
       if (startResult.ok) {
-        void scheduleDeletion({ chat_id: chatId, message_id: startResult.messageId }, 3 * 60_000);
+        scheduleDeletion({ chat_id: chatId, message_id: startResult.messageId }, 3 * 60_000);
+      }
+    },
+  },
+  {
+    name: 'faq',
+    description: '常见问题',
+    action: async (params) => {
+      Log.info('Executing faq command.');
+      const { chatId, userId, messageId, isCallback = false } = params;
+      const { durableResourceId } = config.load();
+      const faqReply = await kv.read<string>(durableResourceId, 'cmd_faq_reply', 'text');
+      if (!faqReply.success) {
+        throw new KvNamespaceError(`FAQ 命令回复内容读取失败，${faqReply.error}`, 'FAQ_REPLY_NOT_FOUND');
+      }
+      const backReplyMarkup: ReplyMarkup = {
+        inline_keyboard: [
+          [
+            {
+              text: '⬅️ Go Back',
+              callback_data: `cmd_start_${userId}`,
+            },
+          ],
+        ],
+      };
+      let faqResult;
+      if (isCallback) {
+        faqResult = await bot.editMessageText(chatId, messageId, formatters.Html(faqReply.data.trim()), {
+          parseMode: 'HTML',
+          replyMarkup: backReplyMarkup,
+        });
+      } else {
+        faqResult = await bot.sendMessage(chatId, formatters.Html(faqReply.data.trim()), { replyToMessageId: messageId, parseMode: 'HTML' });
+      }
+      if (faqResult.ok) {
+        scheduleDeletion({ chat_id: chatId, message_id: faqResult.messageId }, 5 * 60_000);
       }
     },
   },
@@ -98,7 +132,7 @@ export const botCommands: BotCommandAction[] = [
     name: 'clear',
     description: '清理对话历史',
     action: async (params) => {
-      Log.info('Executing /clear command.');
+      Log.info('Executing clear command.');
       const { chatId, userId, messageId, isCallback = false } = params;
       const clearingText = '🗑 Clearing...';
       const backReplyMarkup: ReplyMarkup = {
@@ -113,20 +147,19 @@ export const botCommands: BotCommandAction[] = [
       };
       let clearingResult;
       if (isCallback) {
-        clearingResult = await TelegramBot.editMessageText(chatId, messageId, clearingText, { replyMarkup: backReplyMarkup });
+        clearingResult = await bot.editMessageText(chatId, messageId, clearingText, { replyMarkup: backReplyMarkup });
       } else {
-        clearingResult = await TelegramBot.sendMessage(chatId, clearingText, { replyToMessageId: messageId });
-        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60_000);
+        clearingResult = await bot.sendMessage(chatId, clearingText, { replyToMessageId: messageId });
       }
-      await ChatContexts.clear(chatId, userId);
+      await contexts.clear(chatId, userId);
       if (clearingResult.ok) {
         await sleep(3_000);
         const clearedText: string = '✅ 已成功清除你和我的历史对话';
-        const clearedResult = await TelegramBot.editMessageText(chatId, clearingResult.messageId, clearedText, {
+        const clearedResult = await bot.editMessageText(chatId, clearingResult.messageId, clearedText, {
           replyMarkup: isCallback ? backReplyMarkup : undefined,
         });
         if (clearedResult.ok) {
-          void scheduleDeletion({ chat_id: chatId, message_id: clearedResult.messageId }, 3 * 60_000);
+          scheduleDeletion({ chat_id: chatId, message_id: clearedResult.messageId }, 3 * 60_000);
         }
       }
     },
@@ -135,7 +168,7 @@ export const botCommands: BotCommandAction[] = [
     name: 'tools',
     description: '模型可用工具',
     action: async (params) => {
-      Log.info('Executing /tools command.');
+      Log.info('Executing tools command.');
       const { chatId, userId, messageId, isCallback = false } = params;
       const toolFunctions = geminiTools[0]?.functionDeclarations || [];
       const toolList =
@@ -182,46 +215,47 @@ export const botCommands: BotCommandAction[] = [
             ],
           ],
         };
-        toolsResult = await TelegramBot.editMessageText(chatId, messageId, markdownToHtml(toolsText), {
+        toolsResult = await bot.editMessageText(chatId, messageId, formatters.Html(toolsText), {
           parseMode: 'HTML',
           replyMarkup: backReplyMarkup,
         });
       } else {
-        toolsResult = await TelegramBot.sendMessage(chatId, markdownToHtml(toolsText), {
+        toolsResult = await bot.sendMessage(chatId, formatters.Html(toolsText), {
           replyToMessageId: messageId,
           parseMode: 'HTML',
           replyMarkup,
         });
-        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 5 * 60_000);
       }
       if (toolsResult.ok) {
-        void scheduleDeletion({ chat_id: chatId, message_id: toolsResult.messageId }, 5 * 60_000);
+        scheduleDeletion({ chat_id: chatId, message_id: toolsResult.messageId }, 5 * 60_000);
       }
     },
   },
+];
+
+const GenerateCommands: BotCommandAction[] = [
   {
-    name: 'exp_img_gen',
+    name: 'gen_img',
     description: '生成图片',
     action: async (params) => {
-      Log.info('Executing /exp_img_gen command.');
+      Log.info('Executing gen_img command.');
       const { chatId, userId, messageId, cleanText } = params;
-      const { durableResourceId, geminiApiKeysKeyName } = BotConfig.load();
-      const apiKeys = await KvNamespace.read<[string, string][]>(durableResourceId, geminiApiKeysKeyName, 'json');
-      if (!apiKeys || apiKeys.length === 0) {
-        throw new GeminiError('未找到有效的 API 密钥，请检查配置。', 'GEMINI_API_KEY_NOT_FOUND', false);
-      }
-      const [apiKey, apiKeyId] = apiKeys[Math.floor(Math.random() * apiKeys.length)];
-      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
+      const { durableResourceId, geminiApiKeysKeyName } = config.load();
       if (!cleanText) {
-        const notText = await TelegramBot.sendMessage(chatId, `没有有效的图片生成提示（NO_IMAGE_DESCRIPTION）`, { replyToMessageId: messageId });
+        const notText = await bot.sendMessage(chatId, `:img [图片生成提示]`, { replyToMessageId: messageId });
         if (notText.ok) {
-          void scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1000);
+          scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1000);
         }
-        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60 * 1000);
         return;
       }
+      const apiKeys = await kv.read<[string, string][]>(durableResourceId, geminiApiKeysKeyName, 'json');
+      if (!apiKeys.success) {
+        throw new KvNamespaceError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, 'GEMINI_API_KEY_NOT_FOUND');
+      }
+      const [apiKey, apiKeyId] = apiKeys.data[Math.floor(Math.random() * apiKeys.data.length)];
+      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
       let renderMessageId: number | undefined = undefined;
-      const renderResult = await TelegramBot.sendMessage(chatId, `🎨 Rendering...`, { replyToMessageId: messageId });
+      const renderResult = await bot.sendMessage(chatId, `🎨 Rendering...`, { replyToMessageId: messageId });
       if (renderResult.ok) {
         renderMessageId = renderResult.messageId;
       }
@@ -234,7 +268,7 @@ export const botCommands: BotCommandAction[] = [
       };
       const response = await ToolExecutors.generateImage(args as ToolExecArgs);
       if (renderMessageId) {
-        await TelegramBot.deleteMessage(chatId, renderMessageId);
+        await bot.deleteMessage(chatId, renderMessageId);
         renderMessageId = undefined;
       }
       if (!response.success) {
@@ -243,28 +277,27 @@ export const botCommands: BotCommandAction[] = [
     },
   },
   {
-    name: 'exp_tts_gen',
+    name: 'gen_tts',
     description: '生成语音',
     action: async (params) => {
-      Log.info('Executing /exp_tts_gen command.');
+      Log.info('Executing gen_tts command.');
       const { chatId, userId, messageId, cleanText } = params;
-      const { durableResourceId, geminiApiKeysKeyName } = BotConfig.load();
-      const apiKeys = await KvNamespace.read<[string, string][]>(durableResourceId, geminiApiKeysKeyName, 'json');
-      if (!apiKeys || apiKeys.length === 0) {
-        throw new GeminiError('未找到有效的 API 密钥，请检查配置。', 'GEMINI_API_KEY_NOT_FOUND', false);
-      }
-      const [apiKey, apiKeyId] = apiKeys[Math.floor(Math.random() * apiKeys.length)];
-      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
+      const { durableResourceId, geminiApiKeysKeyName } = config.load();
       if (!cleanText) {
-        const notText = await TelegramBot.sendMessage(chatId, `没有有效的语音生成提示（NO_SPEECH_DESCRIPTION）`, { replyToMessageId: messageId });
+        const notText = await bot.sendMessage(chatId, `:tts [语音生成提示]`, { replyToMessageId: messageId });
         if (notText.ok) {
-          void scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1000);
+          scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1000);
         }
-        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60 * 1000);
         return;
       }
+      const apiKeys = await kv.read<[string, string][]>(durableResourceId, geminiApiKeysKeyName, 'json');
+      if (!apiKeys.success) {
+        throw new KvNamespaceError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, 'GEMINI_API_KEY_NOT_FOUND');
+      }
+      const [apiKey, apiKeyId] = apiKeys.data[Math.floor(Math.random() * apiKeys.data.length)];
+      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
       let synthMessageId: number | undefined = undefined;
-      const synthResult = await TelegramBot.sendMessage(chatId, `🎙 Synthesizing...`, { replyToMessageId: messageId });
+      const synthResult = await bot.sendMessage(chatId, `🎙 Synthesizing...`, { replyToMessageId: messageId });
       if (synthResult.ok) {
         synthMessageId = synthResult.messageId;
       }
@@ -277,7 +310,7 @@ export const botCommands: BotCommandAction[] = [
       };
       const response = await ToolExecutors.generateSpeech(args as ToolExecArgs);
       if (synthMessageId) {
-        await TelegramBot.deleteMessage(chatId, synthMessageId);
+        await bot.deleteMessage(chatId, synthMessageId);
         synthMessageId = undefined;
       }
       if (!response.success) {
@@ -286,3 +319,180 @@ export const botCommands: BotCommandAction[] = [
     },
   },
 ];
+
+const ScriptCommands: BotCommandAction[] = [
+  {
+    name: 'script_add',
+    description: '添加脚本',
+    action: async (params) => {
+      Log.info('Executing script_add command.');
+      const { chatId, userId, messageId, cleanText, message } = params;
+      const { botToken } = config.load();
+      const { document, reply_to_message } = message as Message;
+      const targetDocument = document ?? reply_to_message?.document;
+
+      let errorMessage: string | undefined = undefined;
+      if (!cleanText || cleanText.length > 20) {
+        errorMessage = ':add [脚本标签 < 20 个字符] ';
+      }
+      if (!targetDocument?.mime_type?.includes('javascript')) {
+        errorMessage = '[脚本文件] :add [脚本标签 < 20 个字符]';
+      }
+
+      if (errorMessage) {
+        const sentMsg = await bot.sendMessage(chatId, errorMessage, {
+          replyToMessageId: messageId,
+        });
+        if (sentMsg.ok) {
+          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 60_000);
+        }
+        return;
+      }
+
+      // 使用用户ID和自定义文本构造唯一的、有命名空间的标签
+      const scriptTag = `script_${userId}_${cleanText}`;
+
+      // 确保 targetDocument 在这里是非空的，因为上面已经进行了检查
+      const getResult = await bot.getFile(targetDocument!.file_id);
+      if (!getResult.ok) {
+        throw new ScriptError(`无法获取文件信息: ${getResult.error}`);
+      }
+
+      const fileUrl = `https://api.telegram.org/file/bot${botToken}/${getResult.data.file_path}`;
+
+      try {
+        await scriptManager.installForUser(userId, fileUrl, scriptTag);
+
+        const successMessage = `✅ 脚本安装成功！\n<b>标签:</b> <code>${cleanText}</code>`;
+        const sentMsg = await bot.sendMessage(chatId, successMessage, {
+          replyToMessageId: messageId,
+          parseMode: 'HTML',
+        });
+        if (sentMsg.ok) {
+          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 60_000);
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '未知错误';
+        throw new ScriptError(`脚本安装失败：${errorMessage}`);
+      }
+    },
+  },
+  {
+    name: 'script_remove',
+    description: '删除脚本',
+    action: async (params) => {
+      Log.info('Executing script_remove command.');
+      const { chatId, userId, messageId, cleanText } = params;
+      if (!cleanText) {
+        const errorMessage = ':remove [脚本标签]';
+        const sentMsg = await bot.sendMessage(chatId, errorMessage, {
+          replyToMessageId: messageId,
+        });
+        if (sentMsg.ok) {
+          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 60_000);
+        }
+        return;
+      }
+
+      const scriptTag = `script_${userId}_${cleanText}`;
+
+      try {
+        await scriptManager.uninstallForUser(userId, scriptTag);
+        const successMessage = `🗑️ 脚本删除成功！\n<b>标签:</b> <code>${cleanText}</code>`;
+        const sentMsg = await bot.sendMessage(chatId, successMessage, {
+          replyToMessageId: messageId,
+          parseMode: 'HTML',
+        });
+        if (sentMsg.ok) {
+          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 60_000);
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '未知错误';
+        const errorReply = `脚本删除失败：${errorMessage}`;
+        const sentMsg = await bot.sendMessage(chatId, errorReply, {
+          replyToMessageId: messageId,
+        });
+        if (sentMsg.ok) {
+          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 60_000);
+        }
+      }
+    },
+  },
+  {
+    name: 'script_list',
+    description: '列出已安装的所有脚本',
+    action: async (params) => {
+      Log.info('Executing script_list command.');
+      const { chatId, userId, messageId } = params;
+      try {
+        const scripts = await scriptManager.listForUser(userId);
+        let replyText: string;
+
+        if (scripts.length === 0) {
+          replyText = '你还没有安装任何脚本。';
+        } else {
+          // 从完整标签中移除用户ID前缀，只显示用户关心的部分
+          const scriptList = scripts.map((tag) => `  • <code>${tag.replace(`script_${userId}_`, '')}</code>`).join('\n');
+          replyText = `你已安装以下脚本：\n${scriptList}`;
+        }
+
+        const sentMsg = await bot.sendMessage(chatId, replyText, {
+          replyToMessageId: messageId,
+          parseMode: 'HTML',
+        });
+        if (sentMsg.ok) {
+          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 60_000);
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '未知错误';
+        throw new ScriptError(`脚本列表获取失败：${errorMessage}`);
+      }
+    },
+  },
+  {
+    name: 'script_run',
+    description: '运行脚本',
+    action: async (params) => {
+      Log.info('Executing script_run command.');
+      const { chatId, userId, messageId, cleanText, message } = params;
+
+      if (!cleanText) {
+        const errorMessage = ':run [脚本标签] [参数]';
+        const sentMsg = await bot.sendMessage(chatId, errorMessage, {
+          replyToMessageId: messageId,
+        });
+        if (sentMsg.ok) {
+          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 60_000);
+        }
+        return;
+      }
+
+      const [tag, ...args] = cleanText.split(/\s+/);
+      const scriptParam = args.join(' ');
+      const scriptTag = `script_${userId}_${tag}`;
+
+      const result = await scriptManager.runForUser(userId, scriptTag, message as Message, scriptParam);
+
+      let replyText: string;
+      if (result.success) {
+        replyText = `✅ <b>脚本执行成功</b> (耗时: ${result.duration > 1000 ? (result.duration / 1000).toFixed(2) + 's' : result.duration.toFixed(2) + 'ms'})\n\n<pre><code class="language-markdown">${result.result}</code></pre>`;
+      } else {
+        replyText = `❌ <b>脚本执行失败</b> (耗时:  ${result.duration > 1000 ? (result.duration / 1000).toFixed(2) + 's' : result.duration.toFixed(2) + 'ms'})\n\n<pre><code class="language-markdown">${result.error}</code></pre>`;
+      }
+
+      const sentMsg = await bot.sendMessage(chatId, replyText, {
+        replyToMessageId: messageId,
+        parseMode: 'HTML',
+      });
+      if (sentMsg.ok) {
+        scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 30 * 60_000);
+      }
+    },
+  },
+];
+/**
+ * @constant BotCommands
+ * @description 定义所有 Telegram Bot 命令的数组。
+ *              每个命令都包含名称和执行动作。
+ */
+export const BotCommands: BotCommandAction[] = [...BaseCommands, ...GenerateCommands, ...ScriptCommands];

@@ -1,6 +1,7 @@
 // src/utils/formatting/chunk_splitting.ts
 
 import type { ParseMode } from '@/types';
+import { MARKDOWN_MARK_REGEX } from './formatters';
 
 export interface CodeBlockRange {
   start: number;
@@ -29,9 +30,8 @@ export const splitFormattedText = (formattedText: string, parseMode: ParseMode |
     }
   } else if (parseMode === 'MarkdownV2' || parseMode === 'Markdown') {
     // 匹配 ```code``` 整个块
-    const codeBlockRegex = /```[\s\S]*?```/g;
     let match: RegExpExecArray | null;
-    while ((match = codeBlockRegex.exec(formattedText)) !== null) {
+    while ((match = MARKDOWN_MARK_REGEX.CODE_BLOCK.exec(formattedText)) !== null) {
       codeBlockRanges.push({ start: match.index, end: match.index + match.length });
     }
   }

@@ -4,23 +4,24 @@ import process$1 from "node:process";
 import "node:crypto";
 import * as lame from "@breezystack/lamejs";
 import { Type, Behavior, HarmBlockThreshold, HarmCategory, FunctionCallingConfigMode, GoogleGenAI } from "@google/genai";
-import { Logger } from "tslog";
 import Cloudflare from "cloudflare";
+import { Logger } from "tslog";
+import { VM } from "vm2";
 const LOGGER_LEVELS = ["trace", "debug", "info", "warn", "error", "fatal"];
 class BotConfig {
-  static DEFAULT_LISTEN_HOST = "127.0.0.1";
-  static DEFAULT_LISTEN_PORT = 39001;
-  static DEFAULT_LOGGER_LEVEL = "info";
-  static DEFAULT_MODEL_NAME = "gemini-2.5-flash";
-  static DEFAULT_CONTEXT_EXPIRATION_DAY = 7;
-  static DEFAULT_MAX_CONTEXT_LENGTH = 8;
-  static DEFAULT_REQUEST_INTERVAL_SECOND = 30;
-  static DEFAULT_MAX_API_CALL_ROUNDS = 12;
-  static DEFAULT_SYSTEM_PROMPT_KEY_NAME = "system_prompt";
-  static DEFAULT_GEMINI_API_KEYS_KEY_NAME = "gemini_api_keys";
-  static DEFAULT_START_REPLY_TEXT_KEY_NAME = "start_reply_text";
-  static DEFAULT_NEW_MEMBER_WELCOME_TEXT_KEY_NAME = "new_member_welcome_text";
-  static REQUIRED_ENV_VARS = [
+  DEFAULT_LISTEN_HOST = "127.0.0.1";
+  DEFAULT_LISTEN_PORT = 39001;
+  DEFAULT_LOGGER_LEVEL = "info";
+  DEFAULT_MODEL_NAME = "gemini-2.5-flash";
+  DEFAULT_CONTEXT_EXPIRATION_DAY = 7;
+  DEFAULT_MAX_CONTEXT_LENGTH = 8;
+  DEFAULT_REQUEST_INTERVAL_SECOND = 30;
+  DEFAULT_MAX_API_CALL_ROUNDS = 12;
+  DEFAULT_SYSTEM_PROMPT_KEY_NAME = "system_prompt";
+  DEFAULT_GEMINI_API_KEYS_KEY_NAME = "gemini_api_keys";
+  DEFAULT_START_REPLY_TEXT_KEY_NAME = "start_reply_text";
+  DEFAULT_NEW_MEMBER_WELCOME_TEXT_KEY_NAME = "new_member_welcome_text";
+  REQUIRED_ENV_VARS = [
     "CLOUDFLARE_API_TOKEN",
     "CLOUDFLARE_ACCOUNT_ID",
     "SCHEDULER_API_URL",
@@ -28,6 +29,7 @@ class BotConfig {
     "DURABLE_RESOURCE_NAMESPACE_ID",
     "SYSTEM_PROMPT_KEY_NAME",
     "GEMINI_API_KEYS_KEY_NAME",
+    "SCRIPTS_STORAGE_NAMESPACE_ID",
     "RATE_LIMIT_NAMESPACE_ID",
     "CHAT_CONTEXT_NAMESPACE_ID",
     "GITHUB_ACCESS_TOKEN",
@@ -37,7 +39,7 @@ class BotConfig {
     "TELEGRAM_BOT_ADMIN_ID",
     "ALLOWED_USAGE_GROUPS"
   ];
-  static parseListenHost = (val, fallback = BotConfig.DEFAULT_LISTEN_HOST) => {
+  parseListenHost = (val, fallback = this.DEFAULT_LISTEN_HOST) => {
     if (!val || val.trim() === "") {
       return fallback;
     }
@@ -47,7 +49,7 @@ class BotConfig {
     }
     return host;
   };
-  static parsePort = (val, fallback = BotConfig.DEFAULT_LISTEN_PORT) => {
+  parsePort = (val, fallback = this.DEFAULT_LISTEN_PORT) => {
     if (!val || val.trim() === "") {
       return fallback;
     }
@@ -63,7 +65,7 @@ class BotConfig {
     }
     return n;
   };
-  static parseLoggerLevel = (val, fallback = BotConfig.DEFAULT_LOGGER_LEVEL) => {
+  parseLoggerLevel = (val, fallback = this.DEFAULT_LOGGER_LEVEL) => {
     if (!val || val.trim() === "") {
       return fallback;
     }
@@ -73,34 +75,35 @@ class BotConfig {
     }
     throw new ConfigError(`环境变量 SERVER_LOGGER_LEVEL 非法："${val.trim()}"。可选值为 ${LOGGER_LEVELS.join(", ")}`);
   };
-  static load = () => {
+  load = () => {
     const ENV = process$1.env;
-    const missing = BotConfig.REQUIRED_ENV_VARS.filter(
+    const missing = this.REQUIRED_ENV_VARS.filter(
       (k) => !ENV[k] || ENV[k].trim() === ""
     );
     if (missing.length > 0) {
       throw new ConfigError(`缺少必要环境变量：${missing.join(", ")}`);
     }
-    const listenHost = BotConfig.parseListenHost(ENV.SERVER_LISTEN_HOST);
-    const listenPort = BotConfig.parsePort(ENV.SERVER_LISTEN_PORT);
-    const loggerLevel = BotConfig.parseLoggerLevel(ENV.SERVER_LOGGER_LEVEL);
-    const modelName = ENV.GEMINI_MODEL_NAME || BotConfig.DEFAULT_MODEL_NAME;
+    const listenHost = this.parseListenHost(ENV.SERVER_LISTEN_HOST);
+    const listenPort = this.parsePort(ENV.SERVER_LISTEN_PORT);
+    const loggerLevel = this.parseLoggerLevel(ENV.SERVER_LOGGER_LEVEL);
+    const modelName = ENV.GEMINI_MODEL_NAME || this.DEFAULT_MODEL_NAME;
     const modelTemperature = Number(ENV.MODEL_CONFIG_TEMPERATURE) || 0.3;
-    const maxApiCallRounds = Number(ENV.MAX_API_CALL_ROUNDS) || BotConfig.DEFAULT_MAX_API_CALL_ROUNDS;
+    const maxApiCallRounds = Number(ENV.MAX_API_CALL_ROUNDS) || this.DEFAULT_MAX_API_CALL_ROUNDS;
     const cloudflareToken = ENV.CLOUDFLARE_API_TOKEN;
     const cloudflareAccountId = ENV.CLOUDFLARE_ACCOUNT_ID;
     const schedulerApiUrl = ENV.SCHEDULER_API_URL;
     const schedulerApiToken = ENV.SCHEDULER_API_TOKEN;
     const durableResourceId = ENV.DURABLE_RESOURCE_NAMESPACE_ID;
-    const systemPromptKeyName = ENV.SYSTEM_PROMPT_KEY_NAME || BotConfig.DEFAULT_SYSTEM_PROMPT_KEY_NAME;
-    const geminiApiKeysKeyName = ENV.GEMINI_API_KEYS_KEY_NAME || BotConfig.DEFAULT_GEMINI_API_KEYS_KEY_NAME;
-    const startReplyTextKeyName = ENV.START_REPLY_TEXT_KEY_NAME || BotConfig.DEFAULT_START_REPLY_TEXT_KEY_NAME;
-    const newMemberWelcomeTextKeyName = ENV.NEW_MEMBER_WELCOME_TEXT_KEY_NAME || BotConfig.DEFAULT_NEW_MEMBER_WELCOME_TEXT_KEY_NAME;
+    const systemPromptKeyName = ENV.SYSTEM_PROMPT_KEY_NAME || this.DEFAULT_SYSTEM_PROMPT_KEY_NAME;
+    const geminiApiKeysKeyName = ENV.GEMINI_API_KEYS_KEY_NAME || this.DEFAULT_GEMINI_API_KEYS_KEY_NAME;
+    const startReplyTextKeyName = ENV.START_REPLY_TEXT_KEY_NAME || this.DEFAULT_START_REPLY_TEXT_KEY_NAME;
+    const newMemberWelcomeTextKeyName = ENV.NEW_MEMBER_WELCOME_TEXT_KEY_NAME || this.DEFAULT_NEW_MEMBER_WELCOME_TEXT_KEY_NAME;
+    const scriptsStorageId = ENV.SCRIPTS_STORAGE_NAMESPACE_ID;
     const rateLimitId = ENV.RATE_LIMIT_NAMESPACE_ID;
     const chatContextId = ENV.CHAT_CONTEXT_NAMESPACE_ID;
-    const contextsExpirationSecond = (Number(ENV.CONTEXT_EXPIRATION_DAY) || BotConfig.DEFAULT_CONTEXT_EXPIRATION_DAY) * 24 * 60 * 60;
-    const maxContextLength = Number(ENV.MAX_CONTEXT_LENGTH) || BotConfig.DEFAULT_MAX_CONTEXT_LENGTH;
-    const requestIntervalSecond = Number(ENV.REQUEST_INTERVAL_SECOND) || BotConfig.DEFAULT_REQUEST_INTERVAL_SECOND;
+    const contextsExpirationSecond = (Number(ENV.CONTEXT_EXPIRATION_DAY) || this.DEFAULT_CONTEXT_EXPIRATION_DAY) * 24 * 60 * 60;
+    const maxContextLength = Number(ENV.MAX_CONTEXT_LENGTH) || this.DEFAULT_MAX_CONTEXT_LENGTH;
+    const requestIntervalSecond = Number(ENV.REQUEST_INTERVAL_SECOND) || this.DEFAULT_REQUEST_INTERVAL_SECOND;
     const githubToken = ENV.GITHUB_ACCESS_TOKEN;
     const secretToken = ENV.WEBHOOK_SECRET_TOKEN;
     const botToken = ENV.TELEGRAM_BOT_TOKEN;
@@ -124,6 +127,7 @@ class BotConfig {
       geminiApiKeysKeyName,
       startReplyTextKeyName,
       newMemberWelcomeTextKeyName,
+      scriptsStorageId,
       rateLimitId,
       chatContextId,
       contextsExpirationSecond,
@@ -139,227 +143,294 @@ class BotConfig {
     };
   };
 }
-const escapeMarkdownV2Text = (str) => {
-  return str.replace(/([_*[\]()~`>#+-=|{}.!\\])/g, "\\$1");
-};
-const escapeMarkdownV2Code = (str) => {
-  return str.replace(/([`\\])/g, "\\$1");
-};
-const escapeMarkdownV2LinkUrl = (str) => {
-  return str.replace(/([)\\])/g, "\\$1");
-};
-const escapeHtml = (str) => {
-  return str.replace(/[<>&"]/g, (c) => {
-    switch (c) {
-      case "&":
-        return "&amp;";
-      case "<":
-        return "&lt;";
-      case ">":
-        return "&gt;";
-      default:
-        return c;
-    }
+const config = new BotConfig();
+const formatTime = (time = Date.now()) => {
+  const timeDate = typeof time === "number" ? new Date(time) : time;
+  const formatter = new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Shanghai"
   });
-};
-const escapeMarkdownLegacyText = (str) => {
-  return str.replace(/([_*`[\\])/g, "\\$1");
-};
-const escapeMarkdownLegacyLinkUrl = (str) => {
-  return str;
-};
-const formatToMarkdownV2 = (markdownText) => {
-  let processedText = markdownText;
-  processedText = processedText.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-    const escapedCode = escapeMarkdownV2Code(code);
-    return `\`\`\`${lang}
-${escapedCode}\`\`\``;
-  });
-  processedText = processedText.replace(/`(.*?)`/g, (match, code) => {
-    const escapedCode = escapeMarkdownV2Code(code);
-    return `\`${escapedCode}\``;
-  });
-  processedText = processedText.replace(/\[(.*?)\]\((.*?)\)/g, (match, text, url) => {
-    const escapedText = escapeMarkdownV2Text(text);
-    const escapedUrl = escapeMarkdownV2LinkUrl(url);
-    return `[${escapedText}](${escapedUrl})`;
-  });
-  processedText = processedText.replace(/\|\|(.*?)\|\|/g, (match, content) => {
-    const escapedContent = escapeMarkdownV2Text(content);
-    return `||${escapedContent}||`;
-  });
-  processedText = processedText.replace(/~~(.*?)~~/g, (match, content) => {
-    const escapedContent = escapeMarkdownV2Text(content);
-    return `~${escapedContent}~`;
-  });
-  processedText = processedText.replace(/\*\*(.*?)\*\*/g, (match, content) => {
-    const escapedContent = escapeMarkdownV2Text(content);
-    return `*${escapedContent}*`;
-  });
-  processedText = processedText.replace(/__(.*?)__/g, (match, content) => {
-    const escapedContent = escapeMarkdownV2Text(content);
-    return `__${escapedContent}__`;
-  });
-  processedText = processedText.replace(/^>>\s*(.*)$/gm, (match, content) => {
-    return `> ${content}`;
-  });
-  processedText = processedText.replace(/^>\s*(.*)$/gm, (match, content) => {
-    return `> ${content}`;
-  });
-  return processedText;
-};
-const formatToHtml = (markdownText) => {
-  let processedText = markdownText;
-  processedText = processedText.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-    if (lang) {
-      return `<pre><code class="language-${escapeHtml(lang)}">${code}</code></pre>`;
-    }
-    return `<pre>${code}</pre>`;
-  });
-  processedText = processedText.replace(/`(.*?)`/g, (match, code) => {
-    const escapedCode = escapeHtml(code);
-    return `<code>${escapedCode}</code>`;
-  });
-  processedText = processedText.replace(/\[(.*?)\]\((.*?)\)/g, (match, text, url) => {
-    const escapedText = escapeHtml(text);
-    const escapedUrl = escapeHtml(url);
-    return `<a href="${escapedUrl}">${escapedText}</a>`;
-  });
-  processedText = processedText.replace(/\|\|(.*?)\|\|/g, (match, content) => {
-    const escapedContent = escapeHtml(content);
-    return `<span class="tg-spoiler">${escapedContent}</span>`;
-  });
-  processedText = processedText.replace(/~~(.*?)~~/g, (match, content) => {
-    const escapedContent = escapeHtml(content);
-    return `<s>${escapedContent}</s>`;
-  });
-  processedText = processedText.replace(/\*\*(.*?)\*\*/g, (match, content) => {
-    const escapedContent = escapeHtml(content);
-    return `<b>${escapedContent}</b>`;
-  });
-  processedText = processedText.replace(/__(.*?)__/g, (match, content) => {
-    const escapedContent = escapeHtml(content);
-    return `<u>${escapedContent}</u>`;
-  });
-  const lines = processedText.split("\n");
-  const finalLines = [];
-  let currentBlockquote = [];
-  let isExpandableBlockquote = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.startsWith(">> ")) {
-      if (currentBlockquote.length === 0) {
-        isExpandableBlockquote = true;
-      } else if (!isExpandableBlockquote) {
-        finalLines.push(`<blockquote>${escapeHtml(currentBlockquote.join("\n"))}</blockquote>`);
-        currentBlockquote = [];
-        isExpandableBlockquote = true;
+  const parts = formatter.formatToParts(timeDate).reduce(
+    (acc, { type, value }) => {
+      if (type !== "literal") {
+        acc[type] = value;
       }
-      currentBlockquote.push(line.substring(3));
-    } else if (line.startsWith("> ")) {
-      if (currentBlockquote.length === 0) {
-        isExpandableBlockquote = false;
-      } else if (isExpandableBlockquote) {
-        finalLines.push(`<blockquote expandable>${escapeHtml(currentBlockquote.join("\n"))}</blockquote>`);
-        currentBlockquote = [];
-        isExpandableBlockquote = false;
-      }
-      currentBlockquote.push(line.substring(2));
-    } else {
-      if (currentBlockquote.length > 0) {
-        const tag = isExpandableBlockquote ? "<blockquote expandable>" : "<blockquote>";
-        finalLines.push(`${tag}${escapeHtml(currentBlockquote.join("\n"))}</blockquote>`);
-        currentBlockquote = [];
-        isExpandableBlockquote = false;
-      }
-      finalLines.push(line);
+      return acc;
+    },
+    {}
+  );
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} UTC+8`;
+};
+const sleep = async (delayMs) => {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+};
+const rotateArray = (arr, steps = 1, direction = "left") => {
+  const len = arr.length;
+  if (len === 0) return [];
+  let actualSteps = Math.abs(steps) % len;
+  if (direction === "right" || steps < 0) {
+    actualSteps = (len - actualSteps) % len;
+  }
+  return arr.slice(actualSteps).concat(arr.slice(0, actualSteps));
+};
+const sampleByShuffle = (arr, k = 3) => {
+  if (k <= 0) return [];
+  if (k >= arr.length) return arr.slice();
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a.slice(0, k);
+};
+const shortenString = (input) => {
+  const MAX = 4096;
+  const HEAD = 2e3;
+  const TAIL = 2e3;
+  if (typeof input !== "string") {
+    throw new TypeError("input must be a string");
+  }
+  const chars = getUTF8Byte(input);
+  if (chars.length <= MAX) return input;
+  const headPart = chars.slice(0, HEAD).join("");
+  const tailPart = chars.slice(chars.length - TAIL).join("");
+  return `${headPart}
+
+......
+
+${tailPart}`;
+};
+function getUTF8Byte(str) {
+  const encoder = new TextEncoder();
+  const encoded = encoder.encode(str);
+  return encoded;
+}
+const convertPcmToMp3 = async (pcmBuffer) => {
+  const sampleRate = 24e3;
+  const channels = 1;
+  const kbps = 128;
+  const mp3encoder = new lame.Mp3Encoder(channels, sampleRate, kbps);
+  const pcm16 = new Int16Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.length / 2);
+  const mp3Data = [];
+  const samplesPerFrame = 1152;
+  for (let i = 0; i < pcm16.length; i += samplesPerFrame) {
+    const chunk = pcm16.subarray(i, i + samplesPerFrame);
+    const mp3buf2 = mp3encoder.encodeBuffer(chunk);
+    if (mp3buf2.length > 0) {
+      mp3Data.push(Buffer.from(mp3buf2));
     }
   }
-  if (currentBlockquote.length > 0) {
-    const tag = isExpandableBlockquote ? "<blockquote expandable>" : "<blockquote>";
-    finalLines.push(`${tag}${escapeHtml(currentBlockquote.join("\n"))}</blockquote>`);
+  const mp3buf = mp3encoder.flush();
+  if (mp3buf.length > 0) {
+    mp3Data.push(Buffer.from(mp3buf));
   }
-  processedText = finalLines.join("\n");
-  return processedText;
+  return Buffer.concat(mp3Data);
 };
-const formatToMarkdownLegacy = (markdownText) => {
-  let processedText = markdownText;
-  processedText = processedText.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-    const escapedCode = escapeMarkdownLegacyText(code);
-    return `\`\`\`${lang}
-${escapedCode}\`\`\``;
-  });
-  processedText = processedText.replace(/`(.*?)`/g, (match, code) => {
-    const escapedCode = escapeMarkdownLegacyText(code);
-    return `\`${escapedCode}\``;
-  });
-  processedText = processedText.replace(/\[(.*?)\]\((.*?)\)/g, (match, text, url) => {
-    const linkText = escapeMarkdownLegacyText(text);
-    const linkUrl = escapeMarkdownLegacyLinkUrl(url);
-    return `[${linkText}](${linkUrl})`;
-  });
-  processedText = processedText.replace(/\*\*(.*?)\*\*/g, (match, content) => {
-    const innerContent = escapeMarkdownLegacyText(content);
-    return `*${innerContent}*`;
-  });
-  processedText = processedText.replace(/__(.*?)__/g, (match, content) => {
-    return escapeMarkdownLegacyText(content);
-  });
-  processedText = processedText.replace(/~~(.*?)~~/g, (match, content) => {
-    return escapeMarkdownLegacyText(content);
-  });
-  processedText = processedText.replace(/\|\|(.*?)\|\|/g, (match, content) => {
-    return escapeMarkdownLegacyText(content);
-  });
-  processedText = processedText.replace(/^>>\s*(.*)$/gm, (match, content) => {
-    return escapeMarkdownLegacyText(content);
-  });
-  processedText = processedText.replace(/^>\s*(.*)$/gm, (match, content) => {
-    return escapeMarkdownLegacyText(content);
-  });
-  let finalResult = "";
-  let k = 0;
-  const legacySpecialChars = "_*`[";
-  const markersToSkip = ["```", "[", "`", "*", "_"];
-  while (k < processedText.length) {
-    let isMarkerStart = false;
-    for (const marker of markersToSkip) {
-      if (processedText.substring(k, k + marker.length) === marker) {
+const MARKDOWN_MARK_REGEX = {
+  CODE_BLOCK: /```(\w*)\n([\s\S]+?)```/g,
+  INLINE_CODE: /`([^`]+?)`/g,
+  LINK: /\[([^\]]+?)\]\(([^)]+?)\)/g,
+  BOLD_ASTERISK: /\*\*(?!\s)(.*?)(?<!\s)\*\*/g,
+  UNDERLINE_UNDERSCORE: /__(?!\s)(.*?)(?<!\s)__/g,
+  STRIKETHROUGH: /~(?!\s)(.*?)(?<!\s)~/g,
+  SPOILER: /\|\|(?!\s)([\s\S]*?)(?<!\s)\|\|/g,
+  BLOCKQUOTE_LINE: /^(>>? .+(?:\n>>? .+)*)/gm
+};
+class Escapers {
+  markdownV2Text = (str) => {
+    return str.replace(/([_*[\]()~`>#+-=|{}.!])/g, "\\$1");
+  };
+  markdownV2Code = (str) => {
+    return str.replace(/([`\\])/g, "\\$1");
+  };
+  markdownV2Url = (str) => {
+    return str.replace(/([)\\])/g, "\\$1");
+  };
+  Html = (str) => {
+    return str.replace(/[<>&]/g, (c) => {
+      switch (c) {
+        case "&":
+          return "&amp;";
+        case "<":
+          return "&lt;";
+        case ">":
+          return "&gt;";
+        default:
+          return c;
+      }
+    });
+  };
+  markdown = (str) => {
+    return str.replace(/([_*[`])/g, "\\$1");
+  };
+}
+const escapers = new Escapers();
+class Formatters {
+  markdownV2 = (markdownText) => {
+    let processedText = markdownText;
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.CODE_BLOCK, (match, lang, code) => {
+      const escapedCode = escapers.markdownV2Code(code);
+      return `\`\`\`${lang}
+${escapedCode}
+\`\`\``;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.INLINE_CODE, (match, code) => {
+      const escapedCode = escapers.markdownV2Code(code);
+      return `\`${escapedCode}\``;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.LINK, (match, text, url) => {
+      const escapedText = escapers.markdownV2Text(text);
+      const escapedUrl = escapers.markdownV2Url(url);
+      return `[${escapedText}](${escapedUrl})`;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.SPOILER, (match, content) => {
+      const escapedContent = escapers.markdownV2Text(content);
+      return `||${escapedContent}||`;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.STRIKETHROUGH, (match, content) => {
+      const escapedContent = escapers.markdownV2Text(content);
+      return `~${escapedContent}~`;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.BOLD_ASTERISK, (match, content) => {
+      const escapedContent = escapers.markdownV2Text(content);
+      return `*${escapedContent}*`;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.UNDERLINE_UNDERSCORE, (match, content) => {
+      const escapedContent = escapers.markdownV2Text(content);
+      return `__${escapedContent}__`;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.BLOCKQUOTE_LINE, (match, content) => {
+      return `> ${content}`;
+    });
+    return processedText;
+  };
+  Html = (markdownText) => {
+    let processedText = markdownText;
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.CODE_BLOCK, (match, lang, code) => {
+      if (lang) {
+        return `<pre><code class="language-${escapers.Html(lang)}">${code}</code></pre>`;
+      }
+      return `<pre>${code}</pre>`;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.INLINE_CODE, (match, code) => {
+      const escapedCode = escapers.Html(code);
+      return `<code>${escapedCode}</code>`;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.LINK, (match, text, url) => {
+      const escapedText = escapers.Html(text);
+      const escapedUrl = escapers.Html(url);
+      return `<a href="${escapedUrl}">${escapedText}</a>`;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.SPOILER, (match, content) => {
+      const escapedContent = escapers.Html(content);
+      return `<span class="tg-spoiler">${escapedContent}</span>`;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.STRIKETHROUGH, (match, content) => {
+      const escapedContent = escapers.Html(content);
+      return `<s>${escapedContent}</s>`;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.BOLD_ASTERISK, (match, content) => {
+      const escapedContent = escapers.Html(content);
+      return `<b>${escapedContent}</b>`;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.UNDERLINE_UNDERSCORE, (match, content) => {
+      const escapedContent = escapers.Html(content);
+      return `<u>${escapedContent}</u>`;
+    });
+    processedText = processedText.replace(/^(>>? .+(?:\n>>? .+)*)/gm, (match) => {
+      const isExpandable = match.startsWith(">>");
+      const content = match.replace(/^(>>?)\s/gm, "");
+      const escapedContent = escapers.Html(content);
+      if (isExpandable) {
+        return `<blockquote expandable>${escapedContent}</blockquote>`;
+      }
+      return `<blockquote>${escapedContent}</blockquote>`;
+    });
+    return processedText;
+  };
+  markdown = (markdownText) => {
+    let processedText = markdownText;
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.CODE_BLOCK, (match, lang, code) => {
+      const escapedCode = escapers.markdown(code);
+      return `\`\`\`${lang}
+${escapedCode}
+\`\`\``;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.INLINE_CODE, (match, code) => {
+      const escapedCode = escapers.markdown(code);
+      return `\`${escapedCode}\``;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.LINK, (match, text, url) => {
+      const linkText = escapers.markdown(text);
+      return `[${linkText}](${url})`;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.BOLD_ASTERISK, (match, content) => {
+      const innerContent = escapers.markdown(content);
+      return `*${innerContent}*`;
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.UNDERLINE_UNDERSCORE, (match, content) => {
+      return escapers.markdown(content);
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.STRIKETHROUGH, (match, content) => {
+      return escapers.markdown(content);
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.SPOILER, (match, content) => {
+      return escapers.markdown(content);
+    });
+    processedText = processedText.replace(MARKDOWN_MARK_REGEX.BLOCKQUOTE_LINE, (match, content) => {
+      return escapers.markdown(content);
+    });
+    let finalResult = "";
+    let k = 0;
+    const legacySpecialChars = "_*`[";
+    const markersToSkip = ["```", "[", "`", "*", "_"];
+    while (k < processedText.length) {
+      let isMarkerStart = false;
+      for (const marker of markersToSkip) {
+        if (processedText.substring(k, k + marker.length) === marker) {
+          finalResult += processedText[k];
+          k++;
+          isMarkerStart = true;
+          break;
+        }
+      }
+      if (isMarkerStart) {
+        continue;
+      }
+      if (processedText[k] === "\\") {
+        finalResult += "\\\\";
+        k++;
+        continue;
+      }
+      if (legacySpecialChars.includes(processedText[k])) {
+        finalResult += "\\" + processedText[k];
+        k++;
+      } else {
         finalResult += processedText[k];
         k++;
-        isMarkerStart = true;
-        break;
       }
     }
-    if (isMarkerStart) {
-      continue;
-    }
-    if (processedText[k] === "\\") {
-      finalResult += "\\\\";
-      k++;
-      continue;
-    }
-    if (legacySpecialChars.includes(processedText[k])) {
-      finalResult += "\\" + processedText[k];
-      k++;
-    } else {
-      finalResult += processedText[k];
-      k++;
-    }
-  }
-  return finalResult;
-};
+    return finalResult;
+  };
+}
+const formatters = new Formatters();
 function formatText(text, parseMode) {
   if (parseMode === null) {
-    return escapeHtml(text);
+    return escapers.Html(text);
   }
   switch (parseMode) {
     case "HTML":
-      return formatToHtml(text);
+      return formatters.Html(text);
     case "MarkdownV2":
-      return formatToMarkdownV2(text);
+      return formatters.markdownV2(text);
     case "Markdown":
-      return formatToMarkdownLegacy(text);
+      return formatters.markdown(text);
     default:
       throw new TelegramError(`不支持的 parseMode: ${parseMode}`);
   }
@@ -370,9 +441,6 @@ const getOpeningTagString = (type, parseMode) => {
       case "b":
       case "strong":
         return "<b>";
-      case "i":
-      case "em":
-        return "<i>";
       case "u":
       case "ins":
         return "<u>";
@@ -404,8 +472,6 @@ const getOpeningTagString = (type, parseMode) => {
     switch (type) {
       case "mv2_bold":
         return "*";
-      case "mv2_italic":
-        return "_";
       case "mv2_underline":
         return "__";
       case "mv2_strikethrough":
@@ -428,8 +494,6 @@ const getOpeningTagString = (type, parseMode) => {
     switch (type) {
       case "legacy_bold":
         return "*";
-      case "legacy_italic":
-        return "_";
       case "legacy_code_inline":
         return "`";
       case "legacy_code_block":
@@ -448,9 +512,6 @@ const getClosingTagString = (type, parseMode) => {
       case "b":
       case "strong":
         return "</b>";
-      case "i":
-      case "em":
-        return "</i>";
       case "u":
       case "ins":
         return "</u>";
@@ -481,8 +542,6 @@ const getClosingTagString = (type, parseMode) => {
     switch (type) {
       case "mv2_bold":
         return "*";
-      case "mv2_italic":
-        return "_";
       case "mv2_underline":
         return "__";
       case "mv2_strikethrough":
@@ -505,8 +564,6 @@ const getClosingTagString = (type, parseMode) => {
     switch (type) {
       case "legacy_bold":
         return "*";
-      case "legacy_italic":
-        return "_";
       case "legacy_code_inline":
         return "`";
       case "legacy_code_block":
@@ -545,8 +602,6 @@ const balanceChunkTags = (chunk, parseMode, inheritedOpenTags) => {
         const supportedTags = [
           "b",
           "strong",
-          "i",
-          "em",
           "u",
           "ins",
           "s",
@@ -599,7 +654,6 @@ const balanceChunkTags = (chunk, parseMode, inheritedOpenTags) => {
           "||": "mv2_spoiler",
           __: "mv2_underline",
           "*": "mv2_bold",
-          _: "mv2_italic",
           "~": "mv2_strikethrough",
           "`": "mv2_code_inline",
           "[": "mv2_link",
@@ -609,7 +663,6 @@ const balanceChunkTags = (chunk, parseMode, inheritedOpenTags) => {
         const legacyMarkersMap = {
           "```": "legacy_code_block",
           "*": "legacy_bold",
-          _: "legacy_italic",
           "`": "legacy_code_inline",
           "[": "legacy_link",
           ")": "legacy_link_end"
@@ -650,7 +703,7 @@ const balanceChunkTags = (chunk, parseMode, inheritedOpenTags) => {
               }
             } else if (marker === "[") {
               currentStack.push(type);
-            } else if (marker === "`" || marker === "*" || marker === "_" || parseMode === "MarkdownV2" && marker === "~") {
+            } else if (marker === "`" || marker === "*" || parseMode === "MarkdownV2" && marker === "~") {
               if (top === type) {
                 currentStack.pop();
               } else {
@@ -710,9 +763,8 @@ const splitFormattedText = (formattedText, parseMode) => {
       codeBlockRanges.push({ start: match.index, end: match.index + match.length });
     }
   } else if (parseMode === "MarkdownV2" || parseMode === "Markdown") {
-    const codeBlockRegex = /```[\s\S]*?```/g;
     let match;
-    while ((match = codeBlockRegex.exec(formattedText)) !== null) {
+    while ((match = MARKDOWN_MARK_REGEX.CODE_BLOCK.exec(formattedText)) !== null) {
       codeBlockRanges.push({ start: match.index, end: match.index + match.length });
     }
   }
@@ -765,7 +817,7 @@ const splitFormattedText = (formattedText, parseMode) => {
   return chunks;
 };
 const scheduleTask = async (action, params, delayMs) => {
-  const { schedulerApiUrl, schedulerApiToken } = BotConfig.load();
+  const { schedulerApiUrl, schedulerApiToken } = config.load();
   const name = `${action}-${JSON.stringify(params)}`;
   const encoded = Buffer.from(schedulerApiToken, "utf-8").toString("base64");
   try {
@@ -791,242 +843,73 @@ const scheduleDeletion = (params, delayMs) => {
   void scheduleTask("deleteMessage", params, delayMs);
 };
 const sendFormattedMessage = async (chatId, standardMarkdownText, replyToMessageId, userId) => {
+  if (!standardMarkdownText || standardMarkdownText.trim().length === 0) {
+    return { ok: true, messageId: void 0 };
+  }
   const modesToTry = ["HTML", "MarkdownV2", "Markdown", null];
-  let lastMessageId = void 0;
   let lastError = null;
-  let currentReplyTo = replyToMessageId;
-  let originalTextSentLength = 0;
-  try {
-    for (const mode of modesToTry) {
-      Log.info(`尝试使用 ${mode === null ? "纯文本" : mode} 格式处理剩余文本...`);
-      const remainingOriginalText = standardMarkdownText.substring(originalTextSentLength);
-      if (remainingOriginalText.length === 0) {
-        Log.info(`剩余原始文本已发送完毕.`);
-        if (lastMessageId) {
-          return { ok: true, messageId: lastMessageId };
-        } else {
-          return { ok: true, messageId: void 0 };
-        }
-      }
-      let formattedText;
-      try {
-        formattedText = formatText(remainingOriginalText, mode);
-      } catch (e) {
-        Log.error(`格式化剩余文本为 ${mode === null ? "纯文本" : mode} 失败:`, { err: e });
-        lastError = e;
-        continue;
-      }
-      const rawChunks = splitFormattedText(formattedText, mode);
-      Log.info(`格式化后的剩余文本被分割成 ${rawChunks.length} 块.`);
-      let modeSuccessForRemaining = true;
-      let chunkIndex = 0;
+  for (const mode of modesToTry) {
+    Log.info(`尝试使用 [${mode ?? "纯文本"}] 格式发送全部消息...`);
+    const sentMessageIdsInCurrentAttempt = [];
+    let lastMessageId;
+    let currentReplyTo = replyToMessageId;
+    let modeSucceeded = true;
+    try {
+      const formattedText = formatText(standardMarkdownText, mode);
+      const chunks = splitFormattedText(formattedText, mode);
+      Log.info(`[${mode ?? "纯文本"}] 格式的文本被分割成 ${chunks.length} 块.`);
       let inheritedOpenTags = [];
-      while (chunkIndex < rawChunks.length) {
-        const rawChunk = rawChunks[chunkIndex];
-        const { balancedChunk, nextInheritedOpenTags } = balanceChunkTags(rawChunk, mode, inheritedOpenTags);
-        inheritedOpenTags = nextInheritedOpenTags;
-        Log.info(
-          `发送第 ${originalTextSentLength + chunkIndex + 1} 条消息 (当前块 ${chunkIndex + 1}/${rawChunks.length}, 长度: ${balancedChunk.length})...`
-        );
-        if (balancedChunk.trim().length === 0) {
-          Log.info(`跳过发送空消息块 (格式: ${mode === null ? "纯文本" : mode}).`);
-          originalTextSentLength += rawChunk.length;
-          chunkIndex++;
-          lastError = null;
+      for (let i = 0; i < chunks.length; i++) {
+        const rawChunk = chunks[i];
+        if (rawChunk.trim().length === 0) {
+          Log.info(`跳过发送空消息块 (块 ${i + 1}/${chunks.length})`);
           continue;
         }
+        const { balancedChunk, nextInheritedOpenTags } = balanceChunkTags(rawChunk, mode, inheritedOpenTags);
+        inheritedOpenTags = nextInheritedOpenTags;
+        Log.info(`发送消息 (块 ${i + 1}/${chunks.length}, 长度: ${balancedChunk.length}, 格式: ${mode ?? "纯文本"})...`);
         const replyMarkup = {
           inline_keyboard: makeInlineKeyboard(userId)
         };
-        const sendResult = await TelegramBot.sendMessage(chatId, balancedChunk, {
+        const sendResult = await bot.sendMessage(chatId, balancedChunk, {
           replyToMessageId: currentReplyTo,
           parseMode: mode === null ? void 0 : mode,
           replyMarkup
         });
         if (sendResult.ok) {
-          Log.info(`消息块发送成功 (格式: ${mode === null ? "纯文本" : mode}).`);
-          void scheduleDeletion({ chat_id: chatId, message_id: sendResult.messageId }, 24 * 60 * 6e4);
+          Log.info(`消息块 ${i + 1}/${chunks.length} 发送成功.`);
+          sentMessageIdsInCurrentAttempt.push(sendResult.messageId);
+          scheduleDeletion({ chat_id: chatId, message_id: sendResult.messageId }, 24 * 60 * 6e4);
           lastMessageId = sendResult.messageId;
           currentReplyTo = sendResult.messageId;
-          originalTextSentLength += rawChunk.length;
-          chunkIndex++;
-          lastError = null;
         } else {
-          Log.error(`消息块发送失败 (格式: ${mode === null ? "纯文本" : mode}).`);
+          Log.error(`消息块 ${i + 1}/${chunks.length} 发送失败 (格式: ${mode ?? "纯文本"}).`, { err: sendResult.error });
           lastError = sendResult.error;
-          modeSuccessForRemaining = false;
+          modeSucceeded = false;
+          if (sentMessageIdsInCurrentAttempt.length > 0) {
+            Log.warn(`[${mode ?? "纯文本"}] 模式发送中断，开始清理 ${sentMessageIdsInCurrentAttempt.length} 条已发送的消息...`);
+            bot.deleteMessages(chatId, sentMessageIdsInCurrentAttempt);
+            Log.info("后台进行清理操作。");
+          }
           break;
         }
       }
-      if (modeSuccessForRemaining) {
-        Log.info(`${mode === null ? "纯文本" : mode} 格式成功发送了所有剩余文本.`);
+      if (modeSucceeded) {
+        Log.info(`所有消息均已使用 [${mode ?? "纯文本"}] 格式成功发送.`);
         return { ok: true, messageId: lastMessageId };
       }
-      inheritedOpenTags = [];
-    }
-  } catch (error) {
-    lastError = error;
-  }
-  Log.error("所有格式化模式发送均失败.");
-  return { ok: false, error: lastError || new TelegramError("所有格式化模式发送失败") };
-};
-const markdownToHtml = (markdownText) => {
-  let htmlText = markdownText;
-  const REGEX = {
-    CODE_BLOCK: /```(\w*)\n([\s\S]+?)```/g,
-    INLINE_CODE: /`([^`]+?)`/g,
-    LINK: /\[([^\]]+?)\]\(([^)]+?)\)/g,
-    BOLD_ASTERISK: /\*\*(?!\s)(.*?)(?<!\s)\*\*/g,
-    UNDERLINE_UNDERSCORE: /__(?!\s)(.*?)(?<!\s)__/g,
-    ITALIC_ASTERISK: /\*(?!\s)(.*?)(?<!\s)\*/g,
-    STRIKETHROUGH: /~(?!\s)(.*?)(?<!\s)~/g,
-    SPOILER: /\|\|(?!\s)(.*?)(?<!\s)\|\|/g,
-    BLOCKQUOTE_LINE: /^(>>|>)\s*(.*)$/gm
-  };
-  try {
-    htmlText = htmlText.replace(REGEX.CODE_BLOCK, (_, lang, code) => {
-      const languageClass = lang ? `language-${escapeHtml(lang)}` : "";
-      return `<pre><code class="${languageClass}">${code}</code></pre>`;
-    });
-    htmlText = htmlText.replace(REGEX.INLINE_CODE, (_, code) => `<code>${escapeHtml(code)}</code>`);
-    htmlText = htmlText.replace(REGEX.LINK, (_, text, url) => {
-      const escapedText = escapeHtml(text);
-      const escapedUrl = escapeHtml(url);
-      return `<a href="${escapedUrl}">${escapedText}</a>`;
-    });
-    htmlText = htmlText.replace(REGEX.BOLD_ASTERISK, (_, content) => `<b>${escapeHtml(content)}</b>`);
-    htmlText = htmlText.replace(REGEX.UNDERLINE_UNDERSCORE, (_, content) => `<u>${escapeHtml(content)}</u>`);
-    htmlText = htmlText.replace(REGEX.ITALIC_ASTERISK, (_, content) => `<i>${escapeHtml(content)}</i>`);
-    htmlText = htmlText.replace(REGEX.STRIKETHROUGH, (_, content) => `<s>${escapeHtml(content)}</s>`);
-    htmlText = htmlText.replace(REGEX.SPOILER, (_, content) => `<span class="tg-spoiler">${escapeHtml(content)}</span>`);
-    const lines = htmlText.split("\n");
-    const finalLines = [];
-    let currentBlockquote = [];
-    let isExpandableBlockquote = null;
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const match = line.match(/^(>>|>)\s*(.*)$/);
-      if (match) {
-        const type = match[1];
-        const content = match[2];
-        if (currentBlockquote.length === 0) {
-          isExpandableBlockquote = type === ">>";
-          currentBlockquote.push(content);
-        } else if (type === ">>" && isExpandableBlockquote || type === ">" && !isExpandableBlockquote) {
-          currentBlockquote.push(content);
-        } else {
-          const tag = isExpandableBlockquote ? "<blockquote expandable>" : "<blockquote>";
-          finalLines.push(`${tag}${escapeHtml(currentBlockquote.join("\n"))}</blockquote>`);
-          currentBlockquote = [];
-          isExpandableBlockquote = type === ">>";
-          currentBlockquote.push(content);
-        }
-      } else {
-        if (currentBlockquote.length > 0) {
-          const tag = isExpandableBlockquote ? "<blockquote expandable>" : "<blockquote>";
-          finalLines.push(`${tag}${escapeHtml(currentBlockquote.join("\n"))}</blockquote>`);
-          currentBlockquote = [];
-          isExpandableBlockquote = null;
-        }
-        finalLines.push(line);
-      }
-    }
-    if (currentBlockquote.length > 0) {
-      const tag = isExpandableBlockquote ? "<blockquote expandable>" : "<blockquote>";
-      finalLines.push(`${tag}${escapeHtml(currentBlockquote.join("\n"))}</blockquote>`);
-    }
-    htmlText = finalLines.join("\n");
-    return htmlText;
-  } catch (error) {
-    Log.error("格式化文本为 HTML 格式时发生错误:", { err: error });
-    return markdownText;
-  }
-};
-const formatTime = (time = Date.now()) => {
-  const timeDate = typeof time === "number" ? new Date(time) : time;
-  const formatter = new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-    timeZone: "Asia/Shanghai"
-  });
-  const parts = formatter.formatToParts(timeDate).reduce(
-    (acc, { type, value }) => {
-      if (type !== "literal") {
-        acc[type] = value;
-      }
-      return acc;
-    },
-    {}
-  );
-  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} UTC+8`;
-};
-const sleep = async (delayMs) => {
-  return new Promise((resolve) => setTimeout(resolve, delayMs));
-};
-const rotateArray = (arr, steps = 1, direction = "left") => {
-  const len = arr.length;
-  if (len === 0) return [];
-  let actualSteps = Math.abs(steps) % len;
-  if (direction === "right" || steps < 0) {
-    actualSteps = (len - actualSteps) % len;
-  }
-  return arr.slice(actualSteps).concat(arr.slice(0, actualSteps));
-};
-const sampleByShuffle = (arr, k = 3) => {
-  if (k <= 0) return [];
-  if (k >= arr.length) return arr.slice();
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a.slice(0, k);
-};
-const shortenString = (input) => {
-  const MAX = 4096;
-  const HEAD = 2e3;
-  const TAIL = 2e3;
-  if (typeof input !== "string") {
-    throw new TypeError("input must be a string");
-  }
-  const chars = Array.from(input);
-  if (chars.length <= MAX) return input;
-  const headPart = chars.slice(0, HEAD).join("");
-  const tailPart = chars.slice(chars.length - TAIL).join("");
-  return `${headPart}
-
-......
-
-${tailPart}`;
-};
-const convertPcmToMp3 = async (pcmBuffer) => {
-  const sampleRate = 24e3;
-  const channels = 1;
-  const kbps = 128;
-  const mp3encoder = new lame.Mp3Encoder(channels, sampleRate, kbps);
-  const pcm16 = new Int16Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.length / 2);
-  const mp3Data = [];
-  const samplesPerFrame = 1152;
-  for (let i = 0; i < pcm16.length; i += samplesPerFrame) {
-    const chunk = pcm16.subarray(i, i + samplesPerFrame);
-    const mp3buf2 = mp3encoder.encodeBuffer(chunk);
-    if (mp3buf2.length > 0) {
-      mp3Data.push(Buffer.from(mp3buf2));
+      Log.warn(`[${mode ?? "纯文本"}] 格式发送失败，将尝试下一个格式...`);
+    } catch (formatError) {
+      const errorMessage = formatError instanceof Error ? formatError.message : String(formatError);
+      Log.error(`在处理 [${mode ?? "纯文本"}] 格式时发生严重错误.`, { err: errorMessage });
+      lastError = errorMessage;
     }
   }
-  const mp3buf = mp3encoder.flush();
-  if (mp3buf.length > 0) {
-    mp3Data.push(Buffer.from(mp3buf));
-  }
-  return Buffer.concat(mp3Data);
+  Log.error("所有格式化模式均发送失败。");
+  return { ok: false, error: new TelegramError(`所有格式化模式发送失败，${lastError}`, "ALL_FORMAT_MODES_FAILED") };
 };
 const sendErrorNotification = async (error, context = "") => {
-  const { adminId } = BotConfig.load();
+  const { adminId } = config.load();
   try {
     if (adminId) {
       const currentTime = formatTime(Date.now());
@@ -1034,15 +917,15 @@ const sendErrorNotification = async (error, context = "") => {
 
 *发生时间*: \`${currentTime}\`
 
-*错误上下文*: \`${escapeHtml(context)}\`
+*错误上下文*: \`${escapers.Html(context)}\`
 
-*错误信息*: \`${escapeHtml(error.message || String(error))}\`
+*错误信息*: \`${escapers.Html(error.message || String(error))}\`
 
 *堆栈追踪*:
 \`\`\`javascript
-${escapeHtml(error.stack || "N/A")}
+${escapers.Html(error.stack || "N/A")}
 \`\`\``;
-      await TelegramBot.sendMessage(adminId, markdownToHtml(errorMessage), { parseMode: "HTML" });
+      await bot.sendMessage(adminId, formatters.Html(errorMessage), { parseMode: "HTML" });
       Log.info("Error notification sent to admin.", { context, adminId });
     } else {
       Log.warn("Admin ID is not configured, unable to send error notification.", {
@@ -1058,7 +941,7 @@ ${escapeHtml(error.stack || "N/A")}
   }
 };
 const makeGitHubApiRequest = async (options) => {
-  const { githubToken } = BotConfig.load();
+  const { githubToken } = config.load();
   const { method, urlPath, queryParams } = options;
   const apiUrl = `https://api.github.com/${urlPath}${queryParams ? `?${queryParams}` : ""}`;
   Log.info(`尝试通过 GitHub API 请求: ${apiUrl}`);
@@ -1092,7 +975,7 @@ const makeGitHubApiRequest = async (options) => {
 };
 const makeRawFileRequest = async (rawPath) => {
   Log.info(`尝试获取原始文件内容: ${rawPath}`);
-  const { githubToken } = BotConfig.load();
+  const { githubToken } = config.load();
   const rawUrl = `https://raw.githubusercontent.com/${rawPath}`;
   try {
     const response = await fetch(rawUrl, {
@@ -1121,8 +1004,8 @@ const makeRawFileRequest = async (rawPath) => {
   }
 };
 class KvNamespace {
-  static callCloudflareApi = async (action, params) => {
-    const { cloudflareToken, cloudflareAccountId } = BotConfig.load();
+  callCloudflareApi = async (action, params) => {
+    const { cloudflareToken, cloudflareAccountId } = config.load();
     const { namespaceId, keyName, value, expiration_ttl } = params;
     const client = new Cloudflare({
       apiToken: cloudflareToken
@@ -1141,73 +1024,95 @@ class KvNamespace {
         return response;
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       Log.error("Error calling Cloudflare API:", {
-        err: error instanceof Error ? error.message : String(error)
+        err: errorMessage
       });
-      throw new KvNamespaceError(`Error calling Cloudflare API: ${error instanceof Error ? error.message : String(error)}`);
+      throw new KvNamespaceError(`Error calling Cloudflare API: ${errorMessage}`);
     }
   };
-  static read = async (namespaceId, keyName, resData) => {
+  read = async (namespaceId, keyName, resData) => {
     try {
-      const data = await KvNamespace.callCloudflareApi("get", {
+      const data = await this.callCloudflareApi("get", {
         namespaceId,
         keyName
       });
-      return resData === "json" ? await data.json() : await data.text();
+      return { success: true, data: resData === "json" ? await data.json() : await data.text() };
     } catch (error) {
+      const errorMessage = error instanceof KvNamespaceError ? error.message : String(error);
       Log.error(`Error reading from KV for ${keyName}:`, {
-        err: error instanceof Error ? error.message : String(error)
+        err: errorMessage
       });
-      return null;
+      return {
+        success: false,
+        error: errorMessage
+      };
     }
   };
-  static write = async (namespaceId, keyName, value, options = {}) => {
+  write = async (namespaceId, keyName, value, options = {}) => {
     try {
-      await KvNamespace.callCloudflareApi("update", {
+      await this.callCloudflareApi("update", {
         namespaceId,
         keyName,
         value,
         ...options
       });
+      return {
+        success: true
+      };
     } catch (error) {
+      const errorMessage = error instanceof KvNamespaceError ? error.message : String(error);
       Log.error(`Error writing to KV for keyName ${keyName}:`, {
-        err: error instanceof Error ? error.message : String(error)
+        err: errorMessage
       });
+      return {
+        success: false,
+        error: errorMessage
+      };
     }
   };
-  static delete = async (namespaceId, keyName) => {
+  delete = async (namespaceId, keyName) => {
     try {
-      await KvNamespace.callCloudflareApi("delete", {
+      await this.callCloudflareApi("delete", {
         namespaceId,
         keyName
       });
       Log.info(`Deleted from ${namespaceId} - keyName: ${keyName}`);
+      return {
+        success: true
+      };
     } catch (error) {
+      const errorMessage = error instanceof KvNamespaceError ? error.message : String(error);
       Log.error(`Error deleting from KV for keyName ${keyName}:`, {
-        err: error instanceof Error ? error.message : String(error)
+        err: errorMessage
       });
+      return {
+        success: false,
+        error: errorMessage
+      };
     }
   };
 }
+const kv = new KvNamespace();
 const DEFAULT_RETRY_SECONDS = 60;
 const recordTimestamp = async (namespaceId, keyName, timestamp) => {
-  await KvNamespace.write(namespaceId, keyName, timestamp.toString());
+  await kv.write(namespaceId, keyName, timestamp.toString());
 };
 const getTimestamp = async (namespaceId, keyName) => {
-  const timestampStr = await KvNamespace.read(namespaceId, keyName, "text");
-  if (timestampStr) {
-    const timestamp = parseInt(timestampStr, 10);
+  const timestampStr = await kv.read(namespaceId, keyName, "text");
+  if (timestampStr.success) {
+    const timestamp = parseInt(timestampStr.data, 10);
     if (!isNaN(timestamp)) {
       return timestamp;
     } else {
-      console.warn(`KV 中键 ${keyName} 存储了无效的时间戳: ${timestampStr}`);
+      Log.warn(`KV 中键 ${keyName} 存储了无效的时间戳: ${timestampStr}`);
       return null;
     }
   }
   return null;
 };
 const rateLimiterCheck = async (chatId) => {
-  const { rateLimitId: namespaceId, requestIntervalSecond: intervalSecond } = BotConfig.load();
+  const { rateLimitId: namespaceId, requestIntervalSecond: intervalSecond } = config.load();
   const keyName = `rate_limit_${chatId}`;
   const now = Date.now();
   const intervalMilliseconds = intervalSecond * 1e3;
@@ -1224,39 +1129,41 @@ const rateLimiterCheck = async (chatId) => {
       return { canProceed: false, retryAfterSeconds };
     }
   } catch (error) {
-    console.error(`限流器错误 (键: ${keyName}):`, error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    Log.error(`限流器错误 (键: ${keyName}):`, { err: errorMessage });
     return { canProceed: false, retryAfterSeconds: DEFAULT_RETRY_SECONDS };
   }
 };
 class ChatContexts {
-  static get = async (chatId, userId) => {
-    const { chatContextId } = BotConfig.load();
+  get = async (chatId, userId) => {
+    const { chatContextId } = config.load();
     const keyName = `contexts_${chatId}_${userId}`;
-    const contexts = await KvNamespace.read(chatContextId, keyName, "json") || [];
-    return contexts;
+    const contexts2 = await kv.read(chatContextId, keyName, "json");
+    return contexts2.success ? contexts2.data : [];
   };
-  static update = async (chatId, userId, contexts) => {
-    const { chatContextId, maxContextLength, contextsExpirationSecond } = BotConfig.load();
+  update = async (chatId, userId, contexts2) => {
+    const { chatContextId, maxContextLength, contextsExpirationSecond } = config.load();
     const keyName = `contexts_${chatId}_${userId}`;
-    const historyContexts = await ChatContexts.get(chatId, userId);
-    const newContexts = [...historyContexts, ...contexts];
+    const historyContexts = await this.get(chatId, userId);
+    const newContexts = [...historyContexts, ...contexts2];
     if (newContexts.length > maxContextLength) {
       newContexts.splice(0, newContexts.length - maxContextLength);
     }
-    await KvNamespace.write(chatContextId, keyName, JSON.stringify(newContexts), {
+    await kv.write(chatContextId, keyName, JSON.stringify(newContexts), {
       expiration_ttl: contextsExpirationSecond
     });
     Log.info(`${keyName}: Chat context updated success, current length ${newContexts.length}`);
   };
-  static clear = async (chatId, userId) => {
-    const { chatContextId, contextsExpirationSecond } = BotConfig.load();
+  clear = async (chatId, userId) => {
+    const { chatContextId, contextsExpirationSecond } = config.load();
     const keyName = `contexts_${chatId}_${userId}`;
-    await KvNamespace.write(chatContextId, keyName, JSON.stringify([]), {
+    await kv.write(chatContextId, keyName, JSON.stringify([]), {
       expiration_ttl: contextsExpirationSecond
     });
     Log.info(`${keyName}: Chat contexts cleared success.`);
   };
 }
+const contexts = new ChatContexts();
 class AppError extends Error {
   code;
   constructor(message, code) {
@@ -1268,6 +1175,13 @@ class AppError extends Error {
     if (typeof Error.captureStackTrace === "function") {
       Error.captureStackTrace(this, this.constructor);
     }
+  }
+}
+class ScriptError extends AppError {
+  constructor(message, code) {
+    super(message, code || "SCRIPT_HANDLE_ERROR");
+    this.message = message;
+    this.code = code;
   }
 }
 class GeminiError extends AppError {
@@ -1294,27 +1208,333 @@ class TelegramError extends AppError {
     super(message, code || "TELEGRAM_API_ERROR");
   }
 }
-const botCommands = [
+class StorageService {
+  scriptsStorageId;
+  constructor() {
+    const { scriptsStorageId } = config.load();
+    this.scriptsStorageId = scriptsStorageId;
+  }
+  async saveScript(scriptContent, tag) {
+    const result = await kv.write(this.scriptsStorageId, tag, scriptContent);
+    if (!result.success) {
+      throw new ScriptError(`脚本内容保存失败: ${result.error}`);
+    }
+    Log.info(`[StorageService] 脚本内容已保存, 标签: ${tag}`);
+  }
+  async getScript(tag) {
+    const result = await kv.read(this.scriptsStorageId, tag, "text");
+    if (!result.success) {
+      Log.error(`[StorageService] 读取脚本内容失败, 标签: ${tag}`, { err: result.error });
+      throw new ScriptError(`脚本内容读取失败: ${result.error}`);
+    }
+    if (result.data === null || result.data === void 0) {
+      throw new ScriptError(`脚本内容未找到, 标签: ${tag}`);
+    }
+    return result.data;
+  }
+  async deleteScript(tag) {
+    const result = await kv.delete(this.scriptsStorageId, tag);
+    if (!result.success) {
+      throw new ScriptError(`脚本内容删除失败: ${result.error}`);
+    }
+    Log.info(`[StorageService] 脚本内容已删除, 标签: ${tag}`);
+  }
+}
+const storageService = new StorageService();
+class HttpError extends Error {
+  response;
+  status;
+  statusText;
+  constructor(message, response) {
+    super(message);
+    this.name = "HttpError";
+    this.response = response;
+    this.status = response.status;
+    this.statusText = response.statusText;
+  }
+}
+class CustomBody {
+}
+class JsonBody extends CustomBody {
+  payload;
+  constructor(payload) {
+    super();
+    this.payload = payload;
+  }
+  get body() {
+    return JSON.stringify(this.payload);
+  }
+  get headers() {
+    return { "Content-Type": "application/json;charset=UTF-8" };
+  }
+}
+class FormDataBody extends CustomBody {
+  formData;
+  constructor(formData) {
+    super();
+    this.formData = formData;
+  }
+  get body() {
+    return this.formData;
+  }
+  get headers() {
+    return {};
+  }
+}
+const Body = {
+  json: (payload) => new JsonBody(payload),
+  formData: (formData) => new FormDataBody(formData)
+};
+class HttpClient {
+  DEFAULT_TIMEOUT = 6e4;
+  async request(url, options = {}) {
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      const error = new TypeError("HttpClient Error: URL 必须是一个有效的绝对路径 (以 http:// 或 https:// 开头)。");
+      return { data: null, ok: false, status: 0, statusText: "客户端错误", error };
+    }
+    const { responseType = "json", queryParams, body: originalBody, timeout, ...restOptions } = options;
+    const fetchOptions = { ...restOptions };
+    const finalUrl = this.buildUrlWithParams(url, queryParams);
+    const userHeaders = restOptions.headers || {};
+    let bodyHeaders = {};
+    if (originalBody instanceof CustomBody) {
+      fetchOptions.body = originalBody.body;
+      bodyHeaders = originalBody.headers;
+    } else {
+      fetchOptions.body = originalBody;
+    }
+    fetchOptions.headers = { ...bodyHeaders, ...userHeaders };
+    const controller = new AbortController();
+    const timeoutDuration = timeout ?? this.DEFAULT_TIMEOUT;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
+    fetchOptions.signal = controller.signal;
+    Log.info(`[HttpClient] 发起请求: ${fetchOptions.method || "GET"} ${finalUrl}`);
+    try {
+      const response = await fetch(finalUrl, fetchOptions);
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        const error = new HttpError(`HTTP 请求失败，状态码: ${response.status}`, response);
+        return { data: null, ok: false, status: response.status, statusText: response.statusText, error };
+      }
+      const data = await this.processResponse(response, responseType);
+      return { data, ok: true, status: response.status, statusText: response.statusText };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      const err = error instanceof Error ? error : new Error("未知网络错误");
+      return { data: null, ok: false, status: 0, statusText: "客户端错误", error: err };
+    }
+  }
+  get(url, options = {}) {
+    return this.request(url, { ...options, method: "GET" });
+  }
+  post(url, body, options = {}) {
+    return this.request(url, { ...options, method: "POST", body });
+  }
+  put(url, body, options = {}) {
+    return this.request(url, { ...options, method: "PUT", body });
+  }
+  patch(url, body, options = {}) {
+    return this.request(url, { ...options, method: "PATCH", body });
+  }
+  delete(url, options = {}) {
+    return this.request(url, { ...options, method: "DELETE" });
+  }
+  buildUrlWithParams(url, queryParams) {
+    if (!queryParams) return url;
+    const urlObject = new URL(url);
+    Object.entries(queryParams).forEach(([key, value]) => {
+      if (value !== void 0 && value !== null) {
+        urlObject.searchParams.append(key, String(value));
+      }
+    });
+    return urlObject.toString();
+  }
+  async processResponse(response, responseType) {
+    switch (responseType) {
+      case "json": {
+        const text = await response.text();
+        if (!text) return null;
+        try {
+          return JSON.parse(text);
+        } catch {
+          throw new Error(`HttpClient Error: 无法将响应解析为 JSON。`);
+        }
+      }
+      case "text":
+        return response.text();
+      case "arrayBuffer":
+        return response.arrayBuffer();
+      case "response":
+        return response;
+      default:
+        throw new Error(`HttpClient Error: 无效的 responseType '${responseType}'。`);
+    }
+  }
+}
+const Http = new HttpClient();
+class ExecutionService {
+  async executeScript(scriptContent, message, param) {
+    const startTime = process.hrtime.bigint();
+    const vm = new VM({
+      timeout: 6e4,
+      allowAsync: true,
+      sandbox: {
+        Http,
+        Body
+      }
+    });
+    try {
+      vm.run(scriptContent);
+      const scriptArgument = String(param ?? "");
+      vm.freeze(scriptArgument, "scriptArgument");
+      vm.freeze(message, "message");
+      const result = await vm.run("run(scriptArgument, message)");
+      const endTime = process.hrtime.bigint();
+      const duration = Number(endTime - startTime) / 1e6;
+      return {
+        success: true,
+        result,
+        duration
+      };
+    } catch (error) {
+      const endTime = process.hrtime.bigint();
+      const duration = Number(endTime - startTime) / 1e6;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes("'run' is not a function")) {
+        return {
+          success: false,
+          error: "脚本执行失败：脚本中未定义有效的 'run' 函数。",
+          duration
+        };
+      }
+      return {
+        success: false,
+        error: errorMessage,
+        duration
+      };
+    }
+  }
+}
+const executionService = new ExecutionService();
+class ScriptManager {
+  durableResourceId;
+  constructor() {
+    const { durableResourceId } = config.load();
+    this.durableResourceId = durableResourceId;
+  }
+  _getUserScriptsKey(userId) {
+    return `user_scripts_${userId}`;
+  }
+  async _getUserScripts(userId) {
+    const key = this._getUserScriptsKey(userId);
+    const result = await kv.read(this.durableResourceId, key, "json");
+    if (!result.success) {
+      if (result.error.includes("key not found")) {
+        return [];
+      }
+      throw new ScriptError(`读取用户脚本列表失败: ${result.error}`);
+    }
+    return result.data ?? [];
+  }
+  async _saveUserScripts(userId, scripts) {
+    const key = this._getUserScriptsKey(userId);
+    const result = await kv.write(this.durableResourceId, key, JSON.stringify(scripts));
+    if (!result.success) {
+      throw new ScriptError(`更新用户脚本列表失败: ${result.error}`);
+    }
+  }
+  async installForUser(userId, url, tag) {
+    const userScripts = await this._getUserScripts(userId);
+    if (userScripts.includes(tag)) {
+      Log.warn(`脚本标签 "${tag}" 已存在，将覆盖已有的脚本。`);
+    }
+    Log.info(`[ScriptManager] 正在为用户 ${userId} 从 ${url} 下载脚本...`);
+    const response = await fetch(url, { method: "GET" });
+    if (!response.ok) {
+      throw new ScriptError(`下载脚本失败，状态码: ${response.status}`);
+    }
+    const scriptContent = await response.text();
+    if (typeof scriptContent !== "string" || scriptContent.trim() === "") {
+      throw new ScriptError("下载的脚本内容无效或为空。");
+    }
+    await storageService.saveScript(scriptContent, tag);
+    try {
+      if (!userScripts.includes(tag)) {
+        const updatedScripts = [...userScripts, tag];
+        await this._saveUserScripts(userId, updatedScripts);
+      }
+      Log.info(`[ScriptManager] 用户 ${userId} 的脚本安装成功，标签: ${tag}`);
+    } catch (error) {
+      Log.error(`[ScriptManager] 更新用户脚本列表失败，正在回滚...`, { err: error });
+      await storageService.deleteScript(tag);
+      throw error;
+    }
+  }
+  async uninstallForUser(userId, tag) {
+    const userScripts = await this._getUserScripts(userId);
+    if (!userScripts.includes(tag)) {
+      throw new ScriptError(`脚本卸载失败：未找到标签为 "${tag}" 的脚本。`);
+    }
+    const updatedScripts = userScripts.filter((t) => t !== tag);
+    await this._saveUserScripts(userId, updatedScripts);
+    try {
+      await storageService.deleteScript(tag);
+      Log.info(`[ScriptManager] 用户 ${userId} 的脚本卸载成功，标签: ${tag}`);
+    } catch (error) {
+      Log.error(`[ScriptManager] 脚本内容删除失败，但用户列表已更新。标签: ${tag}`, { err: error });
+    }
+  }
+  async listForUser(userId) {
+    return this._getUserScripts(userId);
+  }
+  async runForUser(userId, tag, message, param) {
+    Log.info(`[ScriptManager] 用户 ${userId} 准备执行脚本，标签: ${tag}`);
+    const userScripts = await this._getUserScripts(userId);
+    if (!userScripts.includes(tag)) {
+      return {
+        success: false,
+        error: `权限错误：你未安装标签为 "${tag.replace(`script_${userId}_`, "")}" 的脚本。`,
+        duration: 0
+      };
+    }
+    try {
+      const scriptContent = await storageService.getScript(tag);
+      return executionService.executeScript(scriptContent, message, param);
+    } catch (error) {
+      const message2 = error instanceof ScriptError ? error.message : String(error);
+      return {
+        success: false,
+        error: `脚本执行准备失败: ${message2}`,
+        duration: 0
+      };
+    }
+  }
+}
+const scriptManager = new ScriptManager();
+const BaseCommands = [
   {
     name: "start",
     description: "开始使用",
     action: async (params) => {
-      Log.info("Executing /start command.");
+      Log.info("Executing start command.");
       const { chatId, userId, messageId, isCallback = false } = params;
-      const { modelName, durableResourceId, startReplyTextKeyName } = BotConfig.load();
-      const startReplyText = await KvNamespace.read(durableResourceId, startReplyTextKeyName, "text");
-      const replaceText = startReplyText?.replace("MODEL_NAME", modelName);
+      const { modelName, durableResourceId, startReplyTextKeyName } = config.load();
+      const startReply = await kv.read(durableResourceId, startReplyTextKeyName, "text");
+      if (!startReply.success) {
+        throw new KvNamespaceError(`Start 命令回复内容读取失败，${startReply.error}`, "START_REPLY_NOT_FOUND");
+      }
+      const replaceText = startReply.data.replace("MODEL_NAME", modelName).trim();
       const totalReactionsKeyName = `total_reactions_${chatId}`;
-      const totalReactions = await KvNamespace.read(durableResourceId, totalReactionsKeyName, "json");
+      const totalReactions = await kv.read(durableResourceId, totalReactionsKeyName, "json");
       const replyMarkup = {
         inline_keyboard: [
           [
             {
-              text: `群组总 👍 ${totalReactions?.like || 0}`,
+              text: `群组 👍 ${totalReactions.success ? totalReactions.data.like || 0 : 0}`,
               callback_data: "PLACEHOLDER"
             },
             {
-              text: `群组总 👎 ${totalReactions?.dislike || 0}`,
+              text: `群组 👎 ${totalReactions.success ? totalReactions.data.dislike || 0 : 0}`,
               callback_data: "PLACEHOLDER"
             }
           ],
@@ -1345,7 +1565,7 @@ const botCommands = [
             },
             {
               text: "❓ 常见问题",
-              callback_data: `mention_faq_${userId}`
+              callback_data: `cmd_faq_${userId}`
             }
           ],
           [
@@ -1362,17 +1582,51 @@ const botCommands = [
       };
       let startResult;
       if (isCallback) {
-        startResult = await TelegramBot.editMessageText(chatId, messageId, markdownToHtml(replaceText), { parseMode: "HTML", replyMarkup });
+        startResult = await bot.editMessageText(chatId, messageId, formatters.Html(replaceText), { parseMode: "HTML", replyMarkup });
       } else {
-        startResult = await TelegramBot.sendMessage(chatId, markdownToHtml(replaceText), {
+        startResult = await bot.sendMessage(chatId, formatters.Html(replaceText), {
           replyToMessageId: messageId,
           parseMode: "HTML",
           replyMarkup
         });
-        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 6e4);
       }
       if (startResult.ok) {
-        void scheduleDeletion({ chat_id: chatId, message_id: startResult.messageId }, 3 * 6e4);
+        scheduleDeletion({ chat_id: chatId, message_id: startResult.messageId }, 3 * 6e4);
+      }
+    }
+  },
+  {
+    name: "faq",
+    description: "常见问题",
+    action: async (params) => {
+      Log.info("Executing faq command.");
+      const { chatId, userId, messageId, isCallback = false } = params;
+      const { durableResourceId } = config.load();
+      const faqReply = await kv.read(durableResourceId, "cmd_faq_reply", "text");
+      if (!faqReply.success) {
+        throw new KvNamespaceError(`FAQ 命令回复内容读取失败，${faqReply.error}`, "FAQ_REPLY_NOT_FOUND");
+      }
+      const backReplyMarkup = {
+        inline_keyboard: [
+          [
+            {
+              text: "⬅️ Go Back",
+              callback_data: `cmd_start_${userId}`
+            }
+          ]
+        ]
+      };
+      let faqResult;
+      if (isCallback) {
+        faqResult = await bot.editMessageText(chatId, messageId, formatters.Html(faqReply.data.trim()), {
+          parseMode: "HTML",
+          replyMarkup: backReplyMarkup
+        });
+      } else {
+        faqResult = await bot.sendMessage(chatId, formatters.Html(faqReply.data.trim()), { replyToMessageId: messageId, parseMode: "HTML" });
+      }
+      if (faqResult.ok) {
+        scheduleDeletion({ chat_id: chatId, message_id: faqResult.messageId }, 5 * 6e4);
       }
     }
   },
@@ -1380,7 +1634,7 @@ const botCommands = [
     name: "clear",
     description: "清理对话历史",
     action: async (params) => {
-      Log.info("Executing /clear command.");
+      Log.info("Executing clear command.");
       const { chatId, userId, messageId, isCallback = false } = params;
       const clearingText = "🗑 Clearing...";
       const backReplyMarkup = {
@@ -1395,20 +1649,19 @@ const botCommands = [
       };
       let clearingResult;
       if (isCallback) {
-        clearingResult = await TelegramBot.editMessageText(chatId, messageId, clearingText, { replyMarkup: backReplyMarkup });
+        clearingResult = await bot.editMessageText(chatId, messageId, clearingText, { replyMarkup: backReplyMarkup });
       } else {
-        clearingResult = await TelegramBot.sendMessage(chatId, clearingText, { replyToMessageId: messageId });
-        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 6e4);
+        clearingResult = await bot.sendMessage(chatId, clearingText, { replyToMessageId: messageId });
       }
-      await ChatContexts.clear(chatId, userId);
+      await contexts.clear(chatId, userId);
       if (clearingResult.ok) {
         await sleep(3e3);
         const clearedText = "✅ 已成功清除你和我的历史对话";
-        const clearedResult = await TelegramBot.editMessageText(chatId, clearingResult.messageId, clearedText, {
+        const clearedResult = await bot.editMessageText(chatId, clearingResult.messageId, clearedText, {
           replyMarkup: isCallback ? backReplyMarkup : void 0
         });
         if (clearedResult.ok) {
-          void scheduleDeletion({ chat_id: chatId, message_id: clearedResult.messageId }, 3 * 6e4);
+          scheduleDeletion({ chat_id: chatId, message_id: clearedResult.messageId }, 3 * 6e4);
         }
       }
     }
@@ -1417,7 +1670,7 @@ const botCommands = [
     name: "tools",
     description: "模型可用工具",
     action: async (params) => {
-      Log.info("Executing /tools command.");
+      Log.info("Executing tools command.");
       const { chatId, userId, messageId, isCallback = false } = params;
       const toolFunctions = geminiTools[0]?.functionDeclarations || [];
       const toolList = toolFunctions?.map((tool) => `* **${tool.name}**
@@ -1459,46 +1712,46 @@ ${toolList}`;
             ]
           ]
         };
-        toolsResult = await TelegramBot.editMessageText(chatId, messageId, markdownToHtml(toolsText), {
+        toolsResult = await bot.editMessageText(chatId, messageId, formatters.Html(toolsText), {
           parseMode: "HTML",
           replyMarkup: backReplyMarkup
         });
       } else {
-        toolsResult = await TelegramBot.sendMessage(chatId, markdownToHtml(toolsText), {
+        toolsResult = await bot.sendMessage(chatId, formatters.Html(toolsText), {
           replyToMessageId: messageId,
           parseMode: "HTML",
           replyMarkup
         });
-        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 5 * 6e4);
       }
       if (toolsResult.ok) {
-        void scheduleDeletion({ chat_id: chatId, message_id: toolsResult.messageId }, 5 * 6e4);
+        scheduleDeletion({ chat_id: chatId, message_id: toolsResult.messageId }, 5 * 6e4);
       }
     }
-  },
+  }
+];
+const GenerateCommands = [
   {
-    name: "exp_img_gen",
+    name: "gen_img",
     description: "生成图片",
     action: async (params) => {
-      Log.info("Executing /exp_img_gen command.");
+      Log.info("Executing gen_img command.");
       const { chatId, userId, messageId, cleanText } = params;
-      const { durableResourceId, geminiApiKeysKeyName } = BotConfig.load();
-      const apiKeys = await KvNamespace.read(durableResourceId, geminiApiKeysKeyName, "json");
-      if (!apiKeys || apiKeys.length === 0) {
-        throw new GeminiError("未找到有效的 API 密钥，请检查配置。", "GEMINI_API_KEY_NOT_FOUND", false);
-      }
-      const [apiKey, apiKeyId] = apiKeys[Math.floor(Math.random() * apiKeys.length)];
-      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
+      const { durableResourceId, geminiApiKeysKeyName } = config.load();
       if (!cleanText) {
-        const notText = await TelegramBot.sendMessage(chatId, `没有有效的图片生成提示（NO_IMAGE_DESCRIPTION）`, { replyToMessageId: messageId });
+        const notText = await bot.sendMessage(chatId, `:img [图片生成提示]`, { replyToMessageId: messageId });
         if (notText.ok) {
-          void scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1e3);
+          scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1e3);
         }
-        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60 * 1e3);
         return;
       }
+      const apiKeys = await kv.read(durableResourceId, geminiApiKeysKeyName, "json");
+      if (!apiKeys.success) {
+        throw new KvNamespaceError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, "GEMINI_API_KEY_NOT_FOUND");
+      }
+      const [apiKey, apiKeyId] = apiKeys.data[Math.floor(Math.random() * apiKeys.data.length)];
+      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
       let renderMessageId = void 0;
-      const renderResult = await TelegramBot.sendMessage(chatId, `🎨 Rendering...`, { replyToMessageId: messageId });
+      const renderResult = await bot.sendMessage(chatId, `🎨 Rendering...`, { replyToMessageId: messageId });
       if (renderResult.ok) {
         renderMessageId = renderResult.messageId;
       }
@@ -1511,7 +1764,7 @@ ${toolList}`;
       };
       const response = await ToolExecutors.generateImage(args);
       if (renderMessageId) {
-        await TelegramBot.deleteMessage(chatId, renderMessageId);
+        await bot.deleteMessage(chatId, renderMessageId);
         renderMessageId = void 0;
       }
       if (!response.success) {
@@ -1520,28 +1773,27 @@ ${toolList}`;
     }
   },
   {
-    name: "exp_tts_gen",
+    name: "gen_tts",
     description: "生成语音",
     action: async (params) => {
-      Log.info("Executing /exp_tts_gen command.");
+      Log.info("Executing gen_tts command.");
       const { chatId, userId, messageId, cleanText } = params;
-      const { durableResourceId, geminiApiKeysKeyName } = BotConfig.load();
-      const apiKeys = await KvNamespace.read(durableResourceId, geminiApiKeysKeyName, "json");
-      if (!apiKeys || apiKeys.length === 0) {
-        throw new GeminiError("未找到有效的 API 密钥，请检查配置。", "GEMINI_API_KEY_NOT_FOUND", false);
-      }
-      const [apiKey, apiKeyId] = apiKeys[Math.floor(Math.random() * apiKeys.length)];
-      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
+      const { durableResourceId, geminiApiKeysKeyName } = config.load();
       if (!cleanText) {
-        const notText = await TelegramBot.sendMessage(chatId, `没有有效的语音生成提示（NO_SPEECH_DESCRIPTION）`, { replyToMessageId: messageId });
+        const notText = await bot.sendMessage(chatId, `:tts [语音生成提示]`, { replyToMessageId: messageId });
         if (notText.ok) {
-          void scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1e3);
+          scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1e3);
         }
-        void scheduleDeletion({ chat_id: chatId, message_id: messageId }, 3 * 60 * 1e3);
         return;
       }
+      const apiKeys = await kv.read(durableResourceId, geminiApiKeysKeyName, "json");
+      if (!apiKeys.success) {
+        throw new KvNamespaceError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, "GEMINI_API_KEY_NOT_FOUND");
+      }
+      const [apiKey, apiKeyId] = apiKeys.data[Math.floor(Math.random() * apiKeys.data.length)];
+      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
       let synthMessageId = void 0;
-      const synthResult = await TelegramBot.sendMessage(chatId, `🎙 Synthesizing...`, { replyToMessageId: messageId });
+      const synthResult = await bot.sendMessage(chatId, `🎙 Synthesizing...`, { replyToMessageId: messageId });
       if (synthResult.ok) {
         synthMessageId = synthResult.messageId;
       }
@@ -1554,7 +1806,7 @@ ${toolList}`;
       };
       const response = await ToolExecutors.generateSpeech(args);
       if (synthMessageId) {
-        await TelegramBot.deleteMessage(chatId, synthMessageId);
+        await bot.deleteMessage(chatId, synthMessageId);
         synthMessageId = void 0;
       }
       if (!response.success) {
@@ -1563,6 +1815,165 @@ ${toolList}`;
     }
   }
 ];
+const ScriptCommands = [
+  {
+    name: "script_add",
+    description: "添加脚本",
+    action: async (params) => {
+      Log.info("Executing script_add command.");
+      const { chatId, userId, messageId, cleanText, message } = params;
+      const { botToken } = config.load();
+      const { document, reply_to_message } = message;
+      const targetDocument = document ?? reply_to_message?.document;
+      let errorMessage = void 0;
+      if (!cleanText || cleanText.length > 20) {
+        errorMessage = ":add [脚本标签 < 20 个字符] ";
+      }
+      if (!targetDocument?.mime_type?.includes("javascript")) {
+        errorMessage = "[脚本文件] :add [脚本标签 < 20 个字符]";
+      }
+      if (errorMessage) {
+        const sentMsg = await bot.sendMessage(chatId, errorMessage, {
+          replyToMessageId: messageId
+        });
+        if (sentMsg.ok) {
+          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 6e4);
+        }
+        return;
+      }
+      const scriptTag = `script_${userId}_${cleanText}`;
+      const getResult = await bot.getFile(targetDocument.file_id);
+      if (!getResult.ok) {
+        throw new ScriptError(`无法获取文件信息: ${getResult.error}`);
+      }
+      const fileUrl = `https://api.telegram.org/file/bot${botToken}/${getResult.data.file_path}`;
+      try {
+        await scriptManager.installForUser(userId, fileUrl, scriptTag);
+        const successMessage = `✅ 脚本安装成功！
+<b>标签:</b> <code>${cleanText}</code>`;
+        const sentMsg = await bot.sendMessage(chatId, successMessage, {
+          replyToMessageId: messageId,
+          parseMode: "HTML"
+        });
+        if (sentMsg.ok) {
+          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 6e4);
+        }
+      } catch (error) {
+        const errorMessage2 = error instanceof Error ? error.message : "未知错误";
+        throw new ScriptError(`脚本安装失败：${errorMessage2}`);
+      }
+    }
+  },
+  {
+    name: "script_remove",
+    description: "删除脚本",
+    action: async (params) => {
+      Log.info("Executing script_remove command.");
+      const { chatId, userId, messageId, cleanText } = params;
+      if (!cleanText) {
+        const errorMessage = ":remove [脚本标签]";
+        const sentMsg = await bot.sendMessage(chatId, errorMessage, {
+          replyToMessageId: messageId
+        });
+        if (sentMsg.ok) {
+          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 6e4);
+        }
+        return;
+      }
+      const scriptTag = `script_${userId}_${cleanText}`;
+      try {
+        await scriptManager.uninstallForUser(userId, scriptTag);
+        const successMessage = `🗑️ 脚本删除成功！
+<b>标签:</b> <code>${cleanText}</code>`;
+        const sentMsg = await bot.sendMessage(chatId, successMessage, {
+          replyToMessageId: messageId,
+          parseMode: "HTML"
+        });
+        if (sentMsg.ok) {
+          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 6e4);
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "未知错误";
+        const errorReply = `脚本删除失败：${errorMessage}`;
+        const sentMsg = await bot.sendMessage(chatId, errorReply, {
+          replyToMessageId: messageId
+        });
+        if (sentMsg.ok) {
+          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 6e4);
+        }
+      }
+    }
+  },
+  {
+    name: "script_list",
+    description: "列出已安装的所有脚本",
+    action: async (params) => {
+      Log.info("Executing script_list command.");
+      const { chatId, userId, messageId } = params;
+      try {
+        const scripts = await scriptManager.listForUser(userId);
+        let replyText;
+        if (scripts.length === 0) {
+          replyText = "你还没有安装任何脚本。";
+        } else {
+          const scriptList = scripts.map((tag) => `  • <code>${tag.replace(`script_${userId}_`, "")}</code>`).join("\n");
+          replyText = `你已安装以下脚本：
+${scriptList}`;
+        }
+        const sentMsg = await bot.sendMessage(chatId, replyText, {
+          replyToMessageId: messageId,
+          parseMode: "HTML"
+        });
+        if (sentMsg.ok) {
+          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 6e4);
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "未知错误";
+        throw new ScriptError(`脚本列表获取失败：${errorMessage}`);
+      }
+    }
+  },
+  {
+    name: "script_run",
+    description: "运行脚本",
+    action: async (params) => {
+      Log.info("Executing script_run command.");
+      const { chatId, userId, messageId, cleanText, message } = params;
+      if (!cleanText) {
+        const errorMessage = ":run [脚本标签] [参数]";
+        const sentMsg2 = await bot.sendMessage(chatId, errorMessage, {
+          replyToMessageId: messageId
+        });
+        if (sentMsg2.ok) {
+          scheduleDeletion({ chat_id: chatId, message_id: sentMsg2.messageId }, 3 * 6e4);
+        }
+        return;
+      }
+      const [tag, ...args] = cleanText.split(/\s+/);
+      const scriptParam = args.join(" ");
+      const scriptTag = `script_${userId}_${tag}`;
+      const result = await scriptManager.runForUser(userId, scriptTag, message, scriptParam);
+      let replyText;
+      if (result.success) {
+        replyText = `✅ <b>脚本执行成功</b> (耗时: ${result.duration > 1e3 ? (result.duration / 1e3).toFixed(2) + "s" : result.duration.toFixed(2) + "ms"})
+
+<pre><code class="language-markdown">${result.result}</code></pre>`;
+      } else {
+        replyText = `❌ <b>脚本执行失败</b> (耗时:  ${result.duration > 1e3 ? (result.duration / 1e3).toFixed(2) + "s" : result.duration.toFixed(2) + "ms"})
+
+<pre><code class="language-markdown">${result.error}</code></pre>`;
+      }
+      const sentMsg = await bot.sendMessage(chatId, replyText, {
+        replyToMessageId: messageId,
+        parseMode: "HTML"
+      });
+      if (sentMsg.ok) {
+        scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 30 * 6e4);
+      }
+    }
+  }
+];
+const BotCommands = [...BaseCommands, ...GenerateCommands, ...ScriptCommands];
 const functionForSearch = [
   {
     name: "searchFilesInRepo",
@@ -1830,7 +2241,7 @@ const functionForGet = [
       properties: {
         filePaths: {
           type: Type.ARRAY,
-          description: '需要查询的文件路径列表，例如 ["MetaCubeX/Meta-docs/refs/heads/main/docs/api/index.md", "SagerNet/sing-box/refs/heads/dev-next/src/main.go", ...]，每次查询最少 4 个文件 ',
+          description: "需要查询的文件路径列表，每次最少查询 4 个文件 ",
           items: {
             type: Type.STRING,
             title: "File Path Item",
@@ -2009,26 +2420,28 @@ const geminiTools = [
   }
 ];
 class GeminiApi {
-  static MAX_RETRIES_COMMON = 3;
-  static BASE_RETRY_DELAY_MS = 1e4;
-  static SAFETY_SETTINGS = [
+  MAX_RETRIES_COMMON = 3;
+  BASE_RETRY_DELAY_MS = 1e4;
+  SAFETY_SETTINGS = [
     { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
     { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
     { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
     { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
     { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE }
   ];
-  static async _initializeApiCallContext(chatParams, initialContents) {
-    const { durableResourceId, systemPromptKeyName, geminiApiKeysKeyName, modelName, modelTemperature } = BotConfig.load();
+  async _initializeApiCallContext(chatParams, initialContents) {
+    const { durableResourceId, systemPromptKeyName, geminiApiKeysKeyName, modelName, modelTemperature } = config.load();
     const { chatId, userId, userMessageId, thinkMessageId } = chatParams;
-    const systemPrompt = await KvNamespace.read(durableResourceId, systemPromptKeyName, "text") || "You are a helpful assistant.";
-    const apiKeys = await KvNamespace.read(durableResourceId, geminiApiKeysKeyName, "json");
-    if (!apiKeys || apiKeys.length === 0) {
-      Log.error("未找到有效的 Gemini API 密钥。", { durableResourceId, geminiApiKeysKeyName });
-      throw new GeminiError("未找到有效的 API 密钥，请检查配置。", "GEMINI_API_KEY_NOT_FOUND", false);
+    const systemPrompt = await kv.read(durableResourceId, systemPromptKeyName, "text");
+    if (!systemPrompt.success) {
+      throw new KvNamespaceError(`系统提示获取失败，${systemPrompt.error}`, "SYSTEM_PROMPT_NOT_FOUND");
     }
-    Log.info(`系统提示 (systemPrompt):`, { systemPrompt: systemPrompt.slice(0, 200) });
-    const config = {
+    const apiKeys = await kv.read(durableResourceId, geminiApiKeysKeyName, "json");
+    if (!apiKeys.success) {
+      throw new GeminiError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, "GEMINI_API_KEY_NOT_FOUND");
+    }
+    Log.info(`系统提示 (systemPrompt):`, { systemPrompt: systemPrompt.data.slice(0, 200) });
+    const baseConfig = {
       maxOutputTokens: 65536,
       temperature: modelTemperature,
       thinkingConfig: { includeThoughts: true, thinkingBudget: -1 },
@@ -2039,18 +2452,18 @@ class GeminiApi {
         }
       },
       responseMimeType: "text/plain",
-      safetySettings: GeminiApi.SAFETY_SETTINGS,
-      systemInstruction: [{ text: systemPrompt }]
+      safetySettings: this.SAFETY_SETTINGS,
+      systemInstruction: [{ text: systemPrompt.data }]
     };
     return {
       chatId,
       userId,
       userMessageId,
       thinkMessageId,
-      systemPrompt,
-      apiKeys,
+      systemPrompt: systemPrompt.data,
+      apiKeys: apiKeys.data,
       modelName,
-      config,
+      config: baseConfig,
       contents: [...initialContents],
       metrics: {
         apiCallSuccessCount: 0,
@@ -2065,7 +2478,7 @@ class GeminiApi {
       }
     };
   }
-  static async _callGeminiApi(context) {
+  async _callGeminiApi(context) {
     Log.info(
       `API 调用轮次: ${context.metrics.apiCallSuccessCount}, 无效回复重试: ${context.metrics.emptyReplyRetryCount}, 客户端错误重试: ${context.metrics.errorRetryCount}`
     );
@@ -2106,42 +2519,42 @@ class GeminiApi {
     });
     return response;
   }
-  static async _executeApiCallWithRetries(context) {
-    for (let attempt = 0; attempt <= GeminiApi.MAX_RETRIES_COMMON; attempt++) {
+  async _executeApiCallWithRetries(context) {
+    for (let attempt = 0; attempt <= this.MAX_RETRIES_COMMON; attempt++) {
       try {
-        const response = await GeminiApi._callGeminiApi(context);
+        const response = await this._callGeminiApi(context);
         return response;
       } catch (error) {
         const err = error instanceof GeminiError ? error : new GeminiError(String(error), "API_CLIENT_ERROR", context.metrics.hasToolThoughts);
-        Log.error(`Gemini API 客户端或网络错误 (尝试 ${attempt + 1}/${GeminiApi.MAX_RETRIES_COMMON}):`, { err });
-        if (attempt < GeminiApi.MAX_RETRIES_COMMON) {
-          const delay = Math.floor(GeminiApi.BASE_RETRY_DELAY_MS * Math.pow(2, attempt + 1) * (0.8 + Math.random() * 0.4));
+        Log.error(`Gemini API 客户端或网络错误 (尝试 ${attempt + 1}/${this.MAX_RETRIES_COMMON}):`, { err });
+        if (attempt < this.MAX_RETRIES_COMMON) {
+          const delay = Math.floor(this.BASE_RETRY_DELAY_MS * Math.pow(2, attempt + 1) * (0.8 + Math.random() * 0.4));
           context.metrics.errorRetryCount++;
           if (context.thinkMessageId !== void 0) {
             const errorRetryText = `Gemini API 客户端错误，将在 ${Math.floor(delay / 1e3)} 秒后，进行第 ${attempt + 1} 次重试...`;
-            await TelegramBot.editMessageText(context.chatId, context.thinkMessageId, errorRetryText);
+            await bot.editMessageText(context.chatId, context.thinkMessageId, errorRetryText);
           }
           await sleep(delay);
           Log.info(`Gemini API 客户端错误，进行第 ${attempt + 1} 次重试...`);
         } else {
           if (context.thinkMessageId) {
-            await TelegramBot.deleteMessage(context.chatId, context.thinkMessageId);
+            await bot.deleteMessage(context.chatId, context.thinkMessageId);
           }
           const finalError = new GeminiError(
-            `Gemini API 客户端错误，已达最大重试次数 (${GeminiApi.MAX_RETRIES_COMMON})。
+            `Gemini API 客户端错误，已达最大重试次数 (${this.MAX_RETRIES_COMMON})。
 
 ${err}`,
             "MAX_API_CLIENT_RETRIES_REACHED",
             context.metrics.hasToolThoughts
           );
-          await GeminiApi._writeApiKeysToKv(context.apiKeys);
+          await this._writeApiKeysToKv(context.apiKeys);
           throw finalError;
         }
       }
     }
     throw new GeminiError("未知错误：客户端重试循环异常退出。", "UNKNOWN_RETRY_LOOP_EXIT", context.metrics.hasToolThoughts);
   }
-  static async _handleToolCalls(context, modelParts) {
+  async _handleToolCalls(context, modelParts) {
     const functionCalls = modelParts.filter((part) => part.functionCall);
     const functionTexts = modelParts.filter((part) => part.text);
     if (functionTexts.length > 0) {
@@ -2151,8 +2564,8 @@ ${err}`,
         if (context.thinkMessageId !== void 0) {
           const displayThoughtText = `<b>Thoughts</b>:
 
-<blockquote expandable>${escapeHtml(shortenString(thoughtTexts))}</blockquote>`;
-          await TelegramBot.editMessageText(context.chatId, context.thinkMessageId, displayThoughtText, { parseMode: "HTML" });
+<blockquote expandable>${escapers.Html(shortenString(thoughtTexts))}</blockquote>`;
+          await bot.editMessageText(context.chatId, context.thinkMessageId, displayThoughtText, { parseMode: "HTML" });
         }
       }
     }
@@ -2166,7 +2579,7 @@ ${err}`,
         chatId: context.chatId,
         userId: context.userId,
         userMessageId: context.userMessageId,
-        currentApiKey: context.apiKeys[0][0],
+        ...functionName?.startsWith("generate") ? { currentApiKey: context.apiKeys[0][0] } : {},
         ...functionArgs
       };
       if (typeof functionName === "string" && functionName in ToolExecutors) {
@@ -2207,7 +2620,7 @@ ${err}`,
     }
     return toolResponseParts;
   }
-  static _buildSuccessResponse(context, textParts) {
+  _buildSuccessResponse(context, textParts) {
     const finishedTime = Date.now();
     context.metrics.totalDurationSecond = Math.round((finishedTime - context.metrics.startProcessTime) / 1e3);
     return {
@@ -2225,20 +2638,20 @@ ${err}`,
       errorRetryCount: context.metrics.errorRetryCount
     };
   }
-  static async _writeApiKeysToKv(apiKeys) {
-    const { durableResourceId, geminiApiKeysKeyName } = BotConfig.load();
+  async _writeApiKeysToKv(apiKeys) {
+    const { durableResourceId, geminiApiKeysKeyName } = config.load();
     try {
-      await KvNamespace.write(durableResourceId, geminiApiKeysKeyName, JSON.stringify(apiKeys));
+      await kv.write(durableResourceId, geminiApiKeysKeyName, JSON.stringify(apiKeys));
       Log.info("已将最新的 API 密钥组写入 KvNamespace。");
     } catch (error) {
-      Log.error("写入 API 密钥到 KvNamespace 失败:", { error });
+      Log.error("写入 API 密钥到 kv 失败:", { error });
     }
   }
-  static generateContent = async (initialContents, chatParams) => {
-    const { maxApiCallRounds } = BotConfig.load();
+  generateContent = async (initialContents, chatParams) => {
+    const { maxApiCallRounds } = config.load();
     let context;
     try {
-      context = await GeminiApi._initializeApiCallContext(chatParams, initialContents);
+      context = await this._initializeApiCallContext(chatParams, initialContents);
     } catch (error) {
       const err = error instanceof GeminiError ? error : new GeminiError(String(error), "INITIALIZATION_ERROR", false);
       Log.error("初始化 API 调用上下文失败:", { err });
@@ -2248,39 +2661,39 @@ ${err}`,
     while (apiCallRoundCounter < maxApiCallRounds) {
       let response;
       try {
-        response = await GeminiApi._executeApiCallWithRetries(context);
+        response = await this._executeApiCallWithRetries(context);
       } catch (error) {
         throw error;
       }
       let candidate = response.candidates?.[0];
       let currentEmptyReplyAttempt = 0;
       while (!candidate || !candidate.content || !candidate.content.parts) {
-        if (currentEmptyReplyAttempt < GeminiApi.MAX_RETRIES_COMMON) {
-          const delay = Math.floor(GeminiApi.BASE_RETRY_DELAY_MS * Math.pow(2, currentEmptyReplyAttempt + 1) * (0.8 + Math.random() * 0.4));
+        if (currentEmptyReplyAttempt < this.MAX_RETRIES_COMMON) {
+          const delay = Math.floor(this.BASE_RETRY_DELAY_MS * Math.pow(2, currentEmptyReplyAttempt + 1) * (0.8 + Math.random() * 0.4));
           context.metrics.emptyReplyRetryCount++;
           currentEmptyReplyAttempt++;
           if (context.thinkMessageId !== void 0) {
             const emptyReplyRetryText = `Gemini API 响应为空，将在 ${Math.floor(delay / 1e3)} 秒后，进行第 ${currentEmptyReplyAttempt} 次重试...`;
-            await TelegramBot.editMessageText(context.chatId, context.thinkMessageId, emptyReplyRetryText);
+            await bot.editMessageText(context.chatId, context.thinkMessageId, emptyReplyRetryText);
           }
           Log.warn(
-            `Gemini API 返回结果不包含有效的 candidate 或 content，尝试重试 (无效回复重试 ${currentEmptyReplyAttempt}/${GeminiApi.MAX_RETRIES_COMMON})。`,
+            `Gemini API 返回结果不包含有效的 candidate 或 content，尝试重试 (无效回复重试 ${currentEmptyReplyAttempt}/${this.MAX_RETRIES_COMMON})。`,
             { response }
           );
           await sleep(delay);
           try {
-            response = await GeminiApi._executeApiCallWithRetries(context);
+            response = await this._executeApiCallWithRetries(context);
             candidate = response.candidates?.[0];
           } catch (error) {
             throw error;
           }
         } else {
           if (context.thinkMessageId) {
-            await TelegramBot.deleteMessage(context.chatId, context.thinkMessageId);
+            await bot.deleteMessage(context.chatId, context.thinkMessageId);
           }
-          const errorMsg2 = `Gemini API 未返回有效结果，已达最大无效回复重试次数 (${GeminiApi.MAX_RETRIES_COMMON})，请稍后再重新提问。`;
+          const errorMsg2 = `Gemini API 未返回有效结果，已达最大无效回复重试次数 (${this.MAX_RETRIES_COMMON})，请稍后再重新提问。`;
           Log.error(errorMsg2);
-          await GeminiApi._writeApiKeysToKv(context.apiKeys);
+          await this._writeApiKeysToKv(context.apiKeys);
           throw new GeminiError(errorMsg2, "MAX_EMPTY_REPLY_RETRIES_REACHED", context.metrics.hasToolThoughts);
         }
       }
@@ -2294,7 +2707,7 @@ ${err}`,
         parts
       });
       if (functionCalls.length > 0) {
-        const toolResponseParts = await GeminiApi._handleToolCalls(context, parts);
+        const toolResponseParts = await this._handleToolCalls(context, parts);
         if (toolResponseParts.length > 0) {
           context.contents.push({
             role: "user",
@@ -2303,7 +2716,7 @@ ${err}`,
           Log.info("工具执行结果已添加到消息历史，准备下一轮 API 调用");
         } else {
           Log.warn("模型调用了工具，但没有工具执行结果被记录，可能出现逻辑问题。");
-          await GeminiApi._writeApiKeysToKv(context.apiKeys);
+          await this._writeApiKeysToKv(context.apiKeys);
           return {
             response: { role: "model", parts: [{ text: "😥 抱歉，模型尝试使用工具但未能获取结果。" }] },
             ...context.metrics,
@@ -2316,12 +2729,12 @@ ${err}`,
         const textParts = parts.filter((part) => part.text);
         if (textParts.length > 0) {
           Log.info(`Gemini API 请求成功，返回文本响应。`);
-          await GeminiApi._writeApiKeysToKv(context.apiKeys);
-          return GeminiApi._buildSuccessResponse(context, textParts);
+          await this._writeApiKeysToKv(context.apiKeys);
+          return this._buildSuccessResponse(context, textParts);
         } else {
           Log.warn("Gemini API 返回非工具调用响应，但没有文本内容或其他可处理的 parts。", { response });
           const finishReason = candidate.finishReason;
-          await GeminiApi._writeApiKeysToKv(context.apiKeys);
+          await this._writeApiKeysToKv(context.apiKeys);
           return {
             response: {
               role: "model",
@@ -2337,10 +2750,11 @@ ${err}`,
     }
     const errorMsg = `达到最大 API 调用轮次 (${maxApiCallRounds})，未能获取最终回复。`;
     Log.error(errorMsg);
-    await GeminiApi._writeApiKeysToKv(context.apiKeys);
+    await this._writeApiKeysToKv(context.apiKeys);
     throw new GeminiError(errorMsg, "MAX_CALL_ROUNDS_REACHED", context.metrics.hasToolThoughts);
   };
 }
+const genai = new GeminiApi();
 const simpleGeminiApiResponse = (response) => {
   const simpleResponse = {
     ...response,
@@ -2491,8 +2905,8 @@ const loggerAdapter = {
   }
 };
 class TelegramBot {
-  static async sendRequest(httpMethod, apiMethod, body, isFormData = false) {
-    const { botApiUrl } = BotConfig.load();
+  async sendRequest(httpMethod, apiMethod, body, isFormData = false) {
+    const { botApiUrl } = config.load();
     const url = `${botApiUrl}/${apiMethod}`;
     try {
       const response = await fetch(url, {
@@ -2546,7 +2960,7 @@ class TelegramBot {
       );
     }
   }
-  static async sendMessage(chatId, text, options) {
+  async sendMessage(chatId, text, options) {
     const payload = {
       chat_id: chatId,
       text,
@@ -2561,7 +2975,7 @@ class TelegramBot {
       reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : void 0
     };
     try {
-      const result = await TelegramBot.sendRequest("POST", "sendMessage", payload);
+      const result = await this.sendRequest("POST", "sendMessage", payload);
       Log.info("Telegram message sent successfully.", {
         chatId,
         messageId: result.message_id
@@ -2571,19 +2985,20 @@ class TelegramBot {
         messageId: result.message_id
       };
     } catch (error) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error("Error sending Telegram message", {
-        err: error,
+        err: errorMessage,
         chatId,
-        text: text.substring(0, 100) + "..."
+        text: text.substring(0, 20) + "..."
       });
       return {
         ok: false,
-        error
+        error: errorMessage
       };
     }
   }
-  static async sendPhoto(chatId, photoBuffer, options) {
-    const shorten = `<blockquote expandable>${escapeHtml(shortenString(String(options?.caption)))}</blockquote>`;
+  async sendPhoto(chatId, photoBuffer, options) {
+    const shorten = `<blockquote expandable>${escapers.Html(shortenString(String(options?.caption)))}</blockquote>`;
     const payload = {
       chat_id: chatId,
       photo: photoBuffer,
@@ -2606,7 +3021,7 @@ class TelegramBot {
     formData.append("reply_parameters", JSON.stringify(payload.reply_parameters));
     formData.append("reply_markup", payload.reply_markup);
     try {
-      const result = await TelegramBot.sendRequest("POST", "sendPhoto", formData, true);
+      const result = await this.sendRequest("POST", "sendPhoto", formData, true);
       Log.info("Telegram photo message sent successfully.", {
         chatId,
         messageId: result.message_id
@@ -2616,17 +3031,18 @@ class TelegramBot {
         messageId: result.message_id
       };
     } catch (error) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error("Error sending Telegram photo message", {
-        err: error,
+        err: errorMessage,
         chatId
       });
       return {
         ok: false,
-        error
+        error: errorMessage
       };
     }
   }
-  static async sendVoice(chatId, voiceBuffer, options) {
+  async sendVoice(chatId, voiceBuffer, options) {
     const payload = {
       chat_id: chatId,
       voice: voiceBuffer,
@@ -2645,7 +3061,7 @@ class TelegramBot {
     formData.append("reply_parameters", JSON.stringify(payload.reply_parameters));
     formData.append("reply_markup", payload.reply_markup);
     try {
-      const result = await TelegramBot.sendRequest("POST", "sendVoice", formData, true);
+      const result = await this.sendRequest("POST", "sendVoice", formData, true);
       Log.info("Telegram voice message sent successfully.", {
         chatId,
         messageId: result.message_id
@@ -2655,17 +3071,18 @@ class TelegramBot {
         messageId: result.message_id
       };
     } catch (error) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error("Error sending Telegram voice message", {
-        err: error,
+        err: errorMessage,
         chatId
       });
       return {
         ok: false,
-        error
+        error: errorMessage
       };
     }
   }
-  static async editMessageText(chatId, messageId, text, options) {
+  async editMessageText(chatId, messageId, text, options) {
     const payload = {
       chat_id: chatId,
       message_id: messageId,
@@ -2677,30 +3094,31 @@ class TelegramBot {
       reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : void 0
     };
     try {
-      const result = await TelegramBot.sendRequest("POST", "editMessageText", payload);
+      const result = await this.sendRequest("POST", "editMessageText", payload);
       Log.info("Telegram message edited successfully.", {
         chatId,
         messageId: result.message_id
       });
       return { ok: true, messageId: result.message_id };
     } catch (error) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error("Error editing Telegram message", {
-        err: error,
+        err: errorMessage,
         chatId,
         messageId,
-        text: text.substring(0, 100) + "..."
+        text: text.substring(0, 20) + "..."
       });
-      return { ok: false, error };
+      return { ok: false, error: errorMessage };
     }
   }
-  static async editMessageReplyMarkup(chatId, messageId, replyMarkup) {
+  async editMessageReplyMarkup(chatId, messageId, replyMarkup) {
     const payload = {
       chat_id: chatId,
       message_id: messageId,
       reply_markup: JSON.stringify(replyMarkup)
     };
     try {
-      const result = await TelegramBot.sendRequest(
+      const result = await this.sendRequest(
         "POST",
         "editMessageReplyMarkup",
         payload
@@ -2711,53 +3129,56 @@ class TelegramBot {
       });
       return { ok: true, messageId: result.message_id };
     } catch (error) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error("Error editing Telegram message reply markup", {
-        err: error,
+        err: errorMessage,
         chatId,
         messageId
       });
-      return { ok: false, error };
+      return { ok: false, error: errorMessage };
     }
   }
-  static async deleteMessage(chatId, messageId) {
+  async deleteMessage(chatId, messageId) {
     const payload = {
       chat_id: chatId,
       message_id: messageId
     };
     try {
-      await TelegramBot.sendRequest("POST", "deleteMessage", payload);
+      await this.sendRequest("POST", "deleteMessage", payload);
       Log.info("Telegram message deleted successfully.", { chatId, messageId });
       return { ok: true };
     } catch (error) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error("Error deleting Telegram message", {
-        err: error,
+        err: errorMessage,
         chatId,
         messageId
       });
-      return { ok: false, error };
+      return { ok: false, error: errorMessage };
     }
   }
-  static async deleteMessages(chatId, messageIds) {
+  async deleteMessages(chatId, messageIds) {
     const payload = {
       chat_id: chatId,
       message_ids: messageIds
     };
     try {
-      await TelegramBot.sendRequest("POST", "deleteMessages", payload);
+      await this.sendRequest("POST", "deleteMessages", payload);
       Log.info("Telegram message deleted successfully.", { chatId, messageIds });
       return { ok: true };
     } catch (error) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error("Error deleting Telegram message", {
-        err: error,
+        err: errorMessage,
         chatId,
         messageIds
       });
-      return { ok: false, error };
+      return { ok: false, error: errorMessage };
     }
   }
-  static async setBotCommands(chatId, userId) {
+  async setBotCommands(chatId, userId) {
     const payload = {
-      commands: botCommands.map((command) => ({
+      commands: BotCommands.map((command) => ({
         command: command.name,
         description: command.description
       })),
@@ -2768,66 +3189,70 @@ class TelegramBot {
       }
     };
     try {
-      await TelegramBot.sendRequest("POST", "setMyCommands", payload);
+      await this.sendRequest("POST", "setMyCommands", payload);
       Log.info("Bot commands set successfully.", { chatId });
       return { ok: true };
     } catch (error) {
-      Log.error("Error setting bot commands", { err: error, chatId });
-      return { ok: false, error };
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
+      Log.error("Error setting bot commands", { err: errorMessage });
+      return { ok: false, error: errorMessage };
     }
   }
-  static async getFile(fileId) {
+  async getFile(fileId) {
     Log.info(`Getting file info for file_id: ${fileId}`);
     try {
-      const result = await TelegramBot.sendRequest("POST", "getFile", {
+      const result = await this.sendRequest("POST", "getFile", {
         file_id: fileId
       });
       return { ok: true, data: result };
     } catch (error) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error(`Error in getFile for file_id ${fileId}`, {
-        err: error,
+        err: errorMessage,
         fileId
       });
-      return { ok: false, error };
+      return { ok: false, error: errorMessage };
     }
   }
-  static async getChatMember(chatId, userId) {
+  async getChatMember(chatId, userId) {
     const payload = {
       chat_id: chatId,
       user_id: userId
     };
     try {
-      const result = await TelegramBot.sendRequest("POST", "getChatMember", payload);
+      const result = await this.sendRequest("POST", "getChatMember", payload);
       return { ok: true, data: result };
     } catch (error) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error(`Error in getChatMember for chat_id ${chatId}, user_id ${userId}`, {
-        err: error,
+        err: errorMessage,
         chatId,
         userId
       });
-      return { ok: false, error };
+      return { ok: false, error: errorMessage };
     }
   }
-  static async answerCallbackQuery(callbackQueryId, options) {
+  async answerCallbackQuery(callbackQueryId, options) {
     const payload = {
       callback_query_id: callbackQueryId,
       text: options?.callbackText,
       show_alert: options?.showAlert
     };
     try {
-      await TelegramBot.sendRequest("POST", "answerCallbackQuery", payload);
+      await this.sendRequest("POST", "answerCallbackQuery", payload);
       Log.info("Callback query answered successfully.", { callbackQueryId, callbackText: options?.callbackText });
       return { ok: true };
-    } catch (err) {
+    } catch (error) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error("Error answering callback query", {
-        err,
+        err: errorMessage,
         callbackQueryId,
         callbackText: options?.callbackText
       });
-      return { ok: false, error: err };
+      return { ok: false, error: errorMessage };
     }
   }
-  static async answerInlineQuery(inlineQueryId, inlineResult, options) {
+  async answerInlineQuery(inlineQueryId, inlineResult, options) {
     const payload = {
       inline_query_id: inlineQueryId,
       results: JSON.stringify(inlineResult),
@@ -2837,18 +3262,20 @@ class TelegramBot {
       button: options?.button ? JSON.stringify(options.button) : void 0
     };
     try {
-      await TelegramBot.sendRequest("POST", "answerInlineQuery", payload);
+      await this.sendRequest("POST", "answerInlineQuery", payload);
       Log.info("Inline query answered successfully.", { inlineQueryId });
       return { ok: true };
-    } catch (err) {
+    } catch (error) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error("Error answering inline query", {
-        err,
+        err: errorMessage,
         inlineQueryId
       });
-      return { ok: false, error: err };
+      return { ok: false, error: errorMessage };
     }
   }
 }
+const bot = new TelegramBot();
 const REACTiON_ROW = [
   {
     text: "👍",
@@ -3093,7 +3520,7 @@ const ToolExecutors = {
         const result = await makeRawFileRequest(file);
         if (result.success) {
           const assetContent = result.data;
-          const MAX_CHUNK_LENGTH = 1024;
+          const MAX_CHUNK_LENGTH = 2048;
           const chunkedContent = [];
           for (let i = 0; i < assetContent.length; i += MAX_CHUNK_LENGTH) {
             chunkedContent.push({
@@ -3220,7 +3647,7 @@ const ToolExecutors = {
     return { success: true, data: { currentTime } };
   },
   generateImage: async (args) => {
-    Log.info("执行工具: sendPhotoMessage");
+    Log.info("执行工具: sendPhotoMessage，参数:", { args: { ...args, currentApiKey: "***" } });
     const { chatId, userId, userMessageId, currentApiKey, prompt } = args;
     const modelName = "gemini-2.0-flash-preview-image-generation";
     const modelConfig = {
@@ -3241,7 +3668,7 @@ const ToolExecutors = {
       const replyMarkup = {
         inline_keyboard: makeInlineKeyboard(userId)
       };
-      const result = await TelegramBot.sendPhoto(chatId, imageBuffer, { caption: resTexts, replyToMessageId: userMessageId, replyMarkup });
+      const result = await bot.sendPhoto(chatId, imageBuffer, { caption: resTexts, replyToMessageId: userMessageId, replyMarkup });
       if (!result.ok) {
         return { success: false, error: `Error replying image message, ${result.error}` };
       }
@@ -3253,7 +3680,7 @@ const ToolExecutors = {
     }
   },
   generateSpeech: async (args) => {
-    Log.info("执行工具: sendVoiceMessage");
+    Log.info("执行工具: sendVoiceMessage，参数:", { args: { ...args, currentApiKey: "***" } });
     const { chatId, userId, userMessageId, currentApiKey, prompt } = args;
     const modelName = "gemini-2.5-flash-preview-tts";
     const modelConfig = {
@@ -3277,7 +3704,7 @@ const ToolExecutors = {
       const replyMarkup = {
         inline_keyboard: makeInlineKeyboard(userId)
       };
-      const result = await TelegramBot.sendVoice(chatId, mp3AudioBuffer, { replyToMessageId: userMessageId, replyMarkup });
+      const result = await bot.sendVoice(chatId, mp3AudioBuffer, { replyToMessageId: userMessageId, replyMarkup });
       if (!result.ok) {
         return { success: false, error: `Error replying speech message, ${result.error}` };
       }
@@ -3291,13 +3718,13 @@ const ToolExecutors = {
 };
 const callMultiModalModels = async (apiKey, model, modelConfig, contents) => {
   const ai = new GoogleGenAI({ apiKey });
-  const config = {
+  const config2 = {
     ...modelConfig,
-    safetySettings: GeminiApi.SAFETY_SETTINGS
+    safetySettings: genai.SAFETY_SETTINGS
   };
   Log.info("发送 Gemini API 请求...");
   Log.info("当前发送的 contents:", { contents });
-  const response = await ai.models.generateContent({ model, contents, config });
+  const response = await ai.models.generateContent({ model, contents, config: config2 });
   Log.info(`Gemini API 响应: `, {
     response: simpleGeminiApiResponse(response)
   });
@@ -3314,16 +3741,17 @@ const handleCommand = async (message) => {
   const messageEntities = message.entities || message.caption_entities;
   const commandEntity = messageEntities.find((entity) => entity.type === "bot_command");
   const fullCommandText = messageText.substring(commandEntity.offset, commandEntity.offset + commandEntity.length);
-  void TelegramBot.setBotCommands(chat.id, from?.id);
+  bot.setBotCommands(chat.id, from?.id);
   const commandName = fullCommandText.slice(1).split("@")[0].trim();
   const cleanText = messageText.replace(fullCommandText, "").trim();
-  const targetCommand = botCommands.find((cmd) => cmd.name === commandName);
+  const targetCommand = BotCommands.find((cmd) => cmd.name === commandName);
   if (targetCommand) {
     await targetCommand.action({
       chatId: chat.id,
       userId: from?.id,
       messageId,
-      cleanText
+      cleanText,
+      message
     });
   }
 };
@@ -3353,9 +3781,9 @@ const downloadFileAsArrayBuffer = async (url) => {
   }
 };
 const handleImage = async (image) => {
-  const { botToken } = BotConfig.load();
+  const { botToken } = config.load();
   const { file_id } = image[image.length - 1];
-  const result = await TelegramBot.getFile(file_id);
+  const result = await bot.getFile(file_id);
   if (result.ok) {
     const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
     const imageArrayBuffer = await downloadFileAsArrayBuffer(fileUrl);
@@ -3385,7 +3813,7 @@ const SUPPORTED_MIME_TYPES = [
   "video/mpeg"
 ];
 const handleDocument = async (document) => {
-  const { botToken } = BotConfig.load();
+  const { botToken } = config.load();
   const { file_id, mime_type } = document;
   let universalMimeType = void 0;
   if (!SUPPORTED_MIME_TYPES.includes(String(mime_type))) {
@@ -3401,7 +3829,7 @@ const handleDocument = async (document) => {
       throw new AppError(`不支持的文件类型: ${mime_type || "未知"}`, "FILE_TYPE_NOT_SUPPORTED");
     }
   }
-  const result = await TelegramBot.getFile(file_id);
+  const result = await bot.getFile(file_id);
   if (result.ok) {
     const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
     const documentArrayBuffer = await downloadFileAsArrayBuffer(fileUrl);
@@ -3464,9 +3892,9 @@ const isBinaryApplicationMime = (mime, opts) => {
   return defaultToBinary;
 };
 const handleVideo = async (video) => {
-  const { botToken } = BotConfig.load();
+  const { botToken } = config.load();
   const { file_id } = video;
-  const result = await TelegramBot.getFile(file_id);
+  const result = await bot.getFile(file_id);
   if (result.ok) {
     const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
     const videoArrayBuffer = await downloadFileAsArrayBuffer(fileUrl);
@@ -3510,12 +3938,12 @@ const extractMessageParts = async (message, botName) => {
   return parts;
 };
 class MentionHandler {
-  static async _handleRateLimiting(message, adminId) {
+  async handleRateLimiting(message, adminId) {
     const { message_id: userMessageId, from, chat } = message;
     const checkResult = await rateLimiterCheck(chat.id);
     if (!checkResult.canProceed && from?.id !== adminId) {
       Log.info(`Rate limit exceeded for chat ${chat.id}. Retry after ${checkResult.retryAfterSeconds} seconds.`);
-      const rateLimitResult = await TelegramBot.sendMessage(chat.id, `超出速率限制，请等待 ${checkResult.retryAfterSeconds} 秒后重试。`, {
+      const rateLimitResult = await bot.sendMessage(chat.id, `超出速率限制，请等待 ${checkResult.retryAfterSeconds} 秒后重试。`, {
         replyToMessageId: userMessageId
       });
       if (rateLimitResult.ok) {
@@ -3525,17 +3953,17 @@ class MentionHandler {
     }
     return false;
   }
-  static async _sendFileUploadMessage(message, replyToMessage, chatId, userMessageId) {
+  async sendFileUploadMessage(message, replyToMessage, chatId, userMessageId) {
     if (containsFile(message) || containsFile(replyToMessage)) {
-      const uploadingResult = await TelegramBot.sendMessage(chatId, "📄 File uploading...", {
+      const uploadingResult = await bot.sendMessage(chatId, "📄 File uploading...", {
         replyToMessageId: userMessageId
       });
       return uploadingResult.ok ? uploadingResult.messageId : null;
     }
     return null;
   }
-  static async _buildCompleteContents(chatId, fromUserId, currentMessage, botName) {
-    const historyChatContents = await ChatContexts.get(chatId, fromUserId);
+  async buildCompleteContents(chatId, fromUserId, currentMessage, botName) {
+    const historyChatContents = await contexts.get(chatId, fromUserId);
     const completeContents = [...historyChatContents];
     let currentMessageCopy = { ...currentMessage };
     if (currentMessage.reply_to_message) {
@@ -3566,8 +3994,8 @@ ${currentMessage.text || currentMessage.caption}`;
     }
     return completeContents;
   }
-  static async _sendThinkingMessage(chatId, userMessageId) {
-    const thinkingResult = await TelegramBot.sendMessage(chatId, "✨ Thinking...", {
+  async sendThinkingMessage(chatId, userMessageId) {
+    const thinkingResult = await bot.sendMessage(chatId, "✨ Thinking...", {
       replyToMessageId: userMessageId
     });
     if (!thinkingResult.ok) {
@@ -3576,7 +4004,7 @@ ${currentMessage.text || currentMessage.caption}`;
     }
     return thinkingResult.messageId;
   }
-  static async _processGeminiResponse(geminiResponse, chatId, userMessageId, thinkMessageId, botName, modelName, fromUserId, completeContentsBeforeCall) {
+  async processGeminiResponse(geminiResponse, chatId, userMessageId, thinkMessageId, botName, modelName, fromUserId, completeContentsBeforeCall) {
     let hasDisplayedThoughts = false;
     const {
       response,
@@ -3595,14 +4023,14 @@ ${currentMessage.text || currentMessage.caption}`;
       hasDisplayedThoughts = true;
       const displayThoughtText = `<b>Thoughts</b>:
 
-<blockquote expandable>${escapeHtml(shortenString(resThoughtTexts))}</blockquote>`;
+<blockquote expandable>${escapers.Html(shortenString(resThoughtTexts))}</blockquote>`;
       const replyMarkup = {
         inline_keyboard: makeInlineKeyboard(fromUserId)
       };
-      await TelegramBot.editMessageText(chatId, thinkMessageId, displayThoughtText, { parseMode: "HTML", replyMarkup });
+      await bot.editMessageText(chatId, thinkMessageId, displayThoughtText, { parseMode: "HTML", replyMarkup });
     }
     if (!hasToolThoughts && !hasDisplayedThoughts) {
-      await TelegramBot.deleteMessage(chatId, thinkMessageId);
+      await bot.deleteMessage(chatId, thinkMessageId);
     } else {
       void scheduleDeletion({ chat_id: chatId, message_id: thinkMessageId }, 30 * 6e4);
     }
@@ -3613,7 +4041,7 @@ ${currentMessage.text || currentMessage.caption}`;
       const replyMarkup = {
         inline_keyboard: makeInlineKeyboard(fromUserId)
       };
-      const replyResult = await TelegramBot.sendMessage(chatId, replyText, {
+      const replyResult = await bot.sendMessage(chatId, replyText, {
         replyToMessageId: userMessageId,
         replyMarkup
       });
@@ -3631,30 +4059,29 @@ ${resTexts}
 ⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。`;
     const finalReplyResult = await sendFormattedMessage(chatId, fullText, userMessageId, fromUserId);
     if (!finalReplyResult.ok) {
-      const error = finalReplyResult.error || new TelegramError("发送最终回复时发生未知错误");
-      throw error;
+      throw finalReplyResult.error;
     }
     if (resTexts) {
       const botResponseContent = {
         role: "model",
         parts: response.parts
       };
-      await ChatContexts.update(chatId, fromUserId, [
+      await contexts.update(chatId, fromUserId, [
         ...completeContentsBeforeCall,
         botResponseContent
       ]);
     }
     return hasDisplayedThoughts;
   }
-  static async handleMention(message, isChat = false) {
-    const { modelName, botName, adminId } = BotConfig.load();
+  async handleMention(message, isChat = false) {
+    const { modelName, botName, adminId } = config.load();
     const { message_id: userMessageId, from, chat, reply_to_message } = message;
     Log.info("Handling mention message.", {
       chatId: chat.id,
       messageId: userMessageId,
       isChatMode: isChat
     });
-    if (await MentionHandler._handleRateLimiting(message, adminId)) {
+    if (await this.handleRateLimiting(message, adminId)) {
       return;
     }
     let fileUploadMessageId = null;
@@ -3662,21 +4089,21 @@ ${resTexts}
     let completeContents = [];
     let hasResThought = false;
     try {
-      fileUploadMessageId = await MentionHandler._sendFileUploadMessage(message, reply_to_message, chat.id, userMessageId);
-      completeContents = await MentionHandler._buildCompleteContents(chat.id, from?.id, message, botName);
+      fileUploadMessageId = await this.sendFileUploadMessage(message, reply_to_message, chat.id, userMessageId);
+      completeContents = await this.buildCompleteContents(chat.id, from?.id, message, botName);
       if (fileUploadMessageId) {
         await sleep(3e3);
-        await TelegramBot.deleteMessage(chat.id, fileUploadMessageId);
+        await bot.deleteMessage(chat.id, fileUploadMessageId);
         fileUploadMessageId = null;
       }
-      thinkMessageId = await MentionHandler._sendThinkingMessage(chat.id, userMessageId);
-      const geminiResponse = await GeminiApi.generateContent(completeContents, {
+      thinkMessageId = await this.sendThinkingMessage(chat.id, userMessageId);
+      const geminiResponse = await genai.generateContent(completeContents, {
         chatId: chat.id,
         userId: from?.id,
         userMessageId,
         thinkMessageId
       });
-      hasResThought = await MentionHandler._processGeminiResponse(
+      hasResThought = await this.processGeminiResponse(
         geminiResponse,
         chat.id,
         userMessageId,
@@ -3693,12 +4120,12 @@ ${resTexts}
         messageId: userMessageId
       });
       if (fileUploadMessageId) {
-        await TelegramBot.deleteMessage(chat.id, fileUploadMessageId);
+        await bot.deleteMessage(chat.id, fileUploadMessageId);
       }
       if (thinkMessageId) {
         const err = apiError instanceof GeminiError ? apiError : void 0;
         if (!err?.hasToolThoughts && !hasResThought) {
-          await TelegramBot.deleteMessage(chat.id, thinkMessageId);
+          await bot.deleteMessage(chat.id, thinkMessageId);
         } else {
           void scheduleDeletion({ chat_id: chat.id, message_id: thinkMessageId }, 30 * 6e4);
         }
@@ -3707,7 +4134,8 @@ ${resTexts}
     }
   }
 }
-const handleMention = MentionHandler.handleMention;
+const mention = new MentionHandler();
+const handleMention = mention.handleMention;
 const POLLING_TIMEOUT_MS = 3 * 60 * 1e3;
 const POLLING_INTERVAL_MS = 5 * 1e3;
 const pollChatMemberStatus = async (chatId, user, timeoutMs, intervalMs) => {
@@ -3716,13 +4144,11 @@ const pollChatMemberStatus = async (chatId, user, timeoutMs, intervalMs) => {
   const startTime = Date.now();
   Log.info(`开始轮询用户 ${userName}(${userId}) 在聊天 ${chatId} 中的状态...`);
   while (Date.now() - startTime < timeoutMs) {
-    const result = await TelegramBot.getChatMember(chatId, userId);
+    const result = await bot.getChatMember(chatId, userId);
     if (!result.ok) {
-      const error = result.error;
-      Log.error(`获取用户 ${userName}(${userId}) 聊天成员信息失败: ${error.message || "未知错误"} (Code: ${error.code || "N/A"})`, {
+      Log.error(`获取用户 ${userName}(${userId}) 聊天成员信息失败: ${result.error || "未知错误"}`, {
         chatId,
-        userId,
-        error
+        userId
       });
       await sleep(intervalMs);
       continue;
@@ -3758,8 +4184,8 @@ const pollChatMemberStatus = async (chatId, user, timeoutMs, intervalMs) => {
   return { userId, isVerified: false };
 };
 const handleNewMember = async (message) => {
-  const { botName, durableResourceId, newMemberWelcomeTextKeyName } = BotConfig.load();
-  const { chat, new_chat_members } = message;
+  const { botName, durableResourceId, newMemberWelcomeTextKeyName } = config.load();
+  const { message_id, chat, new_chat_members } = message;
   if (!new_chat_members || new_chat_members.length === 0) return;
   const newMemberIds = new_chat_members?.map((member) => member.id);
   Log.info("Handling new chat member message", { chatId: chat.id, newMemberIds });
@@ -3774,16 +4200,17 @@ const handleNewMember = async (message) => {
     if (isVerified) {
       const newMemberFullName = `${newMember.first_name} ${newMember.last_name || ""}`.trim();
       const newMemberMention = `[${newMemberFullName}](tg://user?id=${newMember.id})`;
-      const newMemberWelcomeText = await KvNamespace.read(durableResourceId, newMemberWelcomeTextKeyName, "text");
-      const replaceText = newMemberWelcomeText?.replace("NEW_MEMBER_MENTION", newMemberMention).replace("CHAT_TITLE", chat.title).replace("BOT_NAME", botName);
+      const newMemberWelcome = await kv.read(durableResourceId, newMemberWelcomeTextKeyName, "text");
+      if (!newMemberWelcome.success) return;
+      const replaceText = newMemberWelcome.data.replace("NEW_MEMBER_MENTION", newMemberMention).replace("CHAT_TITLE", chat.title).replace("BOT_NAME", botName).trim();
       Log.info(`向已验证的新成员 ${newMemberFullName}(${newMember.id}) 发送欢迎消息。`, { chatId: chat.id, newMemberId: newMember.id });
       const replyMarkup = {
         inline_keyboard: [
           [
             { text: "📓 使用指南", url: "https://gui-for-cores.github.io/zh/guide" },
             {
-              text: "🧠 智能助理",
-              callback_data: `cmd_start_${newMember.id}`
+              text: "❓ 常见问题",
+              callback_data: `cmd_faq_${newMember.id}`
             }
           ],
           [
@@ -3792,7 +4219,11 @@ const handleNewMember = async (message) => {
           ]
         ]
       };
-      const welcomeResult = await TelegramBot.sendMessage(chat.id, markdownToHtml(replaceText), { parseMode: "HTML", replyMarkup });
+      const welcomeResult = await bot.sendMessage(chat.id, formatters.Html(replaceText), {
+        replyToMessageId: message_id,
+        parseMode: "HTML",
+        replyMarkup
+      });
       if (welcomeResult.ok) {
         void scheduleDeletion({ chat_id: chat.id, message_id: welcomeResult.messageId }, 3 * 6e4);
       }
@@ -3802,7 +4233,25 @@ const handleNewMember = async (message) => {
   }
 };
 const handleNormal = async (message) => {
-  const { botName } = BotConfig.load();
+  const { botName } = config.load();
+  if (message.text?.startsWith(":") || message.caption?.startsWith(":")) {
+    const { message_id: messageId, text, caption, from, chat: chat2 } = message;
+    const messageText = text || caption || "";
+    const [commandAlias, ...cleanText] = messageText.replace(":", "").split(" ");
+    const commandAction = BotCommands.find(
+      (command) => command.name === commandAlias || command.name === `script_${commandAlias}` || command.name === `gen_${commandAlias}`
+    );
+    if (commandAction) {
+      Log.info("Handling commands message...", { chatId: chat2.id, messageId });
+      return await commandAction.action({
+        chatId: chat2.id,
+        userId: from?.id,
+        messageId,
+        cleanText: cleanText.join(" ").trim(),
+        message
+      });
+    }
+  }
   if (!message.reply_to_message) return;
   const { chat, message_id, reply_to_message } = message;
   if (!reply_to_message.from || reply_to_message.from.username !== botName) return;
@@ -3821,40 +4270,38 @@ const handleCallbackQuery = async (callbackQuery) => {
     Log.info("Invalid callback query", { queryId: callbackQuery.id });
     return;
   }
-  const { durableResourceId, rateLimitId } = BotConfig.load();
+  const { durableResourceId, rateLimitId } = config.load();
   const { id: queryId, from, message, data } = callbackQuery;
-  const { chat, message_id: messageId, date, reply_markup } = message;
+  const { chat, message_id: messageId, date, reply_to_message, reply_markup } = message;
   Log.info("Handling callback query", { chatId: chat.id, messageId, userId: from.id, data });
   switch (true) {
     case data === "PLACEHOLDER": {
-      TelegramBot.answerCallbackQuery(queryId);
+      bot.answerCallbackQuery(queryId);
       break;
     }
     case data.startsWith("mention_"): {
-      const [, ask, allowUserId] = data.split("_");
+      const [, , allowUserId] = data.split("_");
       if (from.id !== Number(allowUserId)) {
-        TelegramBot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
+        bot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
         return;
       }
-      TelegramBot.answerCallbackQuery(queryId, { callbackText: "询问请求..." });
-      let newMessageText = "简单说明下你能做什么？";
-      if (ask === "faq") {
-        newMessageText = "请整理、提炼出 GUI.for.Cores 的常见问题及解决方案的精华部分，并列出简化后的内容";
-      }
-      const newMessage = { ...message, from, text: newMessageText };
+      bot.answerCallbackQuery(queryId, { callbackText: "询问请求..." });
+      const newMessageText = "简单说明下你能做什么？";
+      const newMessage = { ...message, message_id: reply_to_message?.message_id || messageId, from, text: newMessageText };
+      delete newMessage.reply_to_message;
       await handleMention(newMessage);
       break;
     }
     case data.startsWith("tool_"): {
       const [, action, tool, allowUserId] = data.split("_");
       if (from.id !== Number(allowUserId)) {
-        TelegramBot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
+        bot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
         return;
       }
       if (action === "demo") {
-        TelegramBot.answerCallbackQuery(queryId, { callbackText: "开始演示工具..." });
+        bot.answerCallbackQuery(queryId, { callbackText: "开始演示工具..." });
         const newText = `请简单演示下 ${tool} 工具`;
-        const newMessage = { ...message, from, text: newText };
+        const newMessage = { ...message, message_id: reply_to_message?.message_id || messageId, from, text: newText };
         delete newMessage.reply_to_message;
         await handleMention(newMessage);
       }
@@ -3863,16 +4310,16 @@ const handleCallbackQuery = async (callbackQuery) => {
     case data.startsWith("cmd_"): {
       const [, command, allowUserId] = data.split("_");
       if (from.id !== Number(allowUserId)) {
-        TelegramBot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
+        bot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
         return;
       }
-      TelegramBot.answerCallbackQuery(queryId, { callbackText: "开始执行..." });
-      const targetCommand = botCommands.find((cmd) => cmd.name === command);
+      bot.answerCallbackQuery(queryId, { callbackText: "开始执行..." });
+      const targetCommand = BotCommands.find((cmd) => cmd.name === command);
       if (targetCommand) {
         await targetCommand.action({
           chatId: chat.id,
           messageId,
-          userId: allowUserId ? Number(allowUserId) : from.id,
+          userId: Number(allowUserId),
           isCallback: true
         });
       }
@@ -3881,16 +4328,16 @@ const handleCallbackQuery = async (callbackQuery) => {
     case data.startsWith("reaction_"): {
       const reaction = data.split("_")[1];
       const keyName = `reacted_${chat.id}_${messageId}`;
-      const reactedUsers = await KvNamespace.read(rateLimitId, keyName, "json") || [];
-      if (reactedUsers.includes(from.id)) {
-        TelegramBot.answerCallbackQuery(queryId, {
+      const reactedUsers = await kv.read(rateLimitId, keyName, "json");
+      if (!reactedUsers.success || reactedUsers.data.includes(from.id)) {
+        bot.answerCallbackQuery(queryId, {
           callbackText: "你已做出过反应"
         });
         return;
       }
-      TelegramBot.answerCallbackQuery(queryId, { callbackText: "反应成功" });
-      const newReactedUsers = [...reactedUsers, from.id];
-      await KvNamespace.write(rateLimitId, keyName, JSON.stringify(newReactedUsers), { expiration_ttl: 48 * 60 * 60 });
+      bot.answerCallbackQuery(queryId, { callbackText: "反应成功" });
+      const newReactedUsers = [...reactedUsers.data, from.id];
+      await kv.write(rateLimitId, keyName, JSON.stringify(newReactedUsers), { expiration_ttl: 48 * 60 * 60 });
       const newInlineKeyboard = JSON.parse(JSON.stringify(reply_markup?.inline_keyboard));
       let keyboardUpdated = false;
       for (const row of newInlineKeyboard) {
@@ -3913,43 +4360,41 @@ const handleCallbackQuery = async (callbackQuery) => {
         }
       }
       if (keyboardUpdated) {
-        await TelegramBot.editMessageReplyMarkup(chat.id, messageId, {
+        await bot.editMessageReplyMarkup(chat.id, messageId, {
           inline_keyboard: newInlineKeyboard
         });
       }
       const totalReactionsKeyName = `total_reactions_${chat.id}`;
-      const oldTotalReactions = await KvNamespace.read(durableResourceId, totalReactionsKeyName, "json") || {
-        like: 0,
-        dislike: 0
-      };
+      const oldTotalReactions = await kv.read(durableResourceId, totalReactionsKeyName, "json");
+      if (!oldTotalReactions.success) return;
       const newTotalReactions = {
-        like: reaction === "like" ? oldTotalReactions.like + 1 : oldTotalReactions.like,
-        dislike: reaction === "dislike" ? oldTotalReactions.dislike + 1 : oldTotalReactions.dislike
+        like: reaction === "like" ? oldTotalReactions.data.like + 1 : oldTotalReactions.data.like,
+        dislike: reaction === "dislike" ? oldTotalReactions.data.dislike + 1 : oldTotalReactions.data.dislike
       };
-      await KvNamespace.write(durableResourceId, totalReactionsKeyName, JSON.stringify(newTotalReactions));
+      await kv.write(durableResourceId, totalReactionsKeyName, JSON.stringify(newTotalReactions));
       break;
     }
     case data.startsWith("delete_"): {
       const [, content, allowUserId] = data.split("_");
       if (from.id !== Number(allowUserId)) {
-        TelegramBot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
+        bot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
         return;
       }
       if (content === "message") {
         if (Date.now() - date * 1e3 <= 30 * 60 * 1e3) {
-          TelegramBot.answerCallbackQuery(queryId, { callbackText: "消息锁定中，无法删除" });
+          bot.answerCallbackQuery(queryId, { callbackText: "消息锁定中，无法删除" });
           return;
         }
-        TelegramBot.answerCallbackQuery(queryId, { callbackText: "删除成功" });
-        await TelegramBot.deleteMessage(chat.id, messageId);
+        bot.answerCallbackQuery(queryId, { callbackText: "删除成功" });
+        await bot.deleteMessage(chat.id, messageId);
       }
       break;
     }
   }
 };
 const handleUpdate = async (update) => {
-  Log.info("Handling Telegram update", { update });
-  const { botName, allowGroups } = BotConfig.load();
+  Log.info("Handling Telegram update", { update: simpleUpdateLog(update) });
+  const { botName, allowGroups } = config.load();
   if (update.callback_query) {
     const { callback_query } = update;
     if (callback_query && callback_query.message && callback_query.data) return await handleCallbackQuery(callback_query);
@@ -3989,15 +4434,59 @@ const handleUpdate = async (update) => {
     Log.error("Error while handling update", { err, updateId: update_id });
     await sendErrorNotification(err, `Error while handling update ${JSON.stringify({ chatId: chat.id, messageId: message_id })}`);
     const errorMessage = err instanceof Error ? err.message : String(err);
-    const shorten = `<blockquote expandable>${escapeHtml(shortenString(`❌ ${errorMessage}`))}</blockquote>`;
+    const shorten = `<blockquote expandable>${escapers.Html(shortenString(`❌ ${errorMessage}`))}</blockquote>`;
     const replyMarkup = {
       inline_keyboard: [REACTiON_ROW]
     };
-    const errorResult = await TelegramBot.sendMessage(chat.id, shorten, { replyToMessageId: message_id, parseMode: "HTML", replyMarkup });
+    const errorResult = await bot.sendMessage(chat.id, shorten, { replyToMessageId: message_id, parseMode: "HTML", replyMarkup });
     if (errorResult.ok) {
       void scheduleDeletion({ chat_id: chat.id, message_id: errorResult.messageId }, 3 * 6e4);
     }
   }
+};
+const simplifyMessage = (message) => {
+  if (!message) {
+    return void 0;
+  }
+  const truncate = (text) => text ? `${text.slice(0, 20)}...` : void 0;
+  const filterEntity = (entities) => entities ? entities?.filter((e) => ["text_mention", "mention", "bot_command"].includes(e.type)) : void 0;
+  const simplified = { ...message };
+  if (simplified.text) {
+    simplified.text = truncate(simplified.text);
+  } else if (simplified.caption) {
+    simplified.caption = truncate(simplified.caption);
+  }
+  if (simplified.entities) {
+    simplified.entities = filterEntity(simplified.entities);
+  } else if (simplified.caption_entities) {
+    simplified.caption_entities = filterEntity(simplified.caption_entities);
+  }
+  if (simplified.reply_to_message) {
+    simplified.reply_to_message = simplifyMessage(simplified.reply_to_message);
+  }
+  if (simplified.reply_markup?.inline_keyboard) {
+    simplified.reply_markup = {
+      ...simplified.reply_markup,
+      inline_keyboard: [simplified.reply_markup.inline_keyboard[0]]
+    };
+  }
+  return simplified;
+};
+const simpleUpdateLog = (update) => {
+  const newUpdate = { ...update };
+  if (newUpdate.message) {
+    newUpdate.message = simplifyMessage(newUpdate.message);
+  }
+  if (newUpdate.edited_message) {
+    newUpdate.edited_message = simplifyMessage(newUpdate.edited_message);
+  }
+  if (newUpdate.callback_query?.message) {
+    newUpdate.callback_query = {
+      ...newUpdate.callback_query,
+      message: simplifyMessage(newUpdate.callback_query.message)
+    };
+  }
+  return newUpdate;
 };
 const RequestHeadersSchema = {
   type: "object",
@@ -4040,7 +4529,7 @@ const createRoutes = async (route) => {
   route.post("/webhook", {
     schema: routeSchema,
     preHandler: async (request, reply) => {
-      const { secretToken } = BotConfig.load();
+      const { secretToken } = config.load();
       const safeHeaders = { ...request.headers, "x-telegram-bot-api-secret-token": "***" };
       Log.info("Webhook Request Headers", { headers: safeHeaders });
       const secretTokenFromHeader = request.headers["x-telegram-bot-api-secret-token"] || "";
@@ -4063,7 +4552,7 @@ const createRoutes = async (route) => {
   });
 };
 const buildApp = async () => {
-  const { loggerLevel } = BotConfig.load();
+  const { loggerLevel } = config.load();
   initLogger({ loggerLevel });
   const app = Fastify({
     logger: {
@@ -4075,7 +4564,7 @@ const buildApp = async () => {
   return app;
 };
 const startServer = async () => {
-  const { listenHost: host, listenPort: port } = BotConfig.load();
+  const { listenHost: host, listenPort: port } = config.load();
   const server = await buildApp();
   try {
     await server.listen({ port, host });

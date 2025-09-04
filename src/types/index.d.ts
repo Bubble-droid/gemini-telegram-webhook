@@ -9,3 +9,4 @@ export type * from './gemini';
 export type * from './github';
 export type * from './tool_executors';
 export type * from './kv_namespace';
+export type * from './script';

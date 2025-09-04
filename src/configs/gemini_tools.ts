@@ -272,8 +272,7 @@ const functionForGet: FunctionDeclaration[] = [
       properties: {
         filePaths: {
           type: Type.ARRAY,
-          description:
-            '需要查询的文件路径列表，例如 ["MetaCubeX/Meta-docs/refs/heads/main/docs/api/index.md", "SagerNet/sing-box/refs/heads/dev-next/src/main.go", ...]，每次查询最少 4 个文件 ',
+          description: '需要查询的文件路径列表，每次最少查询 4 个文件 ',
           items: {
             type: Type.STRING,
             title: 'File Path Item',

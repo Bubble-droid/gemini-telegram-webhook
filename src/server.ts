@@ -2,7 +2,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import buildApp from '@/app';
-import { BotConfig, Log } from '@/services';
+import { config, Log } from '@/services';
 import type { AddressInfo } from 'node:net';
 
 /**
@@ -13,7 +13,7 @@ import type { AddressInfo } from 'node:net';
  * @returns {Promise<void>} 此函数不返回任何值，如果服务器启动失败则会退出进程。
  */
 const startServer = async (): Promise<void> => {
-  const { listenHost: host, listenPort: port } = BotConfig.load();
+  const { listenHost: host, listenPort: port } = config.load();
   const server: FastifyInstance = await buildApp();
   try {
     await server.listen({ port, host });

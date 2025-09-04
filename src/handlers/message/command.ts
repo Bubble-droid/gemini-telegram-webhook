@@ -1,8 +1,8 @@
 // src/handlers/message/command.ts
 
-import { Log, TelegramBot } from '@/services';
+import { Log, bot } from '@/services';
 import type { Message, MessageEntity } from '@/types';
-import { botCommands } from '@/configs';
+import { BotCommands } from '@/configs';
 
 /**
  * @function handleCommand
@@ -18,16 +18,17 @@ const handleCommand = async (message: Message): Promise<void> => {
   const messageEntities = (message.entities || message.caption_entities) as MessageEntity[];
   const commandEntity = messageEntities.find((entity) => entity.type === 'bot_command') as MessageEntity;
   const fullCommandText = messageText.substring(commandEntity.offset, commandEntity.offset + commandEntity.length);
-  void TelegramBot.setBotCommands(chat.id, from?.id as number);
+  bot.setBotCommands(chat.id, from?.id as number);
   const commandName = fullCommandText.slice(1).split('@')[0].trim();
   const cleanText = messageText.replace(fullCommandText, '').trim();
-  const targetCommand = botCommands.find((cmd) => cmd.name === commandName);
+  const targetCommand = BotCommands.find((cmd) => cmd.name === commandName);
   if (targetCommand) {
     await targetCommand.action({
       chatId: chat.id,
       userId: from?.id as number,
       messageId,
       cleanText,
+      message,
     });
   }
 };

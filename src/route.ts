@@ -2,7 +2,7 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest, FastifySchema } from 'fastify';
 import { handleUpdate } from '@/handlers';
-import { BotConfig, Log } from '@/services';
+import { config, Log } from '@/services';
 import type { RequestHeaders, RequestBody, Update, RequestSchema } from '@/types';
 
 const RequestHeadersSchema: RequestSchema = {
@@ -61,7 +61,7 @@ const createRoutes = async (route: FastifyInstance): Promise<void> => {
     schema: routeSchema,
     // preHandler 钩子在路由处理函数执行前运行，用于身份验证等预处理逻辑
     preHandler: async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply | void> => {
-      const { secretToken } = BotConfig.load();
+      const { secretToken } = config.load();
       const safeHeaders = { ...request.headers, 'x-telegram-bot-api-secret-token': '***' };
       Log.info('Webhook Request Headers', { headers: safeHeaders });
       const secretTokenFromHeader = (request.headers['x-telegram-bot-api-secret-token'] || '') as string;

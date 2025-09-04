@@ -2,7 +2,7 @@
 
 import Fastify, { type FastifyInstance } from 'fastify';
 import createRoutes from '@/route';
-import { BotConfig, initLogger, loggerAdapter } from '@/services';
+import { config, initLogger, loggerAdapter } from '@/services';
 
 /**
  * @function buildApp
@@ -11,7 +11,7 @@ import { BotConfig, initLogger, loggerAdapter } from '@/services';
  * @returns {Promise<FastifyInstance>} 配置好的 Fastify 应用程序实例。
  */
 const buildApp = async (): Promise<FastifyInstance> => {
-  const { loggerLevel } = BotConfig.load();
+  const { loggerLevel } = config.load();
   initLogger({ loggerLevel });
   const app: FastifyInstance = Fastify({
     logger: {

@@ -1,52 +1,50 @@
 // src/handlers/callback_query.ts
 
-import { BotConfig, Log, TelegramBot } from '@/services';
+import { config, Log, bot } from '@/services';
 import type { CallbackQuery, InlineKeyboardButton, Message } from '@/types';
 import { handleMention } from './message';
-import { botCommands } from '@/configs';
-import { KvNamespace } from '@/utils';
+import { BotCommands } from '@/configs';
+import { kv } from '@/utils';
 
 export const handleCallbackQuery = async (callbackQuery: CallbackQuery): Promise<void> => {
   if (!callbackQuery.message || !callbackQuery.data) {
     Log.info('Invalid callback query', { queryId: callbackQuery.id });
     return;
   }
-  const { durableResourceId, rateLimitId } = BotConfig.load();
+  const { durableResourceId, rateLimitId } = config.load();
   const { id: queryId, from, message, data } = callbackQuery;
-  const { chat, message_id: messageId, date, reply_markup } = message;
+  const { chat, message_id: messageId, date, reply_to_message, reply_markup } = message;
 
   Log.info('Handling callback query', { chatId: chat.id, messageId, userId: from.id, data });
 
   switch (true) {
     case data === 'PLACEHOLDER': {
-      TelegramBot.answerCallbackQuery(queryId);
+      bot.answerCallbackQuery(queryId);
       break;
     }
     case data.startsWith('mention_'): {
-      const [, ask, allowUserId] = data.split('_');
+      const [, , allowUserId] = data.split('_');
       if (from.id !== Number(allowUserId)) {
-        TelegramBot.answerCallbackQuery(queryId, { callbackText: '你没有权限进行此操作' });
+        bot.answerCallbackQuery(queryId, { callbackText: '你没有权限进行此操作' });
         return;
       }
-      TelegramBot.answerCallbackQuery(queryId, { callbackText: '询问请求...' });
-      let newMessageText: string = '简单说明下你能做什么？';
-      if (ask === 'faq') {
-        newMessageText = '请整理、提炼出 GUI.for.Cores 的常见问题及解决方案的精华部分，并列出简化后的内容';
-      }
-      const newMessage: Message = { ...message, from, text: newMessageText };
+      bot.answerCallbackQuery(queryId, { callbackText: '询问请求...' });
+      const newMessageText: string = '简单说明下你能做什么？';
+      const newMessage: Message = { ...message, message_id: reply_to_message?.message_id || messageId, from, text: newMessageText };
+      delete newMessage.reply_to_message;
       await handleMention(newMessage);
       break;
     }
     case data.startsWith('tool_'): {
       const [, action, tool, allowUserId] = data.split('_');
       if (from.id !== Number(allowUserId)) {
-        TelegramBot.answerCallbackQuery(queryId, { callbackText: '你没有权限进行此操作' });
+        bot.answerCallbackQuery(queryId, { callbackText: '你没有权限进行此操作' });
         return;
       }
       if (action === 'demo') {
-        TelegramBot.answerCallbackQuery(queryId, { callbackText: '开始演示工具...' });
+        bot.answerCallbackQuery(queryId, { callbackText: '开始演示工具...' });
         const newText = `请简单演示下 ${tool} 工具`;
-        const newMessage: Message = { ...message, from, text: newText };
+        const newMessage: Message = { ...message, message_id: reply_to_message?.message_id || messageId, from, text: newText };
         delete newMessage.reply_to_message;
         await handleMention(newMessage);
       }
@@ -55,16 +53,16 @@ export const handleCallbackQuery = async (callbackQuery: CallbackQuery): Promise
     case data.startsWith('cmd_'): {
       const [, command, allowUserId] = data.split('_');
       if (from.id !== Number(allowUserId)) {
-        TelegramBot.answerCallbackQuery(queryId, { callbackText: '你没有权限进行此操作' });
+        bot.answerCallbackQuery(queryId, { callbackText: '你没有权限进行此操作' });
         return;
       }
-      TelegramBot.answerCallbackQuery(queryId, { callbackText: '开始执行...' });
-      const targetCommand = botCommands.find((cmd) => cmd.name === command);
+      bot.answerCallbackQuery(queryId, { callbackText: '开始执行...' });
+      const targetCommand = BotCommands.find((cmd) => cmd.name === command);
       if (targetCommand) {
         await targetCommand.action({
           chatId: chat.id,
           messageId,
-          userId: allowUserId ? Number(allowUserId) : from.id,
+          userId: Number(allowUserId),
           isCallback: true,
         });
       }
@@ -73,20 +71,20 @@ export const handleCallbackQuery = async (callbackQuery: CallbackQuery): Promise
     case data.startsWith('reaction_'): {
       const reaction = data.split('_')[1];
       const keyName = `reacted_${chat.id}_${messageId}`;
-      const reactedUsers = (await KvNamespace.read<number[]>(rateLimitId, keyName, 'json')) || [];
+      const reactedUsers = await kv.read<number[]>(rateLimitId, keyName, 'json');
 
-      if (reactedUsers.includes(from.id)) {
+      if (!reactedUsers.success || reactedUsers.data.includes(from.id)) {
         // Notify the user that they have already reacted and stop.
-        TelegramBot.answerCallbackQuery(queryId, {
+        bot.answerCallbackQuery(queryId, {
           callbackText: '你已做出过反应',
         });
         return;
       }
 
-      TelegramBot.answerCallbackQuery(queryId, { callbackText: '反应成功' });
+      bot.answerCallbackQuery(queryId, { callbackText: '反应成功' });
       // Add the user to the reacted list and save it for 48 hours.
-      const newReactedUsers = [...reactedUsers, from.id];
-      await KvNamespace.write(rateLimitId, keyName, JSON.stringify(newReactedUsers), { expiration_ttl: 48 * 60 * 60 });
+      const newReactedUsers = [...reactedUsers.data, from.id];
+      await kv.write(rateLimitId, keyName, JSON.stringify(newReactedUsers), { expiration_ttl: 48 * 60 * 60 });
 
       // Create a deep copy of the keyboard to modify.
       const newInlineKeyboard: InlineKeyboardButton[][] = JSON.parse(JSON.stringify(reply_markup?.inline_keyboard));
@@ -116,36 +114,33 @@ export const handleCallbackQuery = async (callbackQuery: CallbackQuery): Promise
 
       if (keyboardUpdated) {
         // If the keyboard was changed, edit the message to show the new keyboard.
-        await TelegramBot.editMessageReplyMarkup(chat.id, messageId, {
+        await bot.editMessageReplyMarkup(chat.id, messageId, {
           inline_keyboard: newInlineKeyboard,
         });
       }
       const totalReactionsKeyName = `total_reactions_${chat.id}`;
-      const oldTotalReactions = (await KvNamespace.read<{ like: number; dislike: number }>(durableResourceId, totalReactionsKeyName, 'json')) || {
-        like: 0,
-        dislike: 0,
-      };
-
+      const oldTotalReactions = await kv.read<{ like: number; dislike: number }>(durableResourceId, totalReactionsKeyName, 'json');
+      if (!oldTotalReactions.success) return;
       const newTotalReactions = {
-        like: reaction === 'like' ? oldTotalReactions.like + 1 : oldTotalReactions.like,
-        dislike: reaction === 'dislike' ? oldTotalReactions.dislike + 1 : oldTotalReactions.dislike,
+        like: reaction === 'like' ? oldTotalReactions.data.like + 1 : oldTotalReactions.data.like,
+        dislike: reaction === 'dislike' ? oldTotalReactions.data.dislike + 1 : oldTotalReactions.data.dislike,
       };
-      await KvNamespace.write(durableResourceId, totalReactionsKeyName, JSON.stringify(newTotalReactions));
+      await kv.write(durableResourceId, totalReactionsKeyName, JSON.stringify(newTotalReactions));
       break;
     }
     case data.startsWith('delete_'): {
       const [, content, allowUserId] = data.split('_');
       if (from.id !== Number(allowUserId)) {
-        TelegramBot.answerCallbackQuery(queryId, { callbackText: '你没有权限进行此操作' });
+        bot.answerCallbackQuery(queryId, { callbackText: '你没有权限进行此操作' });
         return;
       }
       if (content === 'message') {
         if (Date.now() - date * 1000 <= 30 * 60 * 1000) {
-          TelegramBot.answerCallbackQuery(queryId, { callbackText: '消息锁定中，无法删除' });
+          bot.answerCallbackQuery(queryId, { callbackText: '消息锁定中，无法删除' });
           return;
         }
-        TelegramBot.answerCallbackQuery(queryId, { callbackText: '删除成功' });
-        await TelegramBot.deleteMessage(chat.id, messageId);
+        bot.answerCallbackQuery(queryId, { callbackText: '删除成功' });
+        await bot.deleteMessage(chat.id, messageId);
       }
       break;
     }

@@ -3,12 +3,12 @@
 import type { Video } from '@/types';
 import { type Blob } from '@google/genai';
 import { downloadFileAsArrayBuffer } from './downloader';
-import { BotConfig, TelegramBot } from '@/services';
+import { config, bot } from '@/services';
 
 export const handleVideo = async (video: Video): Promise<Blob | void> => {
-  const { botToken } = BotConfig.load();
+  const { botToken } = config.load();
   const { file_id } = video;
-  const result = await TelegramBot.getFile(file_id);
+  const result = await bot.getFile(file_id);
   if (result.ok) {
     const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
     const videoArrayBuffer = await downloadFileAsArrayBuffer(fileUrl);

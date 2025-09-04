@@ -1,14 +1,14 @@
 // src/handlers/file/image.ts
 
-import { BotConfig, TelegramBot } from '@/services';
+import { config, bot } from '@/services';
 import type { PhotoSize } from '@/types';
 import type { BlobImageUnion } from '@google/genai';
 import { downloadFileAsArrayBuffer } from './downloader';
 
 export const handleImage = async (image: PhotoSize[]): Promise<BlobImageUnion | void> => {
-  const { botToken } = BotConfig.load();
+  const { botToken } = config.load();
   const { file_id } = image[image.length - 1];
-  const result = await TelegramBot.getFile(file_id);
+  const result = await bot.getFile(file_id);
   if (result.ok) {
     const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
     const imageArrayBuffer = await downloadFileAsArrayBuffer(fileUrl);

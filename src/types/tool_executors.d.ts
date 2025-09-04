@@ -1,16 +1,6 @@
 // src/types/tool_executors.d.ts
 
-import type { ToolExecutors } from '@/services';
-import type {
-  GitHubBranch,
-  GitHubCommitDetails,
-  GitHubCommitSearchItem,
-  GitHubContentItem,
-  GitHubIssueComment,
-  GitHubIssueSearchItem,
-  GitHubRelease,
-  GitHubTreeItem,
-} from './github';
+import type * as Github from './github';
 
 export interface ToolExecArgs {
   chatId: number;
@@ -60,7 +50,7 @@ export interface SearchFilesInRepoResult {
  */
 export interface SearchCommitsInRepoResult {
   commits: Array<
-    Pick<GitHubCommitSearchItem, 'sha'> & {
+    Pick<Github.GitHubCommitSearchItem, 'sha'> & {
       message: string;
       author: string;
       date: string;
@@ -76,7 +66,7 @@ export interface SearchCommitsInRepoResult {
  */
 export interface SearchIssuesInRepoResult {
   issues: Array<
-    Pick<GitHubIssueSearchItem, 'id' | 'number' | 'html_url' | 'title' | 'state' | 'comments' | 'body'> & {
+    Pick<Github.GitHubIssueSearchItem, 'id' | 'number' | 'html_url' | 'title' | 'state' | 'comments' | 'body'> & {
       created_at: string;
       updated_at: string;
       author_login: string;
@@ -91,7 +81,7 @@ export interface SearchIssuesInRepoResult {
  */
 export interface ListRepoTreeResult {
   fileList: Array<
-    Pick<GitHubTreeItem, 'path' | 'type'> & {
+    Pick<Github.GitHubTreeItem, 'path' | 'type'> & {
       name: string;
     }
   >;
@@ -101,7 +91,7 @@ export interface ListRepoTreeResult {
  * listDirContents 工具的返回数据结构。
  */
 export interface ListDirContentsResult {
-  fileList: Array<Pick<GitHubContentItem, 'name' | 'path' | 'type'>>;
+  fileList: Array<Pick<Github.GitHubContentItem, 'name' | 'path' | 'type'>>;
 }
 
 /**
@@ -109,7 +99,7 @@ export interface ListDirContentsResult {
  */
 export interface ListRepoCommitsResult {
   commits: Array<
-    Pick<GitHubCommitDetails, 'sha'> & {
+    Pick<Github.GitHubCommitDetails, 'sha'> & {
       message: string;
       author: string;
       date: string;
@@ -123,7 +113,7 @@ export interface ListRepoCommitsResult {
  */
 export interface ListRepoReleasesResult {
   releases: Array<
-    Pick<GitHubRelease, 'id' | 'tag_name' | 'name' | 'body' | 'html_url' | 'prerelease' | 'draft' | 'published_at'> & {
+    Pick<Github.GitHubRelease, 'id' | 'tag_name' | 'name' | 'body' | 'html_url' | 'prerelease' | 'draft' | 'published_at'> & {
       author_login: string;
       author_type: string;
     }
@@ -135,7 +125,7 @@ export interface ListRepoReleasesResult {
  */
 export interface ListRepoBranchesResult {
   branches: Array<
-    Pick<GitHubBranch, 'name' | 'protected'> & {
+    Pick<Github.GitHubBranch, 'name' | 'protected'> & {
       commit_sha: string;
       commit_url: string;
     }
@@ -158,7 +148,7 @@ export interface GetFileContentsResult {
  * getCommitDetails 工具的返回数据结构。
  */
 export interface GetCommitDetailsResult {
-  commitDetails: Pick<GitHubCommitDetails, 'sha' | 'html_url' | 'stats' | 'files'> & {
+  commitDetails: Pick<Github.GitHubCommitDetails, 'sha' | 'html_url' | 'stats' | 'files'> & {
     author: {
       name: string;
       email: string;
@@ -173,7 +163,7 @@ export interface GetCommitDetailsResult {
  */
 export interface GetIssueCommentsResult {
   comments: Array<
-    Pick<GitHubIssueComment, 'id' | 'html_url' | 'created_at' | 'updated_at' | 'body'> & {
+    Pick<Github.GitHubIssueComment, 'id' | 'html_url' | 'created_at' | 'updated_at' | 'body'> & {
       user_login: string;
     }
   >;
@@ -183,7 +173,10 @@ export interface GetIssueCommentsResult {
  * getReleaseDetails 工具的返回数据结构。
  */
 export interface GetReleaseDetailsResult {
-  releaseDetails: Pick<GitHubRelease, 'id' | 'tag_name' | 'name' | 'body' | 'html_url' | 'prerelease' | 'draft' | 'assets' | 'published_at'> & {
+  releaseDetails: Pick<
+    Github.GitHubRelease,
+    'id' | 'tag_name' | 'name' | 'body' | 'html_url' | 'prerelease' | 'draft' | 'assets' | 'published_at'
+  > & {
     author_login: string;
   };
 }
@@ -195,8 +188,8 @@ export interface GetCurrentTimeResult {
   currentTime: string;
 }
 
-export type SendPhotoMessageResult = string;
-export type SendVoiceMessageResult = string;
+export type GenerateImageResult = string;
+export type GenerateSpeechResult = string;
 
 export interface ToolExecutorsType {
   searchFilesInRepo: (args: ToolExecArgs) => Promise<ToolExecResponse<SearchFilesInRepoResult>>;
@@ -212,8 +205,8 @@ export interface ToolExecutorsType {
   getReleaseDetails: (args: ToolExecArgs) => Promise<ToolExecResponse<GetReleaseDetailsResult>>;
   getCommitDetails: (args: ToolExecArgs) => Promise<ToolExecResponse<GetCommitDetailsResult>>;
   getCurrentTime: () => ToolExecResponse<GetCurrentTimeResult>;
-  generateImage: (args: ToolExecArgs) => Promise<ToolExecResponse<SendPhotoMessageResult>>;
-  generateSpeech: (args: ToolExecArgs) => Promise<ToolExecResponse<SendVoiceMessageResult>>;
+  generateImage: (args: ToolExecArgs) => Promise<ToolExecResponse<GenerateImageResult>>;
+  generateSpeech: (args: ToolExecArgs) => Promise<ToolExecResponse<GenerateSpeechResult>>;
 }
 
-export type ToolName = keyof typeof ToolExecutors;
+export type ToolName = keyof ToolExecutorsType;

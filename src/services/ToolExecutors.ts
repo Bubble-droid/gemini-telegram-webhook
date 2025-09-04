@@ -1,39 +1,13 @@
 // src/configs/tool_executors.ts
 
-import { GeminiApi, GeminiError, Log, makeInlineKeyboard, simpleGeminiApiResponse, TelegramBot } from '@/services';
-import type {
-  GetCommitDetailsResult,
-  GetCurrentTimeResult,
-  GetFileContentsResult,
-  GetIssueCommentsResult,
-  GetReleaseDetailsResult,
-  GitHubBranch,
-  GitHubCodeSearchItem,
-  GitHubCommitDetails,
-  GitHubCommitSearchItem,
-  GitHubContentItem,
-  GitHubIssueComment,
-  GitHubIssueSearchItem,
-  GitHubRelease,
-  GitHubSearchResult,
-  GitHubTreeResponse,
-  ListDirContentsResult,
-  ListRepoBranchesResult,
-  ListRepoCommitsResult,
-  ListRepoReleasesResult,
-  ListRepoTreeResult,
-  ReplyMarkup,
-  SearchCommitsInRepoResult,
-  SearchFilesInRepoResult,
-  SearchIssuesInRepoResult,
-  ToolExecArgs,
-  ToolExecResponse,
-  ToolExecutorsType,
-} from '@/types';
+import { genai, GeminiError, Log, makeInlineKeyboard, simpleGeminiApiResponse, bot } from '@/services';
+import type { ReplyMarkup } from '@/types';
+import type * as Github from '@/types/github';
+import type * as Tool from '@/types/tool_executors';
 import { convertPcmToMp3, formatTime, makeGitHubApiRequest, makeRawFileRequest, scheduleDeletion } from '@/utils';
 import { GoogleGenAI, type Content, type GenerateContentConfig } from '@google/genai';
 
-export const ToolExecutors: ToolExecutorsType = {
+export const ToolExecutors: Tool.ToolExecutorsType = {
   /**
    * 执行 searchFilesInRepo 工具
    * 通过关键词在指定 GitHub 仓库中搜索文件内容。
@@ -41,12 +15,12 @@ export const ToolExecutors: ToolExecutorsType = {
    * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { keyword: 'resolve', owner: 'SagerNet', repo: 'sing-box', path: 'assets/', branch: 'main' }。
    * @returns {Promise<>} 工具执行结果对象。
    */
-  searchFilesInRepo: async (args: ToolExecArgs): Promise<ToolExecResponse<SearchFilesInRepoResult>> => {
+  searchFilesInRepo: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.SearchFilesInRepoResult>> => {
     Log.info('执行工具: searchFilesInRepo, 参数:', { args });
     const { keyword, owner, repo, branch = 'main' } = args;
     const urlPath: string = `search/code`;
     const queryParams: string = `q=${encodeURIComponent(keyword)}+repo:${owner}/${repo}+in:file`;
-    const result = await makeGitHubApiRequest<GitHubSearchResult<GitHubCodeSearchItem>>({
+    const result = await makeGitHubApiRequest<Github.GitHubSearchResult<Github.GitHubCodeSearchItem>>({
       method: 'GET',
       urlPath,
       queryParams,
@@ -67,18 +41,18 @@ export const ToolExecutors: ToolExecutorsType = {
    * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { keyword: 'fix', owner: 'SagerNet', repo: 'sing-box', branch: 'main', author: 'user', per_page: 10 }。
    * @returns {Promise<>} 工具执行结果对象。
    */
-  searchCommitsInRepo: async (args: ToolExecArgs): Promise<ToolExecResponse<SearchCommitsInRepoResult>> => {
+  searchCommitsInRepo: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.SearchCommitsInRepoResult>> => {
     Log.info('执行工具: searchCommitsInRepo, 参数:', { args });
     const { keyword, owner, repo } = args;
     const urlPath: string = `search/commits`;
     const queryParams: string = `q=${encodeURIComponent(keyword)}+repo:${owner}/${repo}`;
-    const result = await makeGitHubApiRequest<GitHubSearchResult<GitHubCommitSearchItem>>({
+    const result = await makeGitHubApiRequest<Github.GitHubSearchResult<Github.GitHubCommitSearchItem>>({
       method: 'GET',
       urlPath,
       queryParams,
     });
     if (result.success) {
-      const commits: SearchCommitsInRepoResult['commits'] = result.data.items.map((item) => ({
+      const commits: Tool.SearchCommitsInRepoResult['commits'] = result.data.items.map((item) => ({
         sha: item.sha,
         message: item.commit.message,
         author: item.commit.author.name,
@@ -100,18 +74,18 @@ export const ToolExecutors: ToolExecutorsType = {
    * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { keyword: 'tun error', owner: 'SagerNet', repo: 'sing-box', state: 'all' }。
    * @returns {Promise<>} 工具执行结果对象。
    */
-  searchIssuesInRepo: async (args: ToolExecArgs): Promise<ToolExecResponse<SearchIssuesInRepoResult>> => {
+  searchIssuesInRepo: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.SearchIssuesInRepoResult>> => {
     Log.info('执行工具: searchIssuesInRepo, 参数:', { args });
     const { keyword, owner, repo, state = 'open' } = args;
     const urlPath = `search/issues`;
     const queryParams = `q=${encodeURIComponent(keyword)}+repo:${owner}/${repo}+state:${state}+is:issue`;
-    const result = await makeGitHubApiRequest<GitHubSearchResult<GitHubIssueSearchItem>>({
+    const result = await makeGitHubApiRequest<Github.GitHubSearchResult<Github.GitHubIssueSearchItem>>({
       method: 'GET',
       urlPath,
       queryParams,
     });
     if (result.success) {
-      const issues: SearchIssuesInRepoResult['issues'] = result.data.items.map((item) => ({
+      const issues: Tool.SearchIssuesInRepoResult['issues'] = result.data.items.map((item) => ({
         id: item.id,
         number: item.number,
         html_url: item.html_url,
@@ -138,11 +112,11 @@ export const ToolExecutors: ToolExecutorsType = {
    * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'SagerNet', repo: 'sing-box', branch: 'dev-next' }。
    * @returns {Promise<>} 工具执行结果对象。
    */
-  listRepoTree: async (args: ToolExecArgs): Promise<ToolExecResponse<ListRepoTreeResult>> => {
+  listRepoTree: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.ListRepoTreeResult>> => {
     Log.info('执行工具: listRepoTree, 参数:', { args });
     const { owner, repo, branch = 'main' } = args;
     const branchUrlPath = `repos/${owner}/${repo}/branches/${branch}`;
-    const branchResult = await makeGitHubApiRequest<GitHubBranch>({
+    const branchResult = await makeGitHubApiRequest<Github.GitHubBranch>({
       method: 'GET',
       urlPath: branchUrlPath,
     });
@@ -153,14 +127,14 @@ export const ToolExecutors: ToolExecutorsType = {
     Log.info(`获取到分支 ${branch} 的 tree SHA: ${treeSha}`);
     const treeUrlPath = `repos/${owner}/${repo}/git/trees/${treeSha}`;
     const queryParams = `recursive=1`;
-    const treeResult = await makeGitHubApiRequest<GitHubTreeResponse>({
+    const treeResult = await makeGitHubApiRequest<Github.GitHubTreeResponse>({
       method: 'GET',
       urlPath: treeUrlPath,
       queryParams,
     });
     if (treeResult.success) {
       // 过滤掉可能存在的 null 或 undefined item.path，并确保 name 不为空
-      const fileList: ListRepoTreeResult['fileList'] = treeResult.data.tree
+      const fileList: Tool.ListRepoTreeResult['fileList'] = treeResult.data.tree
         .filter((item) => item.path) // 过滤掉 path 为空的项
         .map((item) => ({
           name: item.path.split('/').pop() || '', // 确保 name 不为空字符串
@@ -181,7 +155,7 @@ export const ToolExecutors: ToolExecutorsType = {
    * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'SagerNet', repo: 'sing-box', path: 'docs/', branch: 'dev-next' }。
    * @returns {Promise<>} 工具执行结果对象。
    */
-  listDirContents: async (args: ToolExecArgs): Promise<ToolExecResponse<ListDirContentsResult>> => {
+  listDirContents: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.ListDirContentsResult>> => {
     Log.info('执行工具: listDirContents, 参数:', { args });
     const { owner, repo, path = '', branch = 'main' } = args;
 
@@ -189,13 +163,13 @@ export const ToolExecutors: ToolExecutorsType = {
     const cleanedPath = path.startsWith('/') ? path.substring(1) : path;
     const urlPath = `repos/${owner}/${repo}/contents/${cleanedPath}`;
     const queryParams = `ref=${branch}`;
-    const result = await makeGitHubApiRequest<Array<GitHubContentItem>>({
+    const result = await makeGitHubApiRequest<Array<Github.GitHubContentItem>>({
       method: 'GET',
       urlPath,
       queryParams,
     });
     if (result.success) {
-      const fileList: ListDirContentsResult['fileList'] = result.data.map((item) => ({
+      const fileList: Tool.ListDirContentsResult['fileList'] = result.data.map((item) => ({
         name: item.name,
         path: `${owner}/${repo}/refs/heads/${branch}/${item.path}`, // 构建完整的文档路径
         type: item.type,
@@ -214,18 +188,18 @@ export const ToolExecutors: ToolExecutorsType = {
    * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'SagerNet', repo: 'sing-box', branch: 'dev-next', path: 'docs/', per_page: 50, page: 1 }。
    * @returns {Promise<>} 工具执行结果对象。
    */
-  listRepoCommits: async (args: ToolExecArgs): Promise<ToolExecResponse<ListRepoCommitsResult>> => {
+  listRepoCommits: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.ListRepoCommitsResult>> => {
     Log.info('执行工具: listRepoCommits, 参数:', { args });
     const { owner, repo, per_page = 20, page = 1 } = args;
     const urlPath = `repos/${owner}/${repo}/commits`;
     const queryParams = `per_page=${per_page}&page=${page}`;
-    const result = await makeGitHubApiRequest<Array<GitHubCommitDetails>>({
+    const result = await makeGitHubApiRequest<Array<Github.GitHubCommitDetails>>({
       method: 'GET',
       urlPath,
       queryParams,
     });
     if (result.success) {
-      const commits: ListRepoCommitsResult['commits'] = result.data.map((item) => ({
+      const commits: Tool.ListRepoCommitsResult['commits'] = result.data.map((item) => ({
         sha: item.sha,
         message: item.commit.message,
         author: item.commit.author.name,
@@ -246,18 +220,18 @@ export const ToolExecutors: ToolExecutorsType = {
    * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'SagerNet', repo: 'sing-box', per_page: 10, page: 1 }。
    * @returns {Promise<>} 工具执行结果对象。
    */
-  listRepoReleases: async (args: ToolExecArgs): Promise<ToolExecResponse<ListRepoReleasesResult>> => {
+  listRepoReleases: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.ListRepoReleasesResult>> => {
     Log.info('执行工具: listRepoReleases, 参数:', { args });
     const { owner, repo, per_page = 10, page = 1 } = args;
     const urlPath = `repos/${owner}/${repo}/releases`;
     const queryParams = `per_page=${per_page}&page=${page}`;
-    const result = await makeGitHubApiRequest<Array<GitHubRelease>>({
+    const result = await makeGitHubApiRequest<Array<Github.GitHubRelease>>({
       method: 'GET',
       urlPath,
       queryParams,
     });
     if (result.success) {
-      const releases: ListRepoReleasesResult['releases'] = result.data.map((item) => ({
+      const releases: Tool.ListRepoReleasesResult['releases'] = result.data.map((item) => ({
         id: item.id,
         tag_name: item.tag_name,
         name: item.name,
@@ -283,13 +257,13 @@ export const ToolExecutors: ToolExecutorsType = {
    * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'SagerNet', repo: 'sing-box' }。
    * @returns {Promise<>} 工具执行结果对象。
    */
-  listRepoBranches: async (args: ToolExecArgs): Promise<ToolExecResponse<ListRepoBranchesResult>> => {
+  listRepoBranches: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.ListRepoBranchesResult>> => {
     Log.info('执行工具: listRepoBranches, 参数:', { args });
     const { owner, repo } = args;
     const urlPath: string = `repos/${owner}/${repo}/branches`;
-    const result = await makeGitHubApiRequest<Array<GitHubBranch>>({ method: 'GET', urlPath });
+    const result = await makeGitHubApiRequest<Array<Github.GitHubBranch>>({ method: 'GET', urlPath });
     if (result.success) {
-      const branches: ListRepoBranchesResult['branches'] = result.data.map((item) => ({
+      const branches: Tool.ListRepoBranchesResult['branches'] = result.data.map((item) => ({
         name: item.name,
         commit_sha: item.commit.sha,
         commit_url: item.commit.url,
@@ -309,9 +283,9 @@ export const ToolExecutors: ToolExecutorsType = {
    * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { filePaths: ['path1', 'path2'] }。
    * @returns {Promise<>} 工具执行结果对象，包含文件内容或错误信息。
    */
-  getFileContents: async (args: ToolExecArgs): Promise<ToolExecResponse<GetFileContentsResult>> => {
+  getFileContents: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.GetFileContentsResult>> => {
     Log.info('执行工具: getFileContents, 参数:', { args });
-    const processedFiles: GetFileContentsResult['files'] = [];
+    const processedFiles: Tool.GetFileContentsResult['files'] = [];
     for (const file of args.filePaths) {
       if (typeof file === 'string') {
         // 从路径中提取 repo/branch/file.ext 作为文档名称的简写
@@ -328,7 +302,7 @@ export const ToolExecutors: ToolExecutorsType = {
 
         if (result.success) {
           const assetContent = result.data;
-          const MAX_CHUNK_LENGTH = 1024; // 定义每个文本块的最大长度
+          const MAX_CHUNK_LENGTH = 2048; // 定义每个文本块的最大长度
           const chunkedContent = [];
 
           for (let i = 0; i < assetContent.length; i += MAX_CHUNK_LENGTH) {
@@ -369,14 +343,14 @@ export const ToolExecutors: ToolExecutorsType = {
    * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'SagerNet', repo: 'sing-box', commit_sha: '2464ced48c504eb0dee616c6d474813621779afc' }。
    * @returns {Promise<>} 工具执行结果对象。
    */
-  getCommitDetails: async (args: ToolExecArgs): Promise<ToolExecResponse<GetCommitDetailsResult>> => {
+  getCommitDetails: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.GetCommitDetailsResult>> => {
     Log.info('执行工具: getCommitDetails, 参数:', { args });
     const { owner, repo, commit_sha } = args;
     const urlPath = `repos/${owner}/${repo}/commits/${commit_sha}`;
-    const result = await makeGitHubApiRequest<GitHubCommitDetails>({ method: 'GET', urlPath });
+    const result = await makeGitHubApiRequest<Github.GitHubCommitDetails>({ method: 'GET', urlPath });
     if (result.success) {
       const data = result.data;
-      const commitDetails: GetCommitDetailsResult['commitDetails'] = {
+      const commitDetails: Tool.GetCommitDetailsResult['commitDetails'] = {
         sha: data.sha,
         author: {
           name: data.commit.author.name,
@@ -410,16 +384,16 @@ export const ToolExecutors: ToolExecutorsType = {
    * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'SagerNet', repo: 'sing-box', issue_number: 3202, per_page: 30, page: 1 }。
    * @returns {Promise<>} 工具执行结果对象。
    */
-  getIssueComments: async (args: ToolExecArgs): Promise<ToolExecResponse<GetIssueCommentsResult>> => {
+  getIssueComments: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.GetIssueCommentsResult>> => {
     Log.info('执行工具: getIssueComments, 参数:', { args });
     const { owner, repo, issue_number } = args;
     const urlPath = `repos/${owner}/${repo}/issues/${issue_number}/comments`;
-    const result = await makeGitHubApiRequest<Array<GitHubIssueComment>>({
+    const result = await makeGitHubApiRequest<Array<Github.GitHubIssueComment>>({
       method: 'GET',
       urlPath,
     });
     if (result.success) {
-      const comments: GetIssueCommentsResult['comments'] = result.data.map((item) => ({
+      const comments: Tool.GetIssueCommentsResult['comments'] = result.data.map((item) => ({
         id: item.id,
         html_url: item.html_url,
         user_login: item.user?.login || '未知', // 使用可选链操作符
@@ -441,11 +415,11 @@ export const ToolExecutors: ToolExecutorsType = {
    * @param {ToolExecArgs} args - 工具调用时传递的参数对象，例如 { owner: 'GUI-for-Cores', repo: 'GUI.for.SingBox', release_id: 227541695 } 或 { owner: 'GUI-for-Cores', repo: 'GUI.for.SingBox', tag_name: 'rolling-release-alpha' }。
    * @returns {Promise<>} 工具执行结果对象。
    */
-  getReleaseDetails: async (args: ToolExecArgs): Promise<ToolExecResponse<GetReleaseDetailsResult>> => {
+  getReleaseDetails: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.GetReleaseDetailsResult>> => {
     Log.info('执行工具: getReleaseDetails, 参数:', { args });
     const { owner, repo, release_id, tag_name } = args;
     const urlPath = `repos/${owner}/${repo}/releases/${release_id ? release_id : `tags/${tag_name}`}`;
-    const releaseResult = await makeGitHubApiRequest<GitHubRelease>({
+    const releaseResult = await makeGitHubApiRequest<Github.GitHubRelease>({
       method: 'GET',
       urlPath,
     });
@@ -453,7 +427,7 @@ export const ToolExecutors: ToolExecutorsType = {
       return releaseResult; // 直接返回封装的错误
     }
     const releaseData = releaseResult.data;
-    const releaseDetails: GetReleaseDetailsResult['releaseDetails'] = {
+    const releaseDetails: Tool.GetReleaseDetailsResult['releaseDetails'] = {
       id: releaseData.id,
       tag_name: releaseData.tag_name,
       name: releaseData.name,
@@ -483,7 +457,7 @@ export const ToolExecutors: ToolExecutorsType = {
    *
    * @returns {} 工具执行结果对象，包含 currentTime 字段。
    */
-  getCurrentTime: (): ToolExecResponse<GetCurrentTimeResult> => {
+  getCurrentTime: (): Tool.ToolExecResponse<Tool.GetCurrentTimeResult> => {
     Log.info('执行工具: getCurrentTime');
     const currentTime = formatTime(Date.now());
     Log.info('getCurrentTime 工具执行完毕，当前时间:', { currentTime });
@@ -491,7 +465,7 @@ export const ToolExecutors: ToolExecutorsType = {
   },
 
   generateImage: async (args) => {
-    Log.info('执行工具: sendPhotoMessage');
+    Log.info('执行工具: sendPhotoMessage，参数:', { args: { ...args, currentApiKey: '***' } });
     const { chatId, userId, userMessageId, currentApiKey, prompt } = args;
     const modelName: string = 'gemini-2.0-flash-preview-image-generation';
     const modelConfig: GenerateContentConfig = {
@@ -512,7 +486,7 @@ export const ToolExecutors: ToolExecutorsType = {
       const replyMarkup: ReplyMarkup = {
         inline_keyboard: makeInlineKeyboard(userId),
       };
-      const result = await TelegramBot.sendPhoto(chatId, imageBuffer, { caption: resTexts, replyToMessageId: userMessageId, replyMarkup });
+      const result = await bot.sendPhoto(chatId, imageBuffer, { caption: resTexts, replyToMessageId: userMessageId, replyMarkup });
       if (!result.ok) {
         return { success: false, error: `Error replying image message, ${result.error}` };
       }
@@ -525,7 +499,7 @@ export const ToolExecutors: ToolExecutorsType = {
   },
 
   generateSpeech: async (args) => {
-    Log.info('执行工具: sendVoiceMessage');
+    Log.info('执行工具: sendVoiceMessage，参数:', { args: { ...args, currentApiKey: '***' } });
     const { chatId, userId, userMessageId, currentApiKey, prompt } = args;
     const modelName: string = 'gemini-2.5-flash-preview-tts';
     const modelConfig: GenerateContentConfig = {
@@ -549,7 +523,7 @@ export const ToolExecutors: ToolExecutorsType = {
       const replyMarkup: ReplyMarkup = {
         inline_keyboard: makeInlineKeyboard(userId),
       };
-      const result = await TelegramBot.sendVoice(chatId, mp3AudioBuffer, { replyToMessageId: userMessageId, replyMarkup });
+      const result = await bot.sendVoice(chatId, mp3AudioBuffer, { replyToMessageId: userMessageId, replyMarkup });
       if (!result.ok) {
         return { success: false, error: `Error replying speech message, ${result.error}` };
       }
@@ -571,7 +545,7 @@ export const callMultiModalModels = async (
   const ai = new GoogleGenAI({ apiKey });
   const config: GenerateContentConfig = {
     ...modelConfig,
-    safetySettings: GeminiApi.SAFETY_SETTINGS,
+    safetySettings: genai.SAFETY_SETTINGS,
   };
   Log.info('发送 Gemini API 请求...');
   Log.info('当前发送的 contents:', { contents });

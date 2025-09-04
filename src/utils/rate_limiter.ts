@@ -1,7 +1,7 @@
 // src/utils/rate_limiter.ts
 
-import { BotConfig } from '@/services';
-import { KvNamespace } from './KvNamespace';
+import { config, Log } from '@/services';
+import { kv } from './KvNamespace';
 
 const DEFAULT_RETRY_SECONDS = 60;
 
@@ -14,7 +14,7 @@ const DEFAULT_RETRY_SECONDS = 60;
  */
 const recordTimestamp = async (namespaceId: string, keyName: string, timestamp: number): Promise<void> => {
   // KV 存储的值必须是字符串或 ArrayBuffer
-  await KvNamespace.write(namespaceId, keyName, timestamp.toString());
+  await kv.write(namespaceId, keyName, timestamp.toString());
 };
 
 /**
@@ -24,15 +24,15 @@ const recordTimestamp = async (namespaceId: string, keyName: string, timestamp: 
  * @returns {Promise<number|null>} - 返回时间戳（毫秒）或 null（如果不存在或无效）。
  */
 const getTimestamp = async (namespaceId: string, keyName: string): Promise<number | null> => {
-  const timestampStr = await KvNamespace.read<string>(namespaceId, keyName, 'text');
-  if (timestampStr) {
-    const timestamp: number = parseInt(timestampStr, 10);
+  const timestampStr = await kv.read<string>(namespaceId, keyName, 'text');
+  if (timestampStr.success) {
+    const timestamp: number = parseInt(timestampStr.data, 10);
     // 检查解析结果是否是有效的数字
     if (!isNaN(timestamp)) {
       return timestamp;
     } else {
       // 如果 KV 中存储的值不是有效的数字，记录警告并视为不存在时间戳
-      console.warn(`KV 中键 ${keyName} 存储了无效的时间戳: ${timestampStr}`);
+      Log.warn(`KV 中键 ${keyName} 存储了无效的时间戳: ${timestampStr}`);
       return null;
     }
   }
@@ -56,7 +56,7 @@ interface HasRateLimiter {
  * @returns {Promise<RateLimiterCheckResult>} - 返回一个对象，包含 canProceed 状态和（如果 canProceed 为 false）冷却剩余秒数。
  */
 const rateLimiterCheck = async (chatId: number): Promise<RateLimiterCheckResult> => {
-  const { rateLimitId: namespaceId, requestIntervalSecond: intervalSecond } = BotConfig.load();
+  const { rateLimitId: namespaceId, requestIntervalSecond: intervalSecond } = config.load();
   const keyName: string = `rate_limit_${chatId}`; // 使用更具描述性的键前缀
   const now: number = Date.now();
   const intervalMilliseconds = intervalSecond * 1000;
@@ -79,9 +79,10 @@ const rateLimiterCheck = async (chatId: number): Promise<RateLimiterCheckResult>
 
       return { canProceed: false, retryAfterSeconds };
     }
-  } catch (error) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     // 捕获 KV 操作中可能出现的错误
-    console.error(`限流器错误 (键: ${keyName}):`, error);
+    Log.error(`限流器错误 (键: ${keyName}):`, { err: errorMessage });
     // 如果发生错误，拒绝请求并提供默认重试时间，以防止在 KV 服务中断时被滥用
     return { canProceed: false, retryAfterSeconds: DEFAULT_RETRY_SECONDS };
   }

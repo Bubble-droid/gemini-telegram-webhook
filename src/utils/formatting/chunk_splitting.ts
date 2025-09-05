@@ -1,101 +1,228 @@
 // src/utils/formatting/chunk_splitting.ts
 
-import type { ParseMode } from '@/types';
-import { MARKDOWN_MARK_REGEX } from './formatters';
+import type { AstNode } from './parser';
+import type { Generator } from './generator';
 
-export interface CodeBlockRange {
-  start: number;
-  end: number;
-}
+const MAX_CONTENT_LENGTH = 4096;
 
 /**
- * 将格式化后的文本分割成适合 Telegram 消息长度的块，并尝试避免在代码块内部分割。
- * @param {string} formattedText - 已经格式化为特定 parseMode 的文本。
- * @param {ParseMode | null} parseMode - 当前的解析模式 ('HTML', 'MarkdownV2', 'Markdown', null)。
- * @returns {string[]} 文本块数组 (原始分割块，未添加平衡标签)。
+ * 递归计算一个 AST 节点及其所有子节点包含的“可见内容”的总长度。
+ * 这符合 Telegram Bot API 对实体解析后文本长度的计算方式。
+ * 关键更新：此函数现在计算 Unicode 码点 (Code Points) 的数量，
+ * 这与 Telegram Bot API 对 "characters" 的定义完全一致。
+ * @param node - 要计算长度的 AST 节点。
+ * @returns {number} 节点的可见内容总长度（以 Unicode 码点计）。
  */
-export const splitFormattedText = (formattedText: string, parseMode: ParseMode | null): string[] => {
-  const maxLength: number = 4000; // Telegram 消息最大长度约为 4096 字节，4000 字符是安全估计
-  const chunks: string[] = [];
-  let currentPos: number = 0;
+const getAstContentLength = (node: AstNode): number => {
+  switch (node.type) {
+    case 'text':
+    case 'inline_code':
+    case 'code_block':
+      return [...(node.content ?? '')].length;
+    case 'newline':
+      return 1; // 换行符计为一个字符
+    case 'root':
+    case 'bold':
+    case 'underline':
+    case 'strikethrough':
+    case 'spoiler':
+    case 'link':
+    case 'blockquote':
+      // 容器节点自身无长度，其长度为其所有子节点的长度之和
+      return node.children?.reduce((sum, child) => sum + getAstContentLength(child), 0) ?? 0;
+    default:
+      return 0;
+  }
+};
 
-  // 识别代码块的范围，以便在分割时避开
-  const codeBlockRanges: CodeBlockRange[] = [];
-  if (parseMode === 'HTML') {
-    // 匹配 <pre> 或 <pre><code ...> 整个块
-    const preRegex = /<pre(?:[^>]*?)?>[\s\S]*?<\/pre>/g;
-    let match: RegExpExecArray | null;
-    while ((match = preRegex.exec(formattedText)) !== null) {
-      codeBlockRanges.push({ start: match.index, end: match.index + match.length });
+/**
+ * 基于 AST 进行文本分割，并生成可以直接发送的、格式平衡的消息块。
+ * 此版本根据 Telegram 的实体解析后字符数（4096）进行精确分割，并能正确处理超长代码块。
+ * @param rootNode - AST 的根节点。
+ * @param generator - 用于生成目标格式文本的生成器实例。
+ * @returns {string[]} 已平衡格式的消息块数组。
+ */
+export const splitAstAndGenerateChunks = (rootNode: AstNode, generator: Generator): string[] => {
+  const chunks: string[] = [];
+  let currentChunkString = '';
+  let currentContentLength = 0;
+  const openNodesStack: AstNode[] = []; // 跟踪当前开放的节点（格式）
+
+  const startNewChunk = () => {
+    currentChunkString = openNodesStack.map((node) => generator.getOpeningTag(node.type, node)).join('');
+    currentContentLength = 0;
+  };
+
+  const finalizeCurrentChunk = () => {
+    if (currentContentLength === 0 && currentChunkString === '') return;
+    currentChunkString += [...openNodesStack]
+      .reverse()
+      .map((node) => generator.getClosingTag(node.type, node))
+      .join('');
+    if (currentChunkString.trim().length > 0) {
+      chunks.push(currentChunkString);
     }
-  } else if (parseMode === 'MarkdownV2' || parseMode === 'Markdown') {
-    // 匹配 ```code``` 整个块
-    let match: RegExpExecArray | null;
-    while ((match = MARKDOWN_MARK_REGEX.CODE_BLOCK.exec(formattedText)) !== null) {
-      codeBlockRanges.push({ start: match.index, end: match.index + match.length });
+  };
+
+  const traverse = (node: AstNode) => {
+    // --- 1. 预处理 & 原子节点检查 ---
+    const nodeContentLength = getAstContentLength(node);
+
+    // --- 核心升级：特殊处理 code_block ---
+    if (node.type === 'code_block') {
+      if (nodeContentLength > MAX_CONTENT_LENGTH) {
+        // --- 场景A: 代码块自身超长，必须分割 ---
+        // 1. 先将代码块之前的内容打包发送
+        if (currentContentLength > 0) {
+          finalizeCurrentChunk();
+        }
+        startNewChunk(); // 重置状态
+
+        // 2. 进入专用代码分割循环
+        let remainingContent = node.content ?? '';
+        while (remainingContent.length > 0) {
+          // 关键修复：移除未使用的变量 tagCharLength
+
+          // 计算格式化标签自身占用的字符长度（虽然Telegram不计入，但它们存在于我们的字符串中）
+          // 正确的方式是计算纯内容可用空间。
+          const contentNodeForGeneration: AstNode = { ...node, content: '' };
+          const emptyNodeStr = generator.generate(contentNodeForGeneration);
+          const formattingCharsLength = emptyNodeStr.length;
+
+          const availableContentSpace = MAX_CONTENT_LENGTH - formattingCharsLength;
+
+          let splitIndex = Math.min(remainingContent.length, availableContentSpace);
+          if (splitIndex < remainingContent.length) {
+            const preferredSplitIndex = remainingContent.lastIndexOf('\n', splitIndex);
+            if (preferredSplitIndex > 0) {
+              splitIndex = preferredSplitIndex; // 在换行符处分割
+            }
+          }
+
+          const part = remainingContent.substring(0, splitIndex);
+          const contentPartNode: AstNode = { ...node, content: part };
+          const codeChunk = generator.generate(contentPartNode);
+          chunks.push(codeChunk);
+
+          remainingContent = remainingContent.substring(splitIndex).trimStart();
+        }
+        // 3. 分割完毕，重置状态以接收后续内容
+        startNewChunk();
+        return; // 此节点已完全处理，跳过后续常规逻辑
+      } else {
+        // --- 场景B: 代码块未超长，执行 "Fit or Defer" 逻辑 ---
+        if (currentContentLength > 0 && currentContentLength + nodeContentLength > MAX_CONTENT_LENGTH) {
+          finalizeCurrentChunk();
+          startNewChunk();
+        }
+        currentChunkString += generator.generate(node);
+        currentContentLength += nodeContentLength;
+        return; // 原子节点处理完毕
+      }
+    }
+
+    // 对于 inline_code 和其他非容器节点，如果加入后超长，则换块
+    if (node.type === 'inline_code' || node.type === 'text' || node.type === 'newline') {
+      if (currentContentLength + nodeContentLength > MAX_CONTENT_LENGTH && nodeContentLength > 0) {
+        // 此处逻辑简化，实际分割在 text 内容处理中完成
+        // 这里主要处理原子性的 inline_code
+        if (node.type === 'inline_code') {
+          finalizeCurrentChunk();
+          startNewChunk();
+        }
+      }
+    }
+
+    // --- 2. 进入节点 (Pre-order Traversal) ---
+    openNodesStack.push(node);
+    currentChunkString += generator.getOpeningTag(node.type, node);
+
+    // --- 3. 处理节点内容 ---
+    if (node.children) {
+      for (const child of node.children) {
+        traverse(child);
+      }
+    } else if (node.content || node.type === 'newline') {
+      const content = node.content ?? '\n';
+      const contentLength = getAstContentLength(node); // 使用精确计算
+
+      if (currentContentLength + contentLength <= MAX_CONTENT_LENGTH) {
+        // 内容可以完全放入当前块
+        // 关键修复：调用 public 的 generateContent 方法
+        currentChunkString += generator.generateContent(node);
+        currentContentLength += contentLength;
+      } else {
+        // 内容需要被分割
+        let remainingContent = content;
+        while (remainingContent.length > 0) {
+          const remainingSpace = MAX_CONTENT_LENGTH - currentContentLength;
+          if (remainingSpace <= 0) {
+            // 当前块已满，开启新块
+            finalizeCurrentChunk();
+            startNewChunk();
+            continue; // 重新进入循环处理 remainingContent
+          }
+
+          // 寻找最佳分割点
+          let splitIndex = 0;
+          let currentLength = 0;
+          const chars = [...remainingContent]; // 按码点分割
+
+          for (let i = 0; i < chars.length; i++) {
+            if (currentLength + 1 > remainingSpace) {
+              break;
+            }
+            currentLength++;
+            splitIndex++;
+          }
+
+          if (splitIndex < chars.length) {
+            // 避免在末尾寻找
+            let preferredSplitIndex = -1;
+            const tempStr = chars.slice(0, splitIndex).join('');
+            preferredSplitIndex = tempStr.lastIndexOf('\n');
+            if (preferredSplitIndex === -1) {
+              preferredSplitIndex = tempStr.lastIndexOf(' ');
+            }
+            if (preferredSplitIndex > 0) {
+              // 确保不是在开头分割
+              splitIndex = [...tempStr.substring(0, preferredSplitIndex + 1)].length;
+            }
+          }
+
+          const part1 = chars.slice(0, splitIndex).join('');
+          const part2 = chars.slice(splitIndex).join('');
+
+          // 处理第一部分
+          const tempNodePart1: AstNode = { ...node, content: part1 };
+          // 关键修复：调用 public 的 generateContent 方法
+          currentChunkString += generator.generateContent(tempNodePart1);
+          currentContentLength += [...part1].length;
+
+          if (part2.length > 0) {
+            // 如果有剩余部分，说明当前块已满，需要结束并开启新块
+            finalizeCurrentChunk();
+            startNewChunk();
+          }
+          remainingContent = part2;
+        }
+      }
+    }
+
+    // --- 4. 离开节点 (Post-order Traversal) ---
+    currentChunkString += generator.getClosingTag(node.type, node);
+    openNodesStack.pop();
+  };
+
+  // 从根节点的子节点开始遍历
+  if (rootNode.children) {
+    for (const child of rootNode.children) {
+      traverse(child);
     }
   }
 
-  while (currentPos < formattedText.length) {
-    let endPos = Math.min(currentPos + maxLength, formattedText.length);
-
-    // 如果不是最后一个块
-    if (endPos < formattedText.length) {
-      // 检查 endPos 是否落在代码块内部
-      let isInCodeBlock = false;
-      let currentBlockEnd = -1;
-      for (const range of codeBlockRanges) {
-        if (endPos > range.start && endPos < range.end) {
-          isInCodeBlock = true;
-          currentBlockEnd = range.end;
-          break;
-        }
-      }
-
-      if (isInCodeBlock) {
-        // 如果落在代码块内部，尝试调整分割点
-        if (currentBlockEnd - currentPos <= maxLength) {
-          // 如果从当前位置到代码块结束不超过最大长度，则将分割点移到代码块结束之后
-          endPos = currentBlockEnd;
-        } else {
-          // 代码块太长，必须在内部分割。尝试在代码块内部找换行符。
-          // 在当前块的末尾 200 个字符内查找一个安全的分割点
-          const searchStart = Math.max(currentPos, endPos - 200);
-          let safeSplitPoint = -1;
-          for (let i = endPos - 1; i >= searchStart; i--) {
-            if (formattedText[i] === '\n') {
-              // 代码块内部主要按行分割
-              safeSplitPoint = i + 1; // 分割点在换行符之后
-              break;
-            }
-          }
-          if (safeSplitPoint !== -1) {
-            endPos = safeSplitPoint;
-          }
-          // 如果在窗口内没有找到换行符，就按 maxLength 硬分割 (可能破坏代码块格式)
-          // 这种情况下，`balanceChunkTags` 应该尝试修复。
-        }
-      } else {
-        // 如果没有落在代码块内部，尝试在附近找换行符或空格作为安全分割点
-        // 在当前块的末尾 200 个字符内查找一个安全的分割点
-        const searchStart = Math.max(currentPos, endPos - 200);
-        let safeSplitPoint = -1;
-        for (let i = endPos - 1; i >= searchStart; i--) {
-          if (formattedText[i] === '\n' || formattedText[i] === ' ') {
-            safeSplitPoint = i + 1; // 分割点在换行符或空格之后
-            break;
-          }
-        }
-        if (safeSplitPoint !== -1) {
-          endPos = safeSplitPoint;
-        }
-        // 如果在窗口内没有找到安全的分割点，就按 maxLength 硬分割
-      }
-    }
-
-    const chunk = formattedText.substring(currentPos, endPos);
-    chunks.push(chunk);
-    currentPos = endPos;
+  if (currentContentLength > 0 || (chunks.length === 0 && currentChunkString.length > 0)) {
+    finalizeCurrentChunk();
   }
 
   return chunks;

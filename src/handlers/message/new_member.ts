@@ -2,8 +2,7 @@
 
 import { Log, config, bot } from '@/services';
 import type { Message, ReplyMarkup, User } from '@/types';
-import { kv, scheduleDeletion, sleep } from '@/utils';
-import { formatters } from '@/utils/formatting';
+import { kv, scheduleDeletion, sleep, toHtml } from '@/utils';
 
 // 定义轮询参数，这些可以根据实际需求调整
 const POLLING_TIMEOUT_MS = 3 * 60 * 1000; // 3 分钟的超时时间
@@ -11,7 +10,7 @@ const POLLING_INTERVAL_MS = 5 * 1000; // 每 3 秒轮询一次
 
 /**
  * @function pollChatMemberStatus
- * @description 轮询检查指定成员在聊天中的状态，直到其通过验证或超时。
+ * @description 轮询检查指定成员在聊天中的状态，直到其通过验证或超时。v
  *              返回包含用户ID和验证结果的对象。
  * @param {number | string} chatId - 聊天的 ID。
  * @param {User} user - 新加入的 User 对象。
@@ -138,14 +137,14 @@ const handleNewMember = async (message: Message): Promise<void> => {
           ],
         ],
       };
-      const welcomeResult = await bot.sendMessage(chat.id, formatters.Html(replaceText), {
+      const welcomeResult = await bot.sendMessage(chat.id, toHtml(replaceText), {
         replyToMessageId: message_id,
         parseMode: 'HTML',
         replyMarkup,
       });
 
       if (welcomeResult.ok) {
-        void scheduleDeletion({ chat_id: chat.id, message_id: welcomeResult.messageId }, 3 * 60_000);
+        scheduleDeletion({ chat_id: chat.id, message_id: welcomeResult.messageId }, 3 * 60_000);
       }
     } else {
       Log.warn(`新成员 ${newMember.first_name}(${newMember.id}) 未通过验证或超时，不发送欢迎消息。`, { chatId: chat.id, newMemberId: newMember.id });

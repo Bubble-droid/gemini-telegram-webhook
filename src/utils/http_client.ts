@@ -1,4 +1,4 @@
-// src/script/http_client.ts
+// src/utils/http_client.ts
 
 import { Log } from '@/services';
 

@@ -5,7 +5,7 @@ import type { Content, GenerateContentConfig, GenerateContentResponse, Part, Saf
 import { config, GeminiError, KvNamespaceError, Log, bot, ToolExecutors } from '@/services';
 import { geminiTools } from '@/configs';
 import { kv, rotateArray, shortenString, sleep } from '@/utils';
-import { escapers } from '@/utils/formatting';
+import { escaper } from '@/utils/formatting';
 import type { ChatParams, GenerateContentSuccessResponse, ApiCallContext, ToolExecArgs, ToolName } from '@/types';
 
 /**
@@ -16,6 +16,12 @@ export class GeminiApi {
   // 定义最大无效回复和客户端错误重试次数，以及基础重试延迟
   private readonly MAX_RETRIES_COMMON: number = 3; // 无效回复和客户端错误共用最大重试次数
   private readonly BASE_RETRY_DELAY_MS: number = 10_000; // 10 秒
+  private readonly maxApiCallRounds: number;
+  private readonly durableResourceId: string;
+  private readonly systemPromptKeyName: string;
+  private readonly geminiApiKeysKeyName: string;
+  private readonly modelName: string;
+  private readonly modelTemperature: number;
   public readonly SAFETY_SETTINGS: SafetySetting[] = [
     { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
     { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -23,6 +29,16 @@ export class GeminiApi {
     { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
     { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
   ];
+
+  constructor() {
+    const { maxApiCallRounds, durableResourceId, systemPromptKeyName, geminiApiKeysKeyName, modelName, modelTemperature } = config.load();
+    this.maxApiCallRounds = maxApiCallRounds;
+    this.durableResourceId = durableResourceId;
+    this.systemPromptKeyName = systemPromptKeyName;
+    this.geminiApiKeysKeyName = geminiApiKeysKeyName;
+    this.modelName = modelName;
+    this.modelTemperature = modelTemperature;
+  }
 
   /**
    * 初始化 API 调用所需的配置和状态上下文。
@@ -32,17 +48,16 @@ export class GeminiApi {
    * @throws {GeminiError} 如果 API 密钥未找到或初始化失败。
    */
   private async _initializeApiCallContext(chatParams: ChatParams, initialContents: Content[]): Promise<ApiCallContext> {
-    const { durableResourceId, systemPromptKeyName, geminiApiKeysKeyName, modelName, modelTemperature } = config.load();
     const { chatId, userId, userMessageId, thinkMessageId } = chatParams;
 
     // 从 kv 读取系统提示，如果不存在则使用默认值
-    const systemPrompt = await kv.read<string>(durableResourceId, systemPromptKeyName, 'text');
+    const systemPrompt = await kv.read<string>(this.durableResourceId, this.systemPromptKeyName, 'text');
 
     if (!systemPrompt.success) {
       throw new KvNamespaceError(`系统提示获取失败，${systemPrompt.error}`, 'SYSTEM_PROMPT_NOT_FOUND');
     }
     // 读取 API 密钥，如果不存在则抛出错误
-    const apiKeys = await kv.read<[string, string][]>(durableResourceId, geminiApiKeysKeyName, 'json');
+    const apiKeys = await kv.read<[string, string][]>(this.durableResourceId, this.geminiApiKeysKeyName, 'json');
     if (!apiKeys.success) {
       throw new GeminiError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, 'GEMINI_API_KEY_NOT_FOUND');
     }
@@ -52,7 +67,7 @@ export class GeminiApi {
     // 构建 Gemini API 请求配置
     const baseConfig: GenerateContentConfig = {
       maxOutputTokens: 65536,
-      temperature: modelTemperature,
+      temperature: this.modelTemperature,
       thinkingConfig: { includeThoughts: true, thinkingBudget: -1 },
       tools: geminiTools,
       toolConfig: {
@@ -73,7 +88,7 @@ export class GeminiApi {
       thinkMessageId,
       systemPrompt: systemPrompt.data,
       apiKeys: apiKeys.data,
-      modelName,
+      modelName: this.modelName,
       config: baseConfig,
       contents: [...initialContents], // 复制初始对话历史，避免副作用
       metrics: {
@@ -216,7 +231,7 @@ export class GeminiApi {
         context.metrics.hasToolThoughts = true;
         // 如果存在 thinkMessageId，更新 Telegram 消息
         if (context.thinkMessageId !== undefined) {
-          const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escapers.Html(shortenString(thoughtTexts))}</blockquote>`;
+          const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escaper.html(shortenString(thoughtTexts))}</blockquote>`;
           await bot.editMessageText(context.chatId, context.thinkMessageId, displayThoughtText, { parseMode: 'HTML' });
         }
       }
@@ -316,10 +331,9 @@ export class GeminiApi {
    * @param {[string, string][]} apiKeys - 当前的 API 密钥组。
    */
   private async _writeApiKeysToKv(apiKeys: [string, string][]): Promise<void> {
-    const { durableResourceId, geminiApiKeysKeyName } = config.load();
     try {
       // 显式指定类型为 'json'，与读取时保持一致
-      await kv.write(durableResourceId, geminiApiKeysKeyName, JSON.stringify(apiKeys));
+      await kv.write(this.durableResourceId, this.geminiApiKeysKeyName, JSON.stringify(apiKeys));
       Log.info('已将最新的 API 密钥组写入 KvNamespace。');
     } catch (error) {
       Log.error('写入 API 密钥到 kv 失败:', { error });
@@ -335,7 +349,6 @@ export class GeminiApi {
    * @throws {GeminiError} 如果在任何阶段发生不可恢复的错误。
    */
   public generateContent = async (initialContents: Content[], chatParams: ChatParams): Promise<GenerateContentSuccessResponse> => {
-    const { maxApiCallRounds } = config.load();
     let context: ApiCallContext;
 
     try {
@@ -352,7 +365,7 @@ export class GeminiApi {
     let apiCallRoundCounter = 0; // 跟踪实际的 API 调用轮次，不包括重试
 
     // 主循环，控制最大逻辑 API 调用轮次
-    while (apiCallRoundCounter < maxApiCallRounds) {
+    while (apiCallRoundCounter < this.maxApiCallRounds) {
       let response: GenerateContentResponse;
       try {
         // 2. 调用 Gemini API，并处理客户端错误重试
@@ -471,7 +484,7 @@ export class GeminiApi {
     }
 
     // 如果循环次数达到上限，仍然没有最终回复，抛出错误
-    const errorMsg = `达到最大 API 调用轮次 (${maxApiCallRounds})，未能获取最终回复。`;
+    const errorMsg = `达到最大 API 调用轮次 (${this.maxApiCallRounds})，未能获取最终回复。`;
     Log.error(errorMsg);
     // 确保新创建的 GeminiError 包含 hasToolThoughts
     await this._writeApiKeysToKv(context.apiKeys); // 在抛出错误前写入 API 密钥

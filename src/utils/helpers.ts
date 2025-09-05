@@ -2,6 +2,173 @@
 
 import { randomBytes } from 'node:crypto';
 import * as lame from '@breezystack/lamejs';
+import type { MarkdownMarkRegex } from '@/types';
+import { escaper } from './formatting';
+
+export const MARKDOWN_REGEX: MarkdownMarkRegex = {
+  // 1. 代码块：必须最先匹配，其内部内容不应被其他规则解析。
+  CODE_BLOCK: /^```(\w*)\n([\s\S]+?)\n```/g,
+  // 2. 行内代码：优先级次之。
+  INLINE_CODE: /`([^`]+?)`/g,
+  // 3. 链接
+  LINK: /\[([^\]]+?)\]\(([^)]+?)\)/g,
+  // 4. 粗体 (**)
+  BOLD_ASTERISK: /\*\*(?!\s)([\s\S]*?)(?<!\s)\*\*/g,
+  // 5. 下划线 (__)
+  UNDERLINE_UNDERSCORE: /__(?!\s)([\s\S]*?)(?<!\s)__/g,
+  // 6. 删除线 (~)
+  STRIKETHROUGH: /~(?!\s)([\s\S]*?)(?<!\s)~/g,
+  // 7. 剧透 (||)
+  SPOILER: /\|\|(?!\s)([\s\S]*?)(?<!\s)\|\|/g,
+  // 8. 引用块 (行前缀 > 或 >>)，需要特殊处理多行。
+  BLOCKQUOTE_LINE: /^(>>? .+(?:\n>>? .+)*)/gm,
+};
+
+class SimpleFormatter {
+  /**
+   * 将标准 Markdown 文本格式化为 Telegram Bot API 的 HTML 格式。
+   * 遵循用户自定义的输入规范：**粗体**, __下划线__, _斜体_, ~删除线~, ||剧透||, `行内代码`, ```代码块```, [链接文本](URL), > 引用块, >> 可展开引用块。
+   *
+   * @param {string} markdownText - 标准 Markdown 格式的输入文本。
+   * @returns {string} 格式化为 HTML 的文本。
+   */
+  public toHtml = (markdownText: string): string => {
+    let processedText: string = markdownText;
+
+    // 1. 代码块 (```` ``` ````) - HTML中内容不转义，但包裹在 <pre><code> 标签中pnpm
+    processedText = processedText.replace(MARKDOWN_REGEX.CODE_BLOCK, (match, lang: string, code: string): string => {
+      // HTML模式下，<pre><code> 内部的原始内容不进行HTML实体转义。
+      // 但是，Telegram API文档指出：Use nested pre and code tags, to define programming language for pre entity.
+      // 编程语言通过 <code class="language-python"> 实现。
+      if (lang) {
+        return `<pre><code class="language-${escaper.html(lang)}">${code}</code></pre>`;
+      }
+      return `<pre>${code}</pre>`;
+    });
+
+    // 2. 行内代码 (`` ` ``) - HTML中内容转义，包裹在 <code> 标签中
+    processedText = processedText.replace(MARKDOWN_REGEX.INLINE_CODE, (match, code: string): string => {
+      const escapedCode = escaper.html(code);
+      return `<code>${escapedCode}</code>`;
+    });
+
+    // 3. 链接 ([文本](URL)) - 文本和URL都转义，包裹在 <a> 标签中
+    processedText = processedText.replace(MARKDOWN_REGEX.LINK, (match, text: string, url: string): string => {
+      const escapedText = escaper.html(text);
+      const escapedUrl = escaper.html(url); // URL中的特殊字符也需转义
+      return `<a href="${escapedUrl}">${escapedText}</a>`;
+    });
+
+    // 4. 剧透 (||剧透||) - 内容转义，包裹在 <span class="tg-spoiler"> 标签中
+    processedText = processedText.replace(MARKDOWN_REGEX.SPOILER, (match, content: string): string => {
+      return `<span class="tg-spoiler">${content}</span>`;
+    });
+
+    // 5. 删除线 (~删除线~) - 内容转义，包裹在 <s> 标签中
+    processedText = processedText.replace(MARKDOWN_REGEX.STRIKETHROUGH, (match, content: string): string => {
+      const escapedContent = escaper.html(content);
+      return `<s>${escapedContent}</s>`;
+    });
+
+    // 6. 粗体 (**粗体**) - 内容转义，包裹在 <b> 标签中
+    processedText = processedText.replace(MARKDOWN_REGEX.BOLD_ASTERISK, (match, content: string): string => {
+      const escapedContent = escaper.html(content);
+      return `<b>${escapedContent}</b>`;
+    });
+
+    // 7. 下划线 (__下划线__) - 内容转义，包裹在 <u> 标签中
+    processedText = processedText.replace(MARKDOWN_REGEX.UNDERLINE_UNDERSCORE, (match, content: string): string => {
+      const escapedContent = escaper.html(content);
+      return `<u>${escapedContent}</u>`;
+    });
+
+    processedText = processedText.replace(/^(>>? .+(?:\n>>? .+)*)/gm, (match) => {
+      const isExpandable = match.startsWith('>>');
+      // 移除每行行首的 '>' 或 '>>' 及随后的空格
+      const content = match.replace(/^(>>?)\s/gm, '');
+      const escapedContent = escaper.html(content);
+
+      if (isExpandable) {
+        return `<blockquote expandable>${escapedContent}</blockquote>`;
+      }
+      return `<blockquote>${escapedContent}</blockquote>`;
+    });
+
+    return processedText;
+  };
+
+  /**
+   * 将标准 Markdown 文本格式化为 Telegram Bot API 的 MarkdownV2 格式。
+   * 遵循用户自定义的输入规范：**粗体**, __下划线__, _斜体_, ~删除线~, ||剧透||, `行内代码`, ```代码块```, [链接文本](URL), > 引用块, >> 可展开引用块。
+   *
+   * @param {string} markdownText - 标准 Markdown 格式的输入文本。
+   * @returns {string} 格式化为 MarkdownV2 的文本。
+   */
+  public toMarkdownV2 = (markdownText: string): string => {
+    let processedText: string = markdownText;
+
+    // 1. 代码块 (```` ``` ````) - 内容转义 ` 和 `\`
+    processedText = processedText.replace(MARKDOWN_REGEX.CODE_BLOCK, (match, lang: string, code: string) => {
+      const escapedCode = escaper.markdownV2Code(code);
+      return `\`\`\`${lang}\n${escapedCode}\n\`\`\``;
+    });
+
+    // 2. 行内代码 (`` ` ``) - 内容转义 ` 和 `\`
+    processedText = processedText.replace(MARKDOWN_REGEX.INLINE_CODE, (match, code: string): string => {
+      const escapedCode = escaper.markdownV2Code(code);
+      return `\`${escapedCode}\``;
+    });
+
+    // 3. 链接 ([文本](URL)) - 文本转义普通字符，URL转义 `)` 和 `\`
+    processedText = processedText.replace(MARKDOWN_REGEX.LINK, (match, text: string, url: string): string => {
+      const escapedText = escaper.markdownV2(text);
+      const escapedUrl = escaper.markdownV2Url(url);
+      return `[${escapedText}](${escapedUrl})`;
+    });
+
+    // 4. 剧透 (||剧透||) - 内容转义普通字符
+    processedText = processedText.replace(MARKDOWN_REGEX.SPOILER, (match, content: string): string => {
+      const escapedContent = escaper.markdownV2(content);
+      return `||${escapedContent}||`;
+    });
+
+    // 5. 删除线 (~删除线~) - 内容转义普通字符
+    processedText = processedText.replace(MARKDOWN_REGEX.STRIKETHROUGH, (match, content: string): string => {
+      const escapedContent = escaper.markdownV2(content);
+      return `~${escapedContent}~`;
+    });
+
+    // 6. 粗体 (**粗体**) -> Telegram MV2 的 *粗体* - 内容转义普通字符
+    // 注意：此处是标准 Markdown **粗体** 映射到 Telegram MarkdownV2 的 *粗体*
+    processedText = processedText.replace(MARKDOWN_REGEX.BOLD_ASTERISK, (match, content: string): string => {
+      const escapedContent = escaper.markdownV2(content);
+      return `*${escapedContent}*`;
+    });
+
+    // 7. 下划线 (__下划线__) -> Telegram MV2 的 __下划线__ - 内容转义普通字符
+    processedText = processedText.replace(MARKDOWN_REGEX.UNDERLINE_UNDERSCORE, (match, content: string): string => {
+      const escapedContent = escaper.markdownV2(content);
+      return `__${escapedContent}__`;
+    });
+
+    processedText = processedText.replace(MARKDOWN_REGEX.BLOCKQUOTE_LINE, (match, content: string) => {
+      // 这里的 content 可能已经包含了转义和格式化，所以我们不再对其进行 escapers.markdownV2Text
+      return `> ${content}`;
+    });
+
+    return processedText;
+  };
+}
+
+const simpleFormatter: SimpleFormatter = new SimpleFormatter();
+
+export const toHtml = (markdownText: string): string => {
+  return simpleFormatter.toHtml(markdownText);
+};
+
+export const toMarkdownV2 = (markdownText: string): string => {
+  return simpleFormatter.toMarkdownV2(markdownText);
+};
 
 /**
  * 将时间格式化为 UTC+8 时间
@@ -115,8 +282,7 @@ export const shortenString = (input: string): string => {
     throw new TypeError('input must be a string');
   }
 
-  // 使用 Array.from 保持对 Unicode 代码点（包括 emoji）的正确处理
-  const chars = getUTF8Byte(input);
+  const chars = [...input];
 
   if (chars.length <= MAX) return input;
 
@@ -124,19 +290,6 @@ export const shortenString = (input: string): string => {
   const tailPart = chars.slice(chars.length - TAIL).join('');
   return `${headPart}\n\n......\n\n${tailPart}`;
 };
-
-/**
- * 计算字符串的 UTF-8 字节数
- * @param {string} str 需要计算的字符串
- * @returns {Uint8Array} 字符串的 UTF-8 字节数
- */
-export function getUTF8Byte(str: string): Uint8Array {
-  // 使用 TextEncoder API 来获取字符串的 UTF-8 编码字节数
-  // TextEncoder 是一个 Web API，在 Node.js 中也可以使用
-  const encoder = new TextEncoder();
-  const encoded = encoder.encode(str);
-  return encoded;
-}
 
 /**
  * 将 Gemini API 返回的原始 PCM (s16le, 24000Hz, 单声道) Buffer 转换为 MP3 Buffer。

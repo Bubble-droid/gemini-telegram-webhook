@@ -2,7 +2,7 @@
 
 import { VM } from 'vm2';
 import type { Message, ScriptExecutionResult } from '@/types';
-import { Http, Body } from './http_client';
+import { Http, Body } from '@/utils';
 
 /**
  * @class ExecutionService

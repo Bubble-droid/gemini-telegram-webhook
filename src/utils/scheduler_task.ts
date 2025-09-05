@@ -1,20 +1,21 @@
 // src/utils/scheduler_task.ts
 
 import { Log, config } from '@/services';
-import type { DeleteMessageParams, SendMessageParams, ApiMethod } from '@/types';
+import type * as Bot from '@/types/telegram';
+import type { SchedulerApiResponseBody } from '@/types';
 
 /**
  * 调度任意任务
- * @param {ApiMethod} action - 任务类型，如 'deleteMessage'
+ * @param {Bot.ApiMethod} action - 任务类型，如 'deleteMessage'
  * @param {T} params - 任务参数对象
  * @param {number} delayMs - 延迟毫秒数
  */
-const scheduleTask = async <T>(action: ApiMethod, params: T, delayMs: number): Promise<void> => {
+const scheduleTask = async <T>(action: Bot.ApiMethod, params: T, delayMs: number): Promise<void> => {
   const { schedulerApiUrl, schedulerApiToken } = config.load();
   const name = `${action}-${JSON.stringify(params)}`;
   const encoded = Buffer.from(schedulerApiToken, 'utf-8').toString('base64');
   try {
-    await fetch(schedulerApiUrl, {
+    const res = await fetch(schedulerApiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -22,9 +23,12 @@ const scheduleTask = async <T>(action: ApiMethod, params: T, delayMs: number): P
       },
       body: JSON.stringify({ action, params, delayMs }),
     });
-    Log.info(`Registering scheduled task with name: ${name}, execute after ${delayMs / 1_000} s`, {
-      params,
-    });
+    const result = (await res.json()) as SchedulerApiResponseBody;
+    if (result.status === 'scheduled') {
+      Log.info(`Registering scheduled task with name: ${name}, execute after ${delayMs / 1_000} s`, {
+        params,
+      });
+    }
   } catch (error: unknown) {
     Log.error(`Failed to register scheduled task with name: ${name}`, {
       params,
@@ -36,12 +40,12 @@ const scheduleTask = async <T>(action: ApiMethod, params: T, delayMs: number): P
 /**
  * 专用：延迟删除 Telegram 消息
  */
-const scheduleDeletion = (params: DeleteMessageParams, delayMs: number): void => {
-  void scheduleTask<DeleteMessageParams>('deleteMessage', params, delayMs);
+const scheduleDeletion = (params: Bot.DeleteMessageParams, delayMs: number): Promise<void> => {
+  return scheduleTask<Bot.DeleteMessageParams>('deleteMessage', params, delayMs);
 };
 
-const scheduleSend = (params: SendMessageParams, delayMs: number): void => {
-  void scheduleTask<SendMessageParams>('sendMessage', params, delayMs);
+const scheduleSend = (params: Bot.SendMessageParams, delayMs: number): Promise<void> => {
+  return scheduleTask<Bot.SendMessageParams>('sendMessage', params, delayMs);
 };
 
 export { scheduleDeletion, scheduleSend };

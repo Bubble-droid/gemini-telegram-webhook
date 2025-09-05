@@ -114,7 +114,7 @@ export class ScriptManager {
   public async uninstallForUser(userId: number, tag: string): Promise<void> {
     const userScripts = await this._getUserScripts(userId);
     if (!userScripts.includes(tag)) {
-      throw new ScriptError(`脚本卸载失败：未找到标签为 "${tag}" 的脚本。`);
+      throw new ScriptError(`脚本卸载失败：未找到标签为 "${tag.replace(`script_${userId}_`, '')}" 的脚本。`);
     }
 
     // 关键步骤：先更新用户列表，再删除脚本内容

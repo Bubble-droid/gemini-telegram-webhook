@@ -44,7 +44,7 @@ const handleNormal = async (message: Message): Promise<void> => {
       cleanMessage = { ...message, reply_to_message: { ...reply_to_message, text: cleanMessageTexts } };
     }
   }
-  return await handleMention(cleanMessage, true);
+  return await handleMention(cleanMessage);
 };
 
 export { handleNormal };

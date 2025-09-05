@@ -4,7 +4,7 @@ import type { Message, MessageEntity, ReplyMarkup, Update } from '@/types';
 import { config, Log, REACTiON_ROW, bot } from '@/services';
 import { handleMention, handleCommand, handleNewMember, handleNormal } from '@/handlers/message';
 import { scheduleDeletion, sendErrorNotification, shortenString } from '@/utils';
-import { escapers } from '@/utils/formatting';
+import { escaper } from '@/utils/formatting';
 import { handleCallbackQuery } from './callback_query';
 
 /**
@@ -58,13 +58,13 @@ const handleUpdate = async (update: Update): Promise<void> => {
     Log.error('Error while handling update', { err, updateId: update_id });
     await sendErrorNotification(err, `Error while handling update ${JSON.stringify({ chatId: chat.id, messageId: message_id })}`);
     const errorMessage: string = err instanceof Error ? err.message : String(err);
-    const shorten = `<blockquote expandable>${escapers.Html(shortenString(`❌ ${errorMessage}`))}</blockquote>`;
+    const shorten = `<blockquote expandable>${escaper.html(shortenString(`❌ ${errorMessage}`))}</blockquote>`;
     const replyMarkup: ReplyMarkup = {
       inline_keyboard: [REACTiON_ROW],
     };
     const errorResult = await bot.sendMessage(chat.id, shorten, { replyToMessageId: message_id, parseMode: 'HTML', replyMarkup });
     if (errorResult.ok) {
-      void scheduleDeletion({ chat_id: chat.id, message_id: errorResult.messageId }, 3 * 60_000);
+      scheduleDeletion({ chat_id: chat.id, message_id: errorResult.messageId }, 3 * 60_000);
     }
   }
 };

@@ -3,7 +3,7 @@ import { BotCommands } from '@/configs';
 import type { HttpMethod } from '@/types';
 import type * as Bot from '@/types/telegram';
 import { shortenString } from '@/utils';
-import { escapers } from '@/utils/formatting';
+import { escaper } from '@/utils/formatting';
 
 /**
  * @class TelegramBot
@@ -157,7 +157,7 @@ export class TelegramBot {
       replyMarkup?: Bot.ReplyMarkup;
     },
   ): Promise<{ ok: true; messageId: number } | { ok: false; error: string }> {
-    const shorten = `<blockquote expandable>${escapers.Html(shortenString(String(options?.caption)))}</blockquote>`;
+    const shorten = `<blockquote expandable>${escaper.html(shortenString(String(options?.caption)))}</blockquote>`;
     const payload: Bot.SendPhotoParams = {
       chat_id: chatId,
       photo: photoBuffer,

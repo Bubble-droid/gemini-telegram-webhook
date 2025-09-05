@@ -2,8 +2,7 @@
 
 import { config, bot, contexts, Log, ToolExecutors, TelegramError, KvNamespaceError, ScriptError } from '@/services';
 import { geminiTools } from '@/configs';
-import { scheduleDeletion, sleep, kv, sampleByShuffle } from '@/utils';
-import { formatters } from '@/utils/formatting';
+import { scheduleDeletion, sleep, kv, sampleByShuffle, toHtml } from '@/utils';
 import type { BotCommandAction, InlineKeyboardButton, Message, ReplyMarkup, ToolExecArgs } from '@/types';
 import type { FunctionDeclaration } from '@google/genai';
 import { scriptManager } from '@/script';
@@ -80,9 +79,9 @@ const BaseCommands: BotCommandAction[] = [
 
       let startResult;
       if (isCallback) {
-        startResult = await bot.editMessageText(chatId, messageId, formatters.Html(replaceText), { parseMode: 'HTML', replyMarkup });
+        startResult = await bot.editMessageText(chatId, messageId, toHtml(replaceText), { parseMode: 'HTML', replyMarkup });
       } else {
-        startResult = await bot.sendMessage(chatId, formatters.Html(replaceText), {
+        startResult = await bot.sendMessage(chatId, toHtml(replaceText), {
           replyToMessageId: messageId,
           parseMode: 'HTML',
           replyMarkup,
@@ -116,12 +115,12 @@ const BaseCommands: BotCommandAction[] = [
       };
       let faqResult;
       if (isCallback) {
-        faqResult = await bot.editMessageText(chatId, messageId, formatters.Html(faqReply.data.trim()), {
+        faqResult = await bot.editMessageText(chatId, messageId, toHtml(faqReply.data.trim()), {
           parseMode: 'HTML',
           replyMarkup: backReplyMarkup,
         });
       } else {
-        faqResult = await bot.sendMessage(chatId, formatters.Html(faqReply.data.trim()), { replyToMessageId: messageId, parseMode: 'HTML' });
+        faqResult = await bot.sendMessage(chatId, toHtml(faqReply.data.trim()), { replyToMessageId: messageId, parseMode: 'HTML' });
       }
       if (faqResult.ok) {
         scheduleDeletion({ chat_id: chatId, message_id: faqResult.messageId }, 5 * 60_000);
@@ -173,7 +172,10 @@ const BaseCommands: BotCommandAction[] = [
       const toolFunctions = geminiTools[0]?.functionDeclarations || [];
       const toolList =
         toolFunctions
-          ?.map((tool) => `* **${tool.name}**\n    ${tool.description?.slice(0, 40)}...`)
+          ?.map(
+            (tool) =>
+              `* **${tool.name}**\n    ${[...(tool.description as string)].length > 40 ? `${tool.description?.slice(0, 40)}...` : tool.description}`,
+          )
           .join('\n')
           .trim() || '';
       const randomTools = sampleByShuffle<FunctionDeclaration>(toolFunctions, 4);
@@ -215,12 +217,12 @@ const BaseCommands: BotCommandAction[] = [
             ],
           ],
         };
-        toolsResult = await bot.editMessageText(chatId, messageId, formatters.Html(toolsText), {
+        toolsResult = await bot.editMessageText(chatId, messageId, toHtml(toolsText), {
           parseMode: 'HTML',
           replyMarkup: backReplyMarkup,
         });
       } else {
-        toolsResult = await bot.sendMessage(chatId, formatters.Html(toolsText), {
+        toolsResult = await bot.sendMessage(chatId, toHtml(toolsText), {
           replyToMessageId: messageId,
           parseMode: 'HTML',
           replyMarkup,

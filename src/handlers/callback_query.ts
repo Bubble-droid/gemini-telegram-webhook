@@ -71,9 +71,11 @@ export const handleCallbackQuery = async (callbackQuery: CallbackQuery): Promise
     case data.startsWith('reaction_'): {
       const reaction = data.split('_')[1];
       const keyName = `reacted_${chat.id}_${messageId}`;
-      const reactedUsers = await kv.read<number[]>(rateLimitId, keyName, 'json');
+      const readResult = await kv.read<number[]>(rateLimitId, keyName, 'json');
 
-      if (!reactedUsers.success || reactedUsers.data.includes(from.id)) {
+      const reactedUsers = readResult.success ? [...readResult.data] : [];
+
+      if (reactedUsers.includes(from.id)) {
         // Notify the user that they have already reacted and stop.
         bot.answerCallbackQuery(queryId, {
           callbackText: '你已做出过反应',
@@ -83,8 +85,8 @@ export const handleCallbackQuery = async (callbackQuery: CallbackQuery): Promise
 
       bot.answerCallbackQuery(queryId, { callbackText: '反应成功' });
       // Add the user to the reacted list and save it for 48 hours.
-      const newReactedUsers = [...reactedUsers.data, from.id];
-      await kv.write(rateLimitId, keyName, JSON.stringify(newReactedUsers), { expiration_ttl: 48 * 60 * 60 });
+      reactedUsers.push(from.id);
+      await kv.write(rateLimitId, keyName, JSON.stringify(reactedUsers), { expiration_ttl: 48 * 60 * 60 });
 
       // Create a deep copy of the keyboard to modify.
       const newInlineKeyboard: InlineKeyboardButton[][] = JSON.parse(JSON.stringify(reply_markup?.inline_keyboard));

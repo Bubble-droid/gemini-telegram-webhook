@@ -1,8 +1,8 @@
 // src/utils/error_notification.ts
 
 import { config, Log, bot } from '@/services';
-import { formatTime } from '@/utils'; // 导入 helper 函数
-import { escapers, formatters } from './formatting';
+import { formatTime, toHtml } from '@/utils'; // 导入 helper 函数
+import { escaper } from './formatting';
 
 /**
  * @function sendErrorNotification
@@ -17,13 +17,13 @@ const sendErrorNotification = async (error: Error, context: string = ''): Promis
     if (adminId) {
       const currentTime = formatTime(Date.now()); // 使用辅助函数获取时间
       const errorMessage =
-        `*🚨 [错误告警] 🚨*\n\n` +
-        `*发生时间*: \`${currentTime}\`\n\n` +
-        `*错误上下文*: \`${escapers.Html(context)}\`\n\n` +
-        `*错误信息*: \`${escapers.Html(error.message || String(error))}\`\n\n` +
-        `*堆栈追踪*:\n` +
-        `\`\`\`javascript\n${escapers.Html(error.stack || 'N/A')}\n\`\`\``;
-      await bot.sendMessage(adminId, formatters.Html(errorMessage), { parseMode: 'HTML' });
+        `🚨 [错误告警] 🚨\n\n` +
+        `发生时间: \`${currentTime}\`\n\n` +
+        `错误上下文: \`${escaper.html(context)}\`\n\n` +
+        `错误信息 \`${escaper.html(error.message || String(error))}\`\n\n` +
+        `堆栈追踪:\n` +
+        `\`\`\`javascript\n${error.stack || 'N/A'}\n\`\`\``;
+      await bot.sendMessage(adminId, toHtml(errorMessage), { parseMode: 'HTML' });
       Log.info('Error notification sent to admin.', { context, adminId });
     } else {
       Log.warn('Admin ID is not configured, unable to send error notification.', {

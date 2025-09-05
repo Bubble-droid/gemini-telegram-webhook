@@ -4,7 +4,7 @@ import { config, bot, contexts, Log, genai, GeminiError, TelegramError, makeInli
 import type { Message, GenerateContentSuccessResponse, ReplyMarkup } from '@/types';
 import type { Content, Part } from '@google/genai'; // 确保 Part 类型导入
 import { rateLimiterCheck, scheduleDeletion, shortenString, sleep } from '@/utils';
-import { escapers } from '@/utils/formatting';
+import { escaper } from '@/utils/formatting';
 import { handleFile } from '@/handlers/file';
 import { sendFormattedMessage } from '@/utils/formatting';
 
@@ -74,7 +74,7 @@ export class MentionHandler {
         replyToMessageId: userMessageId,
       });
       if (rateLimitResult.ok) {
-        void scheduleDeletion({ chat_id: chat.id, message_id: rateLimitResult.messageId }, checkResult.retryAfterSeconds * 1_000);
+        scheduleDeletion({ chat_id: chat.id, message_id: rateLimitResult.messageId }, checkResult.retryAfterSeconds * 1_000);
       }
       return true; // 表示已处理速率限制
     }
@@ -110,7 +110,6 @@ export class MentionHandler {
    * @param {number | undefined} fromUserId - 发送消息的用户 ID。
    * @param {Message} currentMessage - 当前用户消息。
    * @param {string} botName - Bot 的用户名。
-   * @param {number} botId - Bot 的用户 ID。
    * @returns {Promise<Content[]>} 完整的对话内容数组。
    */
   private async buildCompleteContents(chatId: number, fromUserId: number | undefined, currentMessage: Message, botName: string): Promise<Content[]> {
@@ -187,7 +186,6 @@ export class MentionHandler {
     chatId: number,
     userMessageId: number,
     thinkMessageId: number,
-    botName: string,
     modelName: string,
     fromUserId: number,
     completeContentsBeforeCall: Content[],
@@ -215,7 +213,7 @@ export class MentionHandler {
 
     if (resThoughtTexts) {
       hasDisplayedThoughts = true;
-      const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escapers.Html(shortenString(resThoughtTexts))}</blockquote>`;
+      const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escaper.html(shortenString(resThoughtTexts))}</blockquote>`;
       const replyMarkup: ReplyMarkup = {
         inline_keyboard: makeInlineKeyboard(fromUserId),
       };
@@ -227,7 +225,7 @@ export class MentionHandler {
     if (!hasToolThoughts && !hasDisplayedThoughts) {
       await bot.deleteMessage(chatId, thinkMessageId);
     } else {
-      void scheduleDeletion({ chat_id: chatId, message_id: thinkMessageId }, 30 * 60_000);
+      scheduleDeletion({ chat_id: chatId, message_id: thinkMessageId }, 30 * 60_000);
     }
 
     // 提取最终的回复文本（非思考内容）：从 `response.parts` 中过滤掉带有 `thought` 属性的 Part
@@ -248,7 +246,7 @@ export class MentionHandler {
         replyMarkup,
       });
       if (replyResult.ok) {
-        void scheduleDeletion({ chat_id: chatId, message_id: replyResult.messageId }, 3 * 60 * 1000);
+        scheduleDeletion({ chat_id: chatId, message_id: replyResult.messageId }, 3 * 60 * 1000);
       }
       return hasDisplayedThoughts;
     }
@@ -257,7 +255,7 @@ export class MentionHandler {
 
 ${resTexts}
 
-✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}
+✨ 本次任务成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试（${emptyReplyRetryCount} 次无效回复，${errorRetryCount} 次客户端错误），共使用 ${usageToolCount} 个工具，耗时 ${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}
 
 ⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。`;
 
@@ -290,17 +288,15 @@ ${resTexts}
   /**
    * 处理提及 Bot 的消息或回复 Bot 消息的普通消息。
    * @param {Message} message - Telegram 消息对象。
-   * @param {boolean} [isChat=false] - 可选参数，如果为 `true`，则表示此消息是群组内的普通消息，但回复了 Bot 的消息，因此无需再次检查是否提及 Bot。
    * @returns {Promise<void>}
    */
-  public async handleMention(message: Message, isChat: boolean = false): Promise<void> {
+  public async handleMention(message: Message): Promise<void> {
     const { modelName, botName, adminId } = config.load();
     const { message_id: userMessageId, from, chat, reply_to_message } = message;
 
     Log.info('Handling mention message.', {
       chatId: chat.id,
       messageId: userMessageId,
-      isChatMode: isChat,
     });
 
     // 1. 检查并处理速率限制
@@ -344,7 +340,6 @@ ${resTexts}
         chat.id,
         userMessageId,
         thinkMessageId,
-        botName,
         modelName,
         from?.id as number,
         completeContents,
@@ -367,7 +362,7 @@ ${resTexts}
         if (!err?.hasToolThoughts && !hasResThought) {
           await bot.deleteMessage(chat.id, thinkMessageId);
         } else {
-          void scheduleDeletion({ chat_id: chat.id, message_id: thinkMessageId }, 30 * 60_000);
+          scheduleDeletion({ chat_id: chat.id, message_id: thinkMessageId }, 30 * 60_000);
         }
       }
       throw apiError; // 重新抛出错误以便上层捕获
@@ -377,4 +372,6 @@ ${resTexts}
 
 const mention: MentionHandler = new MentionHandler();
 // 导出 handleMention 函数作为模块的默认导出，以便外部调用
-export const handleMention: typeof mention.handleMention = mention.handleMention;
+export const handleMention = async (message: Message): Promise<void> => {
+  return await mention.handleMention(message);
+};

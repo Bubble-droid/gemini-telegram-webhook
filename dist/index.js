@@ -1,11 +1,11 @@
 import Fastify from "fastify";
 import { isIP } from "node:net";
 import process$1 from "node:process";
+import { Type, Behavior, HarmBlockThreshold, HarmCategory, FunctionCallingConfigMode, GoogleGenAI } from "@google/genai";
+import { Logger } from "tslog";
 import "node:crypto";
 import * as lame from "@breezystack/lamejs";
-import { Type, Behavior, HarmBlockThreshold, HarmCategory, FunctionCallingConfigMode, GoogleGenAI } from "@google/genai";
 import Cloudflare from "cloudflare";
-import { Logger } from "tslog";
 import { VM } from "vm2";
 const LOGGER_LEVELS = ["trace", "debug", "info", "warn", "error", "fatal"];
 class BotConfig {
@@ -144,9 +144,798 @@ class BotConfig {
   };
 }
 const config = new BotConfig();
+class Parser {
+  text;
+  pos = 0;
+  markers = ["**", "__", "~", "||", "`", "[", "]", "(", ")", "```", "\n", ">"];
+  constructor(text) {
+    this.text = text.replace(/\r\n/g, "\n");
+  }
+  parse() {
+    return { type: "root", children: this.parseUntil((p) => p >= this.text.length) };
+  }
+  parseUntil(endCondition) {
+    const nodes = [];
+    while (!endCondition(this.pos)) {
+      const startPos = this.pos;
+      const node = this.parseCodeBlock() || this.parseBlockquote() || this.parseBold() || this.parseUnderline() || this.parseStrikethrough() || this.parseSpoiler() || this.parseLink() || this.parseInlineCode() || this.parseNewline() || this.parseText(endCondition);
+      if (node) {
+        nodes.push(node);
+      }
+      if (this.pos === startPos) {
+        if (!endCondition(this.pos)) {
+          nodes.push({ type: "text", content: this.text[this.pos] });
+          this.pos++;
+        }
+      }
+    }
+    return nodes;
+  }
+  match(s) {
+    return this.text.substring(this.pos).startsWith(s);
+  }
+  parseWithMarkers(type, marker) {
+    if (!this.match(marker)) return null;
+    const startPos = this.pos;
+    this.pos += marker.length;
+    const children = this.parseUntil((p) => this.text.substring(p).startsWith(marker) || p >= this.text.length);
+    if (this.match(marker)) {
+      this.pos += marker.length;
+      return { type, children };
+    }
+    this.pos = startPos;
+    return null;
+  }
+  parseBold = () => this.parseWithMarkers("bold", "**");
+  parseUnderline = () => this.parseWithMarkers("underline", "__");
+  parseStrikethrough = () => this.parseWithMarkers("strikethrough", "~");
+  parseSpoiler = () => this.parseWithMarkers("spoiler", "||");
+  parseNewline = () => {
+    if (!this.match("\n")) return null;
+    this.pos++;
+    return { type: "newline" };
+  };
+  parseInlineCode() {
+    const match = /^`([^`]+?)`/.exec(this.text.substring(this.pos));
+    if (!match) return null;
+    this.pos += match[0].length;
+    return { type: "inline_code", content: match[1] };
+  }
+  parseCodeBlock() {
+    const match = /^```(\w*)\n([\s\S]+?)\n```/.exec(this.text.substring(this.pos));
+    if (!match) return null;
+    this.pos += match[0].length;
+    return { type: "code_block", lang: match[1] || void 0, content: match[2] };
+  }
+  parseLink() {
+    if (!this.match("[")) return null;
+    const startPos = this.pos;
+    this.pos++;
+    const children = this.parseUntil((p) => this.text[p] === "]" || p >= this.text.length);
+    if (!this.match("](")) {
+      this.pos = startPos;
+      return null;
+    }
+    this.pos += 2;
+    const hrefEnd = this.text.indexOf(")", this.pos);
+    if (hrefEnd === -1) {
+      this.pos = startPos;
+      return null;
+    }
+    const href = this.text.substring(this.pos, hrefEnd);
+    this.pos = hrefEnd + 1;
+    return { type: "link", href, children };
+  }
+  parseBlockquote() {
+    const match = /^(>>? .+(?:\n>>? .*)*)/m.exec(this.text.substring(this.pos));
+    if (!match) return null;
+    const fullMatchText = match[0];
+    this.pos += fullMatchText.length;
+    const isExpandable = fullMatchText.startsWith(">>");
+    const innerContent = fullMatchText.replace(/^(>>?)\s?/gm, "");
+    const innerParser = new Parser(innerContent);
+    const children = innerParser.parse().children || [];
+    return { type: "blockquote", expandable: isExpandable, children };
+  }
+  parseText(endCondition) {
+    const startPos = this.pos;
+    let endPos = this.text.length;
+    for (const marker of this.markers) {
+      const markerPos = this.text.indexOf(marker, this.pos);
+      if (markerPos !== -1) {
+        endPos = Math.min(endPos, markerPos);
+      }
+    }
+    let parentEndPos = this.pos;
+    while (!endCondition(parentEndPos) && parentEndPos < this.text.length) {
+      parentEndPos++;
+    }
+    endPos = Math.min(endPos, parentEndPos);
+    if (endPos > startPos) {
+      this.pos = endPos;
+      return { type: "text", content: this.text.substring(startPos, endPos) };
+    }
+    return null;
+  }
+}
+class Escaper {
+  markdownV2(text) {
+    return text.replace(/([_*[\]()~`>#+\-=|{}.!])/g, "\\$1");
+  }
+  markdownV2Code(text) {
+    return text.replace(/([`\\])/g, "\\$1");
+  }
+  markdownV2Url(url) {
+    return url.replace(/([)\\])/g, "\\$1");
+  }
+  html(text) {
+    return text.replace(/[<>&]/g, (char) => {
+      switch (char) {
+        case "<":
+          return "&lt;";
+        case ">":
+          return "&gt;";
+        case "&":
+          return "&amp;";
+        default:
+          return char;
+      }
+    });
+  }
+  legacyMarkdown(text) {
+    return text.replace(/([_*`[])/g, "\\$1");
+  }
+}
+const escaper = new Escaper();
+class Generator {
+  generate(node) {
+    return this.visitNode(node);
+  }
+  visitNode(node) {
+    const open = this.getOpeningTag(node.type, node);
+    const content = this.generateContent(node);
+    const close = this.getClosingTag(node.type, node);
+    return open + content + close;
+  }
+  generateContent(node) {
+    return node.content ?? this.visitChildren(node);
+  }
+  visitChildren(node) {
+    return node.children?.map((child) => this.visitNode(child)).join("") ?? "";
+  }
+}
+class HtmlGenerator extends Generator {
+  getOpeningTag(type, node) {
+    switch (type) {
+      case "bold":
+        return "<b>";
+      case "underline":
+        return "<u>";
+      case "strikethrough":
+        return "<s>";
+      case "spoiler":
+        return '<span class="tg-spoiler">';
+      case "inline_code":
+        return "<code>";
+      case "code_block": {
+        const langClass = node.lang ? ` class="language-${escaper.html(node.lang)}"` : "";
+        return `<pre><code${langClass}>`;
+      }
+      case "link":
+        return `<a href="${escaper.html(node.href ?? "")}">`;
+      case "blockquote":
+        return node.expandable ? "<blockquote expandable>" : "<blockquote>";
+      default:
+        return "";
+    }
+  }
+  getClosingTag(type, _node) {
+    switch (type) {
+      case "bold":
+        return "</b>";
+      case "underline":
+        return "</u>";
+      case "strikethrough":
+        return "</s>";
+      case "spoiler":
+        return "</span>";
+      case "inline_code":
+        return "</code>";
+      case "code_block":
+        return "</code></pre>";
+      case "link":
+        return "</a>";
+      case "blockquote":
+        return "</blockquote>";
+      default:
+        return "";
+    }
+  }
+  generateContent(node) {
+    if (node.type === "text") return escaper.html(node.content ?? "");
+    if (node.type === "newline") return "\n";
+    if (node.type === "code_block" || node.type === "inline_code") {
+      return escaper.html(node.content ?? "");
+    }
+    return this.visitChildren(node);
+  }
+}
+class MarkdownV2Generator extends Generator {
+  getOpeningTag(type, node) {
+    switch (type) {
+      case "bold":
+        return "*";
+      case "underline":
+        return "__";
+      case "strikethrough":
+        return "~";
+      case "spoiler":
+        return "||";
+      case "inline_code":
+        return "`";
+      case "code_block":
+        return `\`\`\`${node.lang ?? ""}
+`;
+      case "link":
+        return "[";
+      default:
+        return "";
+    }
+  }
+  getClosingTag(type, node) {
+    switch (type) {
+      case "bold":
+        return "*";
+      case "underline":
+        return "__";
+      case "strikethrough":
+        return "~";
+      case "spoiler":
+        return "||";
+      case "inline_code":
+        return "`";
+      case "code_block":
+        return "\n```";
+      case "link":
+        return `](${escaper.markdownV2Url(node.href ?? "")})`;
+      default:
+        return "";
+    }
+  }
+  generateContent(node) {
+    if (node.type === "text") return escaper.markdownV2(node.content ?? "");
+    if (node.type === "newline") return "\n";
+    if (node.type === "code_block" || node.type === "inline_code") {
+      return escaper.markdownV2Code(node.content ?? "");
+    }
+    if (node.type === "blockquote") {
+      const content = this.visitChildren(node);
+      return content.split("\n").map((line) => `> ${line}`).join("\n");
+    }
+    return this.visitChildren(node);
+  }
+  visitNode(node) {
+    if (node.type === "blockquote") {
+      return this.generateContent(node);
+    }
+    return super.visitNode(node);
+  }
+}
+class LegacyMarkdownGenerator extends Generator {
+  getOpeningTag(type, node) {
+    switch (type) {
+      case "bold":
+        return "*";
+      case "inline_code":
+        return "`";
+      case "code_block":
+        return `\`\`\`${node.lang ?? ""}
+`;
+      case "link":
+        return "[";
+      default:
+        return "";
+    }
+  }
+  getClosingTag(type, node) {
+    switch (type) {
+      case "bold":
+        return "*";
+      case "inline_code":
+        return "`";
+      case "code_block":
+        return "\n```";
+      case "link":
+        return `](${node.href ?? ""})`;
+      default:
+        return "";
+    }
+  }
+  generateContent(node) {
+    if (node.type === "text") return escaper.legacyMarkdown(node.content ?? "");
+    if (node.type === "newline") return "\n";
+    if (node.type === "code_block" || node.type === "inline_code") {
+      return node.content ?? "";
+    }
+    if (["underline", "strikethrough", "spoiler", "blockquote"].includes(node.type)) {
+      return this.visitChildren(node);
+    }
+    return this.visitChildren(node);
+  }
+}
+class Formatter {
+  htmlGenerator;
+  markdownV2Generator;
+  legacyMarkdownGenerator;
+  constructor() {
+    this.htmlGenerator = new HtmlGenerator();
+    this.markdownV2Generator = new MarkdownV2Generator();
+    this.legacyMarkdownGenerator = new LegacyMarkdownGenerator();
+  }
+  parse(markdownText) {
+    const parser = new Parser(markdownText);
+    return parser.parse();
+  }
+  getGenerator(parseMode) {
+    switch (parseMode) {
+      case "HTML":
+        return this.htmlGenerator;
+      case "MarkdownV2":
+        return this.markdownV2Generator;
+      case "Markdown":
+        return this.legacyMarkdownGenerator;
+    }
+  }
+}
+const formatter = new Formatter();
+const MAX_CONTENT_LENGTH$1 = 4096;
+const getAstContentLength = (node) => {
+  switch (node.type) {
+    case "text":
+    case "inline_code":
+    case "code_block":
+      return [...node.content ?? ""].length;
+    case "newline":
+      return 1;
+    case "root":
+    case "bold":
+    case "underline":
+    case "strikethrough":
+    case "spoiler":
+    case "link":
+    case "blockquote":
+      return node.children?.reduce((sum, child) => sum + getAstContentLength(child), 0) ?? 0;
+    default:
+      return 0;
+  }
+};
+const splitAstAndGenerateChunks = (rootNode, generator) => {
+  const chunks = [];
+  let currentChunkString = "";
+  let currentContentLength = 0;
+  const openNodesStack = [];
+  const startNewChunk = () => {
+    currentChunkString = openNodesStack.map((node) => generator.getOpeningTag(node.type, node)).join("");
+    currentContentLength = 0;
+  };
+  const finalizeCurrentChunk = () => {
+    if (currentContentLength === 0 && currentChunkString === "") return;
+    currentChunkString += [...openNodesStack].reverse().map((node) => generator.getClosingTag(node.type, node)).join("");
+    if (currentChunkString.trim().length > 0) {
+      chunks.push(currentChunkString);
+    }
+  };
+  const traverse = (node) => {
+    const nodeContentLength = getAstContentLength(node);
+    if (node.type === "code_block") {
+      if (nodeContentLength > MAX_CONTENT_LENGTH$1) {
+        if (currentContentLength > 0) {
+          finalizeCurrentChunk();
+        }
+        startNewChunk();
+        let remainingContent = node.content ?? "";
+        while (remainingContent.length > 0) {
+          const contentNodeForGeneration = { ...node, content: "" };
+          const emptyNodeStr = generator.generate(contentNodeForGeneration);
+          const formattingCharsLength = emptyNodeStr.length;
+          const availableContentSpace = MAX_CONTENT_LENGTH$1 - formattingCharsLength;
+          let splitIndex = Math.min(remainingContent.length, availableContentSpace);
+          if (splitIndex < remainingContent.length) {
+            const preferredSplitIndex = remainingContent.lastIndexOf("\n", splitIndex);
+            if (preferredSplitIndex > 0) {
+              splitIndex = preferredSplitIndex;
+            }
+          }
+          const part = remainingContent.substring(0, splitIndex);
+          const contentPartNode = { ...node, content: part };
+          const codeChunk = generator.generate(contentPartNode);
+          chunks.push(codeChunk);
+          remainingContent = remainingContent.substring(splitIndex).trimStart();
+        }
+        startNewChunk();
+        return;
+      } else {
+        if (currentContentLength > 0 && currentContentLength + nodeContentLength > MAX_CONTENT_LENGTH$1) {
+          finalizeCurrentChunk();
+          startNewChunk();
+        }
+        currentChunkString += generator.generate(node);
+        currentContentLength += nodeContentLength;
+        return;
+      }
+    }
+    if (node.type === "inline_code" || node.type === "text" || node.type === "newline") {
+      if (currentContentLength + nodeContentLength > MAX_CONTENT_LENGTH$1 && nodeContentLength > 0) {
+        if (node.type === "inline_code") {
+          finalizeCurrentChunk();
+          startNewChunk();
+        }
+      }
+    }
+    openNodesStack.push(node);
+    currentChunkString += generator.getOpeningTag(node.type, node);
+    if (node.children) {
+      for (const child of node.children) {
+        traverse(child);
+      }
+    } else if (node.content || node.type === "newline") {
+      const content = node.content ?? "\n";
+      const contentLength = getAstContentLength(node);
+      if (currentContentLength + contentLength <= MAX_CONTENT_LENGTH$1) {
+        currentChunkString += generator.generateContent(node);
+        currentContentLength += contentLength;
+      } else {
+        let remainingContent = content;
+        while (remainingContent.length > 0) {
+          const remainingSpace = MAX_CONTENT_LENGTH$1 - currentContentLength;
+          if (remainingSpace <= 0) {
+            finalizeCurrentChunk();
+            startNewChunk();
+            continue;
+          }
+          let splitIndex = 0;
+          let currentLength = 0;
+          const chars = [...remainingContent];
+          for (let i = 0; i < chars.length; i++) {
+            if (currentLength + 1 > remainingSpace) {
+              break;
+            }
+            currentLength++;
+            splitIndex++;
+          }
+          if (splitIndex < chars.length) {
+            let preferredSplitIndex = -1;
+            const tempStr = chars.slice(0, splitIndex).join("");
+            preferredSplitIndex = tempStr.lastIndexOf("\n");
+            if (preferredSplitIndex === -1) {
+              preferredSplitIndex = tempStr.lastIndexOf(" ");
+            }
+            if (preferredSplitIndex > 0) {
+              splitIndex = [...tempStr.substring(0, preferredSplitIndex + 1)].length;
+            }
+          }
+          const part1 = chars.slice(0, splitIndex).join("");
+          const part2 = chars.slice(splitIndex).join("");
+          const tempNodePart1 = { ...node, content: part1 };
+          currentChunkString += generator.generateContent(tempNodePart1);
+          currentContentLength += [...part1].length;
+          if (part2.length > 0) {
+            finalizeCurrentChunk();
+            startNewChunk();
+          }
+          remainingContent = part2;
+        }
+      }
+    }
+    currentChunkString += generator.getClosingTag(node.type, node);
+    openNodesStack.pop();
+  };
+  if (rootNode.children) {
+    for (const child of rootNode.children) {
+      traverse(child);
+    }
+  }
+  if (currentContentLength > 0 || chunks.length === 0 && currentChunkString.length > 0) {
+    finalizeCurrentChunk();
+  }
+  return chunks;
+};
+const scheduleTask = async (action, params, delayMs) => {
+  const { schedulerApiUrl, schedulerApiToken } = config.load();
+  const name = `${action}-${JSON.stringify(params)}`;
+  const encoded = Buffer.from(schedulerApiToken, "utf-8").toString("base64");
+  try {
+    const res = await fetch(schedulerApiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${encoded}`
+      },
+      body: JSON.stringify({ action, params, delayMs })
+    });
+    const result = await res.json();
+    if (result.status === "scheduled") {
+      Log.info(`Registering scheduled task with name: ${name}, execute after ${delayMs / 1e3} s`, {
+        params
+      });
+    }
+  } catch (error) {
+    Log.error(`Failed to register scheduled task with name: ${name}`, {
+      params,
+      err: error instanceof Error ? error.message : String(error)
+    });
+  }
+};
+const scheduleDeletion = (params, delayMs) => {
+  return scheduleTask("deleteMessage", params, delayMs);
+};
+class MarkdownUtils {
+  normalizeCodeBlocks(markdownText) {
+    if (typeof markdownText !== "string" || !markdownText) {
+      return "";
+    }
+    let normalizedText = markdownText;
+    normalizedText = normalizedText.replace(/([^\n])(\s*`{3})/g, (match, precedingChar, fenceBlock) => {
+      return `${precedingChar}
+${fenceBlock.trim()}`;
+    });
+    normalizedText = normalizedText.replace(/(`{3})(\s+[^\n\r]+)/g, (match, fence, trailingContent) => {
+      return `${fence}
+${trailingContent}`;
+    });
+    return normalizedText;
+  }
+  preprocessTables(markdownText) {
+    if (typeof markdownText !== "string" || !markdownText) {
+      return "";
+    }
+    const CODE_BLOCK_PLACEHOLDER = "__CODE_BLOCK_PLACEHOLDER_";
+    const codeBlocks = [];
+    let safeText = markdownText.replace(/```[\s\S]*?```/g, (block) => {
+      const placeholder = `${CODE_BLOCK_PLACEHOLDER}${codeBlocks.length}__`;
+      codeBlocks.push(block);
+      return placeholder;
+    });
+    const tableRegex = /^(\s*\|.*\|\s*\n\s*\|(?::?-+:?\|)+\s*\n?)((?:\s*\|.*\|\s*\n?)*)/gm;
+    safeText = safeText.replace(tableRegex, (table) => {
+      const trimmedTable = table.trim();
+      return `\`\`\`markdown
+${trimmedTable}
+\`\`\``;
+    });
+    for (let i = codeBlocks.length - 1; i >= 0; i--) {
+      safeText = safeText.replace(`${CODE_BLOCK_PLACEHOLDER}${i}__`, codeBlocks[i]);
+    }
+    return safeText;
+  }
+  preprocessHeaders(markdownText) {
+    if (typeof markdownText !== "string" || !markdownText) {
+      return "";
+    }
+    const CODE_BLOCK_PLACEHOLDER = "__CODE_BLOCK_PLACEHOLDER_";
+    const codeBlocks = [];
+    const toc = [];
+    let safeText = markdownText.replace(/```[\s\S]*?```/g, (block) => {
+      const placeholder = `${CODE_BLOCK_PLACEHOLDER}${codeBlocks.length}__`;
+      codeBlocks.push(block);
+      return placeholder;
+    });
+    const headerRegex = /^(#+)\s+(.*?)\s*#*\s*$/gm;
+    safeText = safeText.replace(headerRegex, (match, hashes, title) => {
+      const level = hashes.length;
+      while (toc.length < level) {
+        toc.push(0);
+      }
+      toc.length = level;
+      toc[level - 1]++;
+      const headerNumbers = toc.join(".");
+      return `${headerNumbers}. **${title.trim()}**`;
+    });
+    for (let i = codeBlocks.length - 1; i >= 0; i--) {
+      safeText = safeText.replace(`${CODE_BLOCK_PLACEHOLDER}${i}__`, codeBlocks[i]);
+    }
+    return safeText;
+  }
+}
+const markdownUtils = new MarkdownUtils();
+const preprocessMarkdown = (markdownText) => {
+  let processedText = markdownText;
+  processedText = markdownUtils.normalizeCodeBlocks(processedText);
+  processedText = markdownUtils.preprocessTables(processedText);
+  processedText = markdownUtils.preprocessHeaders(processedText);
+  return processedText;
+};
+const MAX_CONTENT_LENGTH = 4096;
+const splitPlainText = (text, maxLength) => {
+  if ([...text].length <= maxLength) {
+    return [text];
+  }
+  const chunks = [];
+  let remainingText = text;
+  while (remainingText.length > 0) {
+    if (remainingText.length <= maxLength) {
+      chunks.push(remainingText);
+      break;
+    }
+    let splitIndex = remainingText.lastIndexOf("\n", maxLength);
+    if (splitIndex === -1) {
+      splitIndex = remainingText.lastIndexOf(" ", maxLength);
+    }
+    if (splitIndex === -1 || splitIndex === 0) {
+      splitIndex = maxLength;
+    }
+    chunks.push(remainingText.substring(0, splitIndex));
+    remainingText = remainingText.substring(splitIndex).trimStart();
+  }
+  return chunks;
+};
+const sendFormattedMessage = async (chatId, standardMarkdownText, replyToMessageId, userId) => {
+  if (!standardMarkdownText || standardMarkdownText.trim().length === 0) {
+    return { ok: true, messageId: void 0 };
+  }
+  const modesToTry = ["HTML", "MarkdownV2", "Markdown", null];
+  let lastError = null;
+  const processedText = preprocessMarkdown(standardMarkdownText);
+  const ast = formatter.parse(processedText);
+  for (const mode of modesToTry) {
+    Log.info(`尝试使用 [${mode ?? "纯文本"}] 格式发送全部消息...`);
+    const sentMessageIdsInCurrentAttempt = [];
+    let lastMessageId;
+    let currentReplyTo = replyToMessageId;
+    let modeSucceeded = true;
+    try {
+      let chunks;
+      if (mode === null) {
+        chunks = splitPlainText(processedText, MAX_CONTENT_LENGTH);
+      } else {
+        const generator = formatter.getGenerator(mode);
+        chunks = splitAstAndGenerateChunks(ast, generator);
+      }
+      Log.info(`[${mode ?? "纯文本"}] 格式的文本被分割成 ${chunks.length} 块.`);
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        Log.info(`发送消息 (块 ${i + 1}/${chunks.length}, 长度: ${[...chunk].length}, 格式: ${mode ?? "纯文本"})...`);
+        const replyMarkup = { inline_keyboard: makeInlineKeyboard(userId) };
+        const sendResult = await bot.sendMessage(chatId, chunk, {
+          replyToMessageId: currentReplyTo,
+          parseMode: mode === null ? void 0 : mode,
+          replyMarkup
+        });
+        if (sendResult.ok) {
+          Log.info(`消息块 ${i + 1}/${chunks.length} 发送成功.`);
+          sentMessageIdsInCurrentAttempt.push(sendResult.messageId);
+          scheduleDeletion({ chat_id: chatId, message_id: sendResult.messageId }, 24 * 60 * 6e4);
+          lastMessageId = sendResult.messageId;
+          currentReplyTo = sendResult.messageId;
+        } else {
+          Log.error(`消息块 ${i + 1}/${chunks.length} 发送失败.`, { err: sendResult.error });
+          lastError = new TelegramError(sendResult.error);
+          modeSucceeded = false;
+          if (sentMessageIdsInCurrentAttempt.length > 0) {
+            Log.warn(`[${mode ?? "纯文本"}] 模式发送中断，开始清理 ${sentMessageIdsInCurrentAttempt.length} 条已发送的消息...`);
+            const deleteResult = await bot.deleteMessages(chatId, sentMessageIdsInCurrentAttempt);
+            if (deleteResult.ok) {
+              Log.info("清理操作完成。");
+            } else {
+              Log.error("清理发生错误，为了不影响任务执行，将继续处理");
+            }
+          }
+          break;
+        }
+      }
+      if (modeSucceeded) {
+        Log.info(`所有消息均已使用 [${mode ?? "纯文本"}] 格式成功发送.`);
+        return { ok: true, messageId: lastMessageId };
+      }
+      Log.warn(`[${mode ?? "纯文本"}] 格式发送失败，将尝试下一个格式...`);
+    } catch (error) {
+      lastError = new TelegramError(error instanceof Error ? error.message : String(error));
+      Log.error(`在处理 [${mode ?? "纯文本"}] 格式时发生严重错误.`, { err: lastError.message });
+    }
+  }
+  Log.error("所有格式化模式均发送失败。");
+  return { ok: false, error: lastError ?? new TelegramError("未知错误导致所有格式化模式发送失败", "ALL_FORMAT_MODES_FAILED") };
+};
+const MARKDOWN_REGEX = {
+  CODE_BLOCK: /^```(\w*)\n([\s\S]+?)\n```/g,
+  INLINE_CODE: /`([^`]+?)`/g,
+  LINK: /\[([^\]]+?)\]\(([^)]+?)\)/g,
+  BOLD_ASTERISK: /\*\*(?!\s)([\s\S]*?)(?<!\s)\*\*/g,
+  UNDERLINE_UNDERSCORE: /__(?!\s)([\s\S]*?)(?<!\s)__/g,
+  STRIKETHROUGH: /~(?!\s)([\s\S]*?)(?<!\s)~/g,
+  SPOILER: /\|\|(?!\s)([\s\S]*?)(?<!\s)\|\|/g,
+  BLOCKQUOTE_LINE: /^(>>? .+(?:\n>>? .+)*)/gm
+};
+class SimpleFormatter {
+  toHtml = (markdownText) => {
+    let processedText = markdownText;
+    processedText = processedText.replace(MARKDOWN_REGEX.CODE_BLOCK, (match, lang, code) => {
+      if (lang) {
+        return `<pre><code class="language-${escaper.html(lang)}">${code}</code></pre>`;
+      }
+      return `<pre>${code}</pre>`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.INLINE_CODE, (match, code) => {
+      const escapedCode = escaper.html(code);
+      return `<code>${escapedCode}</code>`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.LINK, (match, text, url) => {
+      const escapedText = escaper.html(text);
+      const escapedUrl = escaper.html(url);
+      return `<a href="${escapedUrl}">${escapedText}</a>`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.SPOILER, (match, content) => {
+      return `<span class="tg-spoiler">${content}</span>`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.STRIKETHROUGH, (match, content) => {
+      const escapedContent = escaper.html(content);
+      return `<s>${escapedContent}</s>`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.BOLD_ASTERISK, (match, content) => {
+      const escapedContent = escaper.html(content);
+      return `<b>${escapedContent}</b>`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.UNDERLINE_UNDERSCORE, (match, content) => {
+      const escapedContent = escaper.html(content);
+      return `<u>${escapedContent}</u>`;
+    });
+    processedText = processedText.replace(/^(>>? .+(?:\n>>? .+)*)/gm, (match) => {
+      const isExpandable = match.startsWith(">>");
+      const content = match.replace(/^(>>?)\s/gm, "");
+      const escapedContent = escaper.html(content);
+      if (isExpandable) {
+        return `<blockquote expandable>${escapedContent}</blockquote>`;
+      }
+      return `<blockquote>${escapedContent}</blockquote>`;
+    });
+    return processedText;
+  };
+  toMarkdownV2 = (markdownText) => {
+    let processedText = markdownText;
+    processedText = processedText.replace(MARKDOWN_REGEX.CODE_BLOCK, (match, lang, code) => {
+      const escapedCode = escaper.markdownV2Code(code);
+      return `\`\`\`${lang}
+${escapedCode}
+\`\`\``;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.INLINE_CODE, (match, code) => {
+      const escapedCode = escaper.markdownV2Code(code);
+      return `\`${escapedCode}\``;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.LINK, (match, text, url) => {
+      const escapedText = escaper.markdownV2(text);
+      const escapedUrl = escaper.markdownV2Url(url);
+      return `[${escapedText}](${escapedUrl})`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.SPOILER, (match, content) => {
+      const escapedContent = escaper.markdownV2(content);
+      return `||${escapedContent}||`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.STRIKETHROUGH, (match, content) => {
+      const escapedContent = escaper.markdownV2(content);
+      return `~${escapedContent}~`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.BOLD_ASTERISK, (match, content) => {
+      const escapedContent = escaper.markdownV2(content);
+      return `*${escapedContent}*`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.UNDERLINE_UNDERSCORE, (match, content) => {
+      const escapedContent = escaper.markdownV2(content);
+      return `__${escapedContent}__`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.BLOCKQUOTE_LINE, (match, content) => {
+      return `> ${content}`;
+    });
+    return processedText;
+  };
+}
+const simpleFormatter = new SimpleFormatter();
+const toHtml = (markdownText) => {
+  return simpleFormatter.toHtml(markdownText);
+};
 const formatTime = (time = Date.now()) => {
   const timeDate = typeof time === "number" ? new Date(time) : time;
-  const formatter = new Intl.DateTimeFormat("zh-CN", {
+  const formatter2 = new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -156,7 +945,7 @@ const formatTime = (time = Date.now()) => {
     hour12: false,
     timeZone: "Asia/Shanghai"
   });
-  const parts = formatter.formatToParts(timeDate).reduce(
+  const parts = formatter2.formatToParts(timeDate).reduce(
     (acc, { type, value }) => {
       if (type !== "literal") {
         acc[type] = value;
@@ -196,7 +985,7 @@ const shortenString = (input) => {
   if (typeof input !== "string") {
     throw new TypeError("input must be a string");
   }
-  const chars = getUTF8Byte(input);
+  const chars = [...input];
   if (chars.length <= MAX) return input;
   const headPart = chars.slice(0, HEAD).join("");
   const tailPart = chars.slice(chars.length - TAIL).join("");
@@ -206,11 +995,6 @@ const shortenString = (input) => {
 
 ${tailPart}`;
 };
-function getUTF8Byte(str) {
-  const encoder = new TextEncoder();
-  const encoded = encoder.encode(str);
-  return encoded;
-}
 const convertPcmToMp3 = async (pcmBuffer) => {
   const sampleRate = 24e3;
   const channels = 1;
@@ -232,700 +1016,24 @@ const convertPcmToMp3 = async (pcmBuffer) => {
   }
   return Buffer.concat(mp3Data);
 };
-const MARKDOWN_MARK_REGEX = {
-  CODE_BLOCK: /```(\w*)\n([\s\S]+?)```/g,
-  INLINE_CODE: /`([^`]+?)`/g,
-  LINK: /\[([^\]]+?)\]\(([^)]+?)\)/g,
-  BOLD_ASTERISK: /\*\*(?!\s)(.*?)(?<!\s)\*\*/g,
-  UNDERLINE_UNDERSCORE: /__(?!\s)(.*?)(?<!\s)__/g,
-  STRIKETHROUGH: /~(?!\s)(.*?)(?<!\s)~/g,
-  SPOILER: /\|\|(?!\s)([\s\S]*?)(?<!\s)\|\|/g,
-  BLOCKQUOTE_LINE: /^(>>? .+(?:\n>>? .+)*)/gm
-};
-class Escapers {
-  markdownV2Text = (str) => {
-    return str.replace(/([_*[\]()~`>#+-=|{}.!])/g, "\\$1");
-  };
-  markdownV2Code = (str) => {
-    return str.replace(/([`\\])/g, "\\$1");
-  };
-  markdownV2Url = (str) => {
-    return str.replace(/([)\\])/g, "\\$1");
-  };
-  Html = (str) => {
-    return str.replace(/[<>&]/g, (c) => {
-      switch (c) {
-        case "&":
-          return "&amp;";
-        case "<":
-          return "&lt;";
-        case ">":
-          return "&gt;";
-        default:
-          return c;
-      }
-    });
-  };
-  markdown = (str) => {
-    return str.replace(/([_*[`])/g, "\\$1");
-  };
-}
-const escapers = new Escapers();
-class Formatters {
-  markdownV2 = (markdownText) => {
-    let processedText = markdownText;
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.CODE_BLOCK, (match, lang, code) => {
-      const escapedCode = escapers.markdownV2Code(code);
-      return `\`\`\`${lang}
-${escapedCode}
-\`\`\``;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.INLINE_CODE, (match, code) => {
-      const escapedCode = escapers.markdownV2Code(code);
-      return `\`${escapedCode}\``;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.LINK, (match, text, url) => {
-      const escapedText = escapers.markdownV2Text(text);
-      const escapedUrl = escapers.markdownV2Url(url);
-      return `[${escapedText}](${escapedUrl})`;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.SPOILER, (match, content) => {
-      const escapedContent = escapers.markdownV2Text(content);
-      return `||${escapedContent}||`;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.STRIKETHROUGH, (match, content) => {
-      const escapedContent = escapers.markdownV2Text(content);
-      return `~${escapedContent}~`;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.BOLD_ASTERISK, (match, content) => {
-      const escapedContent = escapers.markdownV2Text(content);
-      return `*${escapedContent}*`;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.UNDERLINE_UNDERSCORE, (match, content) => {
-      const escapedContent = escapers.markdownV2Text(content);
-      return `__${escapedContent}__`;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.BLOCKQUOTE_LINE, (match, content) => {
-      return `> ${content}`;
-    });
-    return processedText;
-  };
-  Html = (markdownText) => {
-    let processedText = markdownText;
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.CODE_BLOCK, (match, lang, code) => {
-      if (lang) {
-        return `<pre><code class="language-${escapers.Html(lang)}">${code}</code></pre>`;
-      }
-      return `<pre>${code}</pre>`;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.INLINE_CODE, (match, code) => {
-      const escapedCode = escapers.Html(code);
-      return `<code>${escapedCode}</code>`;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.LINK, (match, text, url) => {
-      const escapedText = escapers.Html(text);
-      const escapedUrl = escapers.Html(url);
-      return `<a href="${escapedUrl}">${escapedText}</a>`;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.SPOILER, (match, content) => {
-      const escapedContent = escapers.Html(content);
-      return `<span class="tg-spoiler">${escapedContent}</span>`;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.STRIKETHROUGH, (match, content) => {
-      const escapedContent = escapers.Html(content);
-      return `<s>${escapedContent}</s>`;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.BOLD_ASTERISK, (match, content) => {
-      const escapedContent = escapers.Html(content);
-      return `<b>${escapedContent}</b>`;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.UNDERLINE_UNDERSCORE, (match, content) => {
-      const escapedContent = escapers.Html(content);
-      return `<u>${escapedContent}</u>`;
-    });
-    processedText = processedText.replace(/^(>>? .+(?:\n>>? .+)*)/gm, (match) => {
-      const isExpandable = match.startsWith(">>");
-      const content = match.replace(/^(>>?)\s/gm, "");
-      const escapedContent = escapers.Html(content);
-      if (isExpandable) {
-        return `<blockquote expandable>${escapedContent}</blockquote>`;
-      }
-      return `<blockquote>${escapedContent}</blockquote>`;
-    });
-    return processedText;
-  };
-  markdown = (markdownText) => {
-    let processedText = markdownText;
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.CODE_BLOCK, (match, lang, code) => {
-      const escapedCode = escapers.markdown(code);
-      return `\`\`\`${lang}
-${escapedCode}
-\`\`\``;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.INLINE_CODE, (match, code) => {
-      const escapedCode = escapers.markdown(code);
-      return `\`${escapedCode}\``;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.LINK, (match, text, url) => {
-      const linkText = escapers.markdown(text);
-      return `[${linkText}](${url})`;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.BOLD_ASTERISK, (match, content) => {
-      const innerContent = escapers.markdown(content);
-      return `*${innerContent}*`;
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.UNDERLINE_UNDERSCORE, (match, content) => {
-      return escapers.markdown(content);
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.STRIKETHROUGH, (match, content) => {
-      return escapers.markdown(content);
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.SPOILER, (match, content) => {
-      return escapers.markdown(content);
-    });
-    processedText = processedText.replace(MARKDOWN_MARK_REGEX.BLOCKQUOTE_LINE, (match, content) => {
-      return escapers.markdown(content);
-    });
-    let finalResult = "";
-    let k = 0;
-    const legacySpecialChars = "_*`[";
-    const markersToSkip = ["```", "[", "`", "*", "_"];
-    while (k < processedText.length) {
-      let isMarkerStart = false;
-      for (const marker of markersToSkip) {
-        if (processedText.substring(k, k + marker.length) === marker) {
-          finalResult += processedText[k];
-          k++;
-          isMarkerStart = true;
-          break;
-        }
-      }
-      if (isMarkerStart) {
-        continue;
-      }
-      if (processedText[k] === "\\") {
-        finalResult += "\\\\";
-        k++;
-        continue;
-      }
-      if (legacySpecialChars.includes(processedText[k])) {
-        finalResult += "\\" + processedText[k];
-        k++;
-      } else {
-        finalResult += processedText[k];
-        k++;
-      }
-    }
-    return finalResult;
-  };
-}
-const formatters = new Formatters();
-function formatText(text, parseMode) {
-  if (parseMode === null) {
-    return escapers.Html(text);
-  }
-  switch (parseMode) {
-    case "HTML":
-      return formatters.Html(text);
-    case "MarkdownV2":
-      return formatters.markdownV2(text);
-    case "Markdown":
-      return formatters.markdown(text);
-    default:
-      throw new TelegramError(`不支持的 parseMode: ${parseMode}`);
-  }
-}
-const getOpeningTagString = (type, parseMode) => {
-  if (parseMode === "HTML") {
-    switch (type) {
-      case "b":
-      case "strong":
-        return "<b>";
-      case "u":
-      case "ins":
-        return "<u>";
-      case "s":
-      case "strike":
-      case "del":
-        return "<s>";
-      case "span":
-      case "tg-spoiler":
-        return '<span class="tg-spoiler">';
-      case "a":
-        return '<a href="">';
-      case "code":
-        return "<code>";
-      case "pre":
-        return "<pre>";
-      case "pre_code_lang":
-        return `<pre><code class="language-">`;
-      case "blockquote":
-        return "<blockquote>";
-      case "blockquote_expandable":
-        return "<blockquote expandable>";
-      case "tg-emoji":
-        return '<tg-emoji emoji-id="">';
-      default:
-        return "";
-    }
-  } else if (parseMode === "MarkdownV2") {
-    switch (type) {
-      case "mv2_bold":
-        return "*";
-      case "mv2_underline":
-        return "__";
-      case "mv2_strikethrough":
-        return "~";
-      case "mv2_spoiler":
-        return "||";
-      case "mv2_code_inline":
-        return "`";
-      case "mv2_code_block":
-        return "```";
-      case "mv2_link":
-        return "[";
-      case "mv2_blockquote":
-      case "mv2_blockquote_expandable":
-        return "> ";
-      default:
-        return "";
-    }
-  } else if (parseMode === "Markdown") {
-    switch (type) {
-      case "legacy_bold":
-        return "*";
-      case "legacy_code_inline":
-        return "`";
-      case "legacy_code_block":
-        return "```";
-      case "legacy_link":
-        return "[";
-      default:
-        return "";
-    }
-  }
-  return "";
-};
-const getClosingTagString = (type, parseMode) => {
-  if (parseMode === "HTML") {
-    switch (type) {
-      case "b":
-      case "strong":
-        return "</b>";
-      case "u":
-      case "ins":
-        return "</u>";
-      case "s":
-      case "strike":
-      case "del":
-        return "</s>";
-      case "span":
-      case "tg-spoiler":
-        return "</span>";
-      case "a":
-        return "</a>";
-      case "code":
-        return "</code>";
-      case "pre":
-        return "</pre>";
-      case "pre_code_lang":
-        return "</code></pre>";
-      case "blockquote":
-      case "blockquote_expandable":
-        return "</blockquote>";
-      case "tg-emoji":
-        return "</tg-emoji>";
-      default:
-        return "";
-    }
-  } else if (parseMode === "MarkdownV2") {
-    switch (type) {
-      case "mv2_bold":
-        return "*";
-      case "mv2_underline":
-        return "__";
-      case "mv2_strikethrough":
-        return "~";
-      case "mv2_spoiler":
-        return "||";
-      case "mv2_code_inline":
-        return "`";
-      case "mv2_code_block":
-        return "```";
-      case "mv2_link":
-        return ")";
-      case "mv2_blockquote":
-      case "mv2_blockquote_expandable":
-        return "";
-      default:
-        return "";
-    }
-  } else if (parseMode === "Markdown") {
-    switch (type) {
-      case "legacy_bold":
-        return "*";
-      case "legacy_code_inline":
-        return "`";
-      case "legacy_code_block":
-        return "```";
-      case "legacy_link":
-        return ")";
-      default:
-        return "";
-    }
-  }
-  return "";
-};
-const balanceChunkTags = (chunk, parseMode, inheritedOpenTags) => {
-  if (parseMode === null) {
-    return { balancedChunk: chunk, nextInheritedOpenTags: [] };
-  }
-  const currentStack = [...inheritedOpenTags];
-  let processedChunk = "";
-  let i = 0;
-  let openingTagsString = "";
-  for (const tagType of inheritedOpenTags) {
-    const openStr = getOpeningTagString(tagType, parseMode);
-    if (openStr && !["> "].includes(openStr)) {
-      openingTagsString += openStr;
-    }
-  }
-  while (i < chunk.length) {
-    let matched = false;
-    if (parseMode === "HTML") {
-      const htmlTagMatch = chunk.substring(i).match(/^<(\/?[\w-]+)(?:\s+[^>]*)?>/);
-      if (htmlTagMatch) {
-        const fullMatch = htmlTagMatch[0];
-        const tagNameWithSlash = htmlTagMatch[1].toLowerCase();
-        const isClosing = tagNameWithSlash.startsWith("/");
-        const cleanTagName = isClosing ? tagNameWithSlash.substring(1) : tagNameWithSlash;
-        const supportedTags = [
-          "b",
-          "strong",
-          "u",
-          "ins",
-          "s",
-          "strike",
-          "del",
-          "span",
-          "tg-spoiler",
-          "a",
-          "code",
-          "pre",
-          "blockquote",
-          "blockquote_expandable",
-          "tg-emoji"
-        ];
-        if (supportedTags.includes(cleanTagName) || cleanTagName === "code" && currentStack.includes("pre")) {
-          if (isClosing) {
-            const stackIndex = currentStack.lastIndexOf(cleanTagName);
-            if (stackIndex !== -1) {
-              currentStack.splice(stackIndex, 1);
-            } else {
-              Log.warn(`HTML 格式中发现未匹配的闭合标签: </${cleanTagName}>`);
-            }
-          } else {
-            if (cleanTagName === "code" && currentStack[currentStack.length - 1] === "pre") {
-              currentStack.push("pre_code_lang");
-            } else {
-              currentStack.push(cleanTagName);
-            }
-          }
-          processedChunk += fullMatch;
-          i += fullMatch.length;
-          matched = true;
-        }
-      }
-      const entityRegexMatch = chunk.substring(i).match(/^&(\w+|#\d+|#x[0-9a-fA-F]+);/);
-      if (entityRegexMatch) {
-        const entityMatch = entityRegexMatch;
-        processedChunk += entityMatch;
-        i += entityMatch.length;
-        matched = true;
-      }
-    } else if (parseMode === "MarkdownV2" || parseMode === "Markdown") {
-      if (chunk[i] === "\\" && i + 1 < chunk.length) {
-        processedChunk += chunk.substring(i, i + 2);
-        i += 2;
-        matched = true;
-      } else {
-        const mv2MarkersMap = {
-          "```": "mv2_code_block",
-          "||": "mv2_spoiler",
-          __: "mv2_underline",
-          "*": "mv2_bold",
-          "~": "mv2_strikethrough",
-          "`": "mv2_code_inline",
-          "[": "mv2_link",
-          ")": "mv2_link_end",
-          "> ": "mv2_blockquote"
-        };
-        const legacyMarkersMap = {
-          "```": "legacy_code_block",
-          "*": "legacy_bold",
-          "`": "legacy_code_inline",
-          "[": "legacy_link",
-          ")": "legacy_link_end"
-        };
-        const currentMarkers = parseMode === "MarkdownV2" ? mv2MarkersMap : legacyMarkersMap;
-        let markerFound = false;
-        const multiCharMarkers = parseMode === "MarkdownV2" ? ["```", "||", "__"] : ["```"];
-        for (const marker of multiCharMarkers) {
-          if (currentMarkers[marker] && chunk.substring(i, i + marker.length) === marker) {
-            const type = currentMarkers[marker];
-            const top = currentStack.length > 0 ? currentStack[currentStack.length - 1] : null;
-            if (top === type) {
-              currentStack.pop();
-            } else {
-              currentStack.push(type);
-            }
-            processedChunk += marker;
-            i += marker.length;
-            matched = true;
-            markerFound = true;
-            break;
-          }
-        }
-        if (markerFound) continue;
-        const singleCharMarkers = parseMode === "MarkdownV2" ? ["`", "*", "_", "[", ")", "~"] : ["`", "*", "_", "[", ")"];
-        for (const marker of singleCharMarkers) {
-          if (currentMarkers[marker] && chunk[i] === marker) {
-            if (marker === "_" && chunk.substring(i, i + 2) === "__") {
-              continue;
-            }
-            const type = currentMarkers[marker];
-            const top = currentStack.length > 0 ? currentStack[currentStack.length - 1] : null;
-            if (marker === ")") {
-              if (top === "mv2_link" || top === "legacy_link") {
-                currentStack.pop();
-              } else {
-                Log.warn(`${parseMode} 格式中发现未匹配的链接闭合标记: )`);
-              }
-            } else if (marker === "[") {
-              currentStack.push(type);
-            } else if (marker === "`" || marker === "*" || parseMode === "MarkdownV2" && marker === "~") {
-              if (top === type) {
-                currentStack.pop();
-              } else {
-                currentStack.push(type);
-              }
-            }
-            processedChunk += marker;
-            i += marker.length;
-            matched = true;
-            break;
-          }
-        }
-        if (!matched && chunk.substring(i).startsWith("> ")) {
-          const isNewlineBefore = i === 0 || chunk[i - 1] === "\n";
-          if (isNewlineBefore) {
-            const topTag = currentStack.length > 0 ? currentStack[currentStack.length - 1] : null;
-            if (topTag !== "mv2_blockquote" && topTag !== "mv2_blockquote_expandable") {
-              currentStack.push("mv2_blockquote");
-            }
-            processedChunk += "> ";
-            i += 2;
-            matched = true;
-          }
-        } else if (!matched && currentStack.length > 0 && (currentStack[currentStack.length - 1] === "mv2_blockquote" || currentStack[currentStack.length - 1] === "mv2_blockquote_expandable") && (i === 0 || chunk[i - 1] === "\n")) {
-          currentStack.pop();
-        }
-      }
-    }
-    if (!matched) {
-      processedChunk += chunk[i];
-      i++;
-    }
-  }
-  let closingTagsString = "";
-  for (let j = currentStack.length - 1; j >= 0; j--) {
-    const tagType = currentStack[j];
-    if (tagType !== "mv2_blockquote" && tagType !== "mv2_blockquote_expandable") {
-      const closeStr = getClosingTagString(tagType, parseMode);
-      closingTagsString += closeStr;
-    }
-  }
-  const nextInheritedOpenTags = [...currentStack];
-  return {
-    balancedChunk: openingTagsString + processedChunk + closingTagsString,
-    nextInheritedOpenTags
-  };
-};
-const splitFormattedText = (formattedText, parseMode) => {
-  const maxLength = 4e3;
-  const chunks = [];
-  let currentPos = 0;
-  const codeBlockRanges = [];
-  if (parseMode === "HTML") {
-    const preRegex = /<pre(?:[^>]*?)?>[\s\S]*?<\/pre>/g;
-    let match;
-    while ((match = preRegex.exec(formattedText)) !== null) {
-      codeBlockRanges.push({ start: match.index, end: match.index + match.length });
-    }
-  } else if (parseMode === "MarkdownV2" || parseMode === "Markdown") {
-    let match;
-    while ((match = MARKDOWN_MARK_REGEX.CODE_BLOCK.exec(formattedText)) !== null) {
-      codeBlockRanges.push({ start: match.index, end: match.index + match.length });
-    }
-  }
-  while (currentPos < formattedText.length) {
-    let endPos = Math.min(currentPos + maxLength, formattedText.length);
-    if (endPos < formattedText.length) {
-      let isInCodeBlock = false;
-      let currentBlockEnd = -1;
-      for (const range of codeBlockRanges) {
-        if (endPos > range.start && endPos < range.end) {
-          isInCodeBlock = true;
-          currentBlockEnd = range.end;
-          break;
-        }
-      }
-      if (isInCodeBlock) {
-        if (currentBlockEnd - currentPos <= maxLength) {
-          endPos = currentBlockEnd;
-        } else {
-          const searchStart = Math.max(currentPos, endPos - 200);
-          let safeSplitPoint = -1;
-          for (let i = endPos - 1; i >= searchStart; i--) {
-            if (formattedText[i] === "\n") {
-              safeSplitPoint = i + 1;
-              break;
-            }
-          }
-          if (safeSplitPoint !== -1) {
-            endPos = safeSplitPoint;
-          }
-        }
-      } else {
-        const searchStart = Math.max(currentPos, endPos - 200);
-        let safeSplitPoint = -1;
-        for (let i = endPos - 1; i >= searchStart; i--) {
-          if (formattedText[i] === "\n" || formattedText[i] === " ") {
-            safeSplitPoint = i + 1;
-            break;
-          }
-        }
-        if (safeSplitPoint !== -1) {
-          endPos = safeSplitPoint;
-        }
-      }
-    }
-    const chunk = formattedText.substring(currentPos, endPos);
-    chunks.push(chunk);
-    currentPos = endPos;
-  }
-  return chunks;
-};
-const scheduleTask = async (action, params, delayMs) => {
-  const { schedulerApiUrl, schedulerApiToken } = config.load();
-  const name = `${action}-${JSON.stringify(params)}`;
-  const encoded = Buffer.from(schedulerApiToken, "utf-8").toString("base64");
-  try {
-    await fetch(schedulerApiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Basic ${encoded}`
-      },
-      body: JSON.stringify({ action, params, delayMs })
-    });
-    Log.info(`Registering scheduled task with name: ${name}, execute after ${delayMs / 1e3} s`, {
-      params
-    });
-  } catch (error) {
-    Log.error(`Failed to register scheduled task with name: ${name}`, {
-      params,
-      err: error instanceof Error ? error.message : String(error)
-    });
-  }
-};
-const scheduleDeletion = (params, delayMs) => {
-  void scheduleTask("deleteMessage", params, delayMs);
-};
-const sendFormattedMessage = async (chatId, standardMarkdownText, replyToMessageId, userId) => {
-  if (!standardMarkdownText || standardMarkdownText.trim().length === 0) {
-    return { ok: true, messageId: void 0 };
-  }
-  const modesToTry = ["HTML", "MarkdownV2", "Markdown", null];
-  let lastError = null;
-  for (const mode of modesToTry) {
-    Log.info(`尝试使用 [${mode ?? "纯文本"}] 格式发送全部消息...`);
-    const sentMessageIdsInCurrentAttempt = [];
-    let lastMessageId;
-    let currentReplyTo = replyToMessageId;
-    let modeSucceeded = true;
-    try {
-      const formattedText = formatText(standardMarkdownText, mode);
-      const chunks = splitFormattedText(formattedText, mode);
-      Log.info(`[${mode ?? "纯文本"}] 格式的文本被分割成 ${chunks.length} 块.`);
-      let inheritedOpenTags = [];
-      for (let i = 0; i < chunks.length; i++) {
-        const rawChunk = chunks[i];
-        if (rawChunk.trim().length === 0) {
-          Log.info(`跳过发送空消息块 (块 ${i + 1}/${chunks.length})`);
-          continue;
-        }
-        const { balancedChunk, nextInheritedOpenTags } = balanceChunkTags(rawChunk, mode, inheritedOpenTags);
-        inheritedOpenTags = nextInheritedOpenTags;
-        Log.info(`发送消息 (块 ${i + 1}/${chunks.length}, 长度: ${balancedChunk.length}, 格式: ${mode ?? "纯文本"})...`);
-        const replyMarkup = {
-          inline_keyboard: makeInlineKeyboard(userId)
-        };
-        const sendResult = await bot.sendMessage(chatId, balancedChunk, {
-          replyToMessageId: currentReplyTo,
-          parseMode: mode === null ? void 0 : mode,
-          replyMarkup
-        });
-        if (sendResult.ok) {
-          Log.info(`消息块 ${i + 1}/${chunks.length} 发送成功.`);
-          sentMessageIdsInCurrentAttempt.push(sendResult.messageId);
-          scheduleDeletion({ chat_id: chatId, message_id: sendResult.messageId }, 24 * 60 * 6e4);
-          lastMessageId = sendResult.messageId;
-          currentReplyTo = sendResult.messageId;
-        } else {
-          Log.error(`消息块 ${i + 1}/${chunks.length} 发送失败 (格式: ${mode ?? "纯文本"}).`, { err: sendResult.error });
-          lastError = sendResult.error;
-          modeSucceeded = false;
-          if (sentMessageIdsInCurrentAttempt.length > 0) {
-            Log.warn(`[${mode ?? "纯文本"}] 模式发送中断，开始清理 ${sentMessageIdsInCurrentAttempt.length} 条已发送的消息...`);
-            bot.deleteMessages(chatId, sentMessageIdsInCurrentAttempt);
-            Log.info("后台进行清理操作。");
-          }
-          break;
-        }
-      }
-      if (modeSucceeded) {
-        Log.info(`所有消息均已使用 [${mode ?? "纯文本"}] 格式成功发送.`);
-        return { ok: true, messageId: lastMessageId };
-      }
-      Log.warn(`[${mode ?? "纯文本"}] 格式发送失败，将尝试下一个格式...`);
-    } catch (formatError) {
-      const errorMessage = formatError instanceof Error ? formatError.message : String(formatError);
-      Log.error(`在处理 [${mode ?? "纯文本"}] 格式时发生严重错误.`, { err: errorMessage });
-      lastError = errorMessage;
-    }
-  }
-  Log.error("所有格式化模式均发送失败。");
-  return { ok: false, error: new TelegramError(`所有格式化模式发送失败，${lastError}`, "ALL_FORMAT_MODES_FAILED") };
-};
 const sendErrorNotification = async (error, context = "") => {
   const { adminId } = config.load();
   try {
     if (adminId) {
       const currentTime = formatTime(Date.now());
-      const errorMessage = `*🚨 [错误告警] 🚨*
+      const errorMessage = `🚨 [错误告警] 🚨
 
-*发生时间*: \`${currentTime}\`
+发生时间: \`${currentTime}\`
 
-*错误上下文*: \`${escapers.Html(context)}\`
+错误上下文: \`${escaper.html(context)}\`
 
-*错误信息*: \`${escapers.Html(error.message || String(error))}\`
+错误信息 \`${escaper.html(error.message || String(error))}\`
 
-*堆栈追踪*:
+堆栈追踪:
 \`\`\`javascript
-${escapers.Html(error.stack || "N/A")}
+${error.stack || "N/A"}
 \`\`\``;
-      await bot.sendMessage(adminId, formatters.Html(errorMessage), { parseMode: "HTML" });
+      await bot.sendMessage(adminId, toHtml(errorMessage), { parseMode: "HTML" });
       Log.info("Error notification sent to admin.", { context, adminId });
     } else {
       Log.warn("Admin ID is not configured, unable to send error notification.", {
@@ -1134,113 +1242,6 @@ const rateLimiterCheck = async (chatId) => {
     return { canProceed: false, retryAfterSeconds: DEFAULT_RETRY_SECONDS };
   }
 };
-class ChatContexts {
-  get = async (chatId, userId) => {
-    const { chatContextId } = config.load();
-    const keyName = `contexts_${chatId}_${userId}`;
-    const contexts2 = await kv.read(chatContextId, keyName, "json");
-    return contexts2.success ? contexts2.data : [];
-  };
-  update = async (chatId, userId, contexts2) => {
-    const { chatContextId, maxContextLength, contextsExpirationSecond } = config.load();
-    const keyName = `contexts_${chatId}_${userId}`;
-    const historyContexts = await this.get(chatId, userId);
-    const newContexts = [...historyContexts, ...contexts2];
-    if (newContexts.length > maxContextLength) {
-      newContexts.splice(0, newContexts.length - maxContextLength);
-    }
-    await kv.write(chatContextId, keyName, JSON.stringify(newContexts), {
-      expiration_ttl: contextsExpirationSecond
-    });
-    Log.info(`${keyName}: Chat context updated success, current length ${newContexts.length}`);
-  };
-  clear = async (chatId, userId) => {
-    const { chatContextId, contextsExpirationSecond } = config.load();
-    const keyName = `contexts_${chatId}_${userId}`;
-    await kv.write(chatContextId, keyName, JSON.stringify([]), {
-      expiration_ttl: contextsExpirationSecond
-    });
-    Log.info(`${keyName}: Chat contexts cleared success.`);
-  };
-}
-const contexts = new ChatContexts();
-class AppError extends Error {
-  code;
-  constructor(message, code) {
-    super(message);
-    this.name = this.constructor.name;
-    if (code) {
-      this.code = code;
-    }
-    if (typeof Error.captureStackTrace === "function") {
-      Error.captureStackTrace(this, this.constructor);
-    }
-  }
-}
-class ScriptError extends AppError {
-  constructor(message, code) {
-    super(message, code || "SCRIPT_HANDLE_ERROR");
-    this.message = message;
-    this.code = code;
-  }
-}
-class GeminiError extends AppError {
-  hasToolThoughts;
-  constructor(message, code, hasToolThoughts) {
-    super(message, code || "GEMINI_API_ERROR");
-    this.hasToolThoughts = hasToolThoughts;
-  }
-}
-class KvNamespaceError extends AppError {
-  constructor(message, code) {
-    super(message, code || "KV_NAMESPACE_ERROR");
-    this.message = message;
-    this.code = code;
-  }
-}
-class ConfigError extends AppError {
-  constructor(message, code) {
-    super(message, code || "CONFIG_ERROR");
-  }
-}
-class TelegramError extends AppError {
-  constructor(message, code) {
-    super(message, code || "TELEGRAM_API_ERROR");
-  }
-}
-class StorageService {
-  scriptsStorageId;
-  constructor() {
-    const { scriptsStorageId } = config.load();
-    this.scriptsStorageId = scriptsStorageId;
-  }
-  async saveScript(scriptContent, tag) {
-    const result = await kv.write(this.scriptsStorageId, tag, scriptContent);
-    if (!result.success) {
-      throw new ScriptError(`脚本内容保存失败: ${result.error}`);
-    }
-    Log.info(`[StorageService] 脚本内容已保存, 标签: ${tag}`);
-  }
-  async getScript(tag) {
-    const result = await kv.read(this.scriptsStorageId, tag, "text");
-    if (!result.success) {
-      Log.error(`[StorageService] 读取脚本内容失败, 标签: ${tag}`, { err: result.error });
-      throw new ScriptError(`脚本内容读取失败: ${result.error}`);
-    }
-    if (result.data === null || result.data === void 0) {
-      throw new ScriptError(`脚本内容未找到, 标签: ${tag}`);
-    }
-    return result.data;
-  }
-  async deleteScript(tag) {
-    const result = await kv.delete(this.scriptsStorageId, tag);
-    if (!result.success) {
-      throw new ScriptError(`脚本内容删除失败: ${result.error}`);
-    }
-    Log.info(`[StorageService] 脚本内容已删除, 标签: ${tag}`);
-  }
-}
-const storageService = new StorageService();
 class HttpError extends Error {
   response;
   status;
@@ -1372,6 +1373,119 @@ class HttpClient {
   }
 }
 const Http = new HttpClient();
+class ChatContexts {
+  chatContextId;
+  maxContextLength;
+  contextsExpirationSecond;
+  constructor() {
+    const { chatContextId, maxContextLength, contextsExpirationSecond } = config.load();
+    this.chatContextId = chatContextId;
+    this.maxContextLength = maxContextLength;
+    this.contextsExpirationSecond = contextsExpirationSecond;
+  }
+  get = async (chatId, userId) => {
+    const keyName = `contexts_${chatId}_${userId}`;
+    const contexts2 = await kv.read(this.chatContextId, keyName, "json");
+    return contexts2.success ? contexts2.data : [];
+  };
+  update = async (chatId, userId, contexts2) => {
+    const keyName = `contexts_${chatId}_${userId}`;
+    const historyContexts = await this.get(chatId, userId);
+    const newContexts = [...historyContexts, ...contexts2];
+    if (newContexts.length > this.maxContextLength) {
+      newContexts.splice(0, newContexts.length - this.maxContextLength);
+    }
+    await kv.write(this.chatContextId, keyName, JSON.stringify(newContexts), {
+      expiration_ttl: this.contextsExpirationSecond
+    });
+    Log.info(`${keyName}: Chat context updated success, current length ${newContexts.length}`);
+  };
+  clear = async (chatId, userId) => {
+    const keyName = `contexts_${chatId}_${userId}`;
+    await kv.write(this.chatContextId, keyName, JSON.stringify([]), {
+      expiration_ttl: this.contextsExpirationSecond
+    });
+    Log.info(`${keyName}: Chat contexts cleared success.`);
+  };
+}
+const contexts = new ChatContexts();
+class AppError extends Error {
+  code;
+  constructor(message, code) {
+    super(message);
+    this.name = this.constructor.name;
+    if (code) {
+      this.code = code;
+    }
+    if (typeof Error.captureStackTrace === "function") {
+      Error.captureStackTrace(this, this.constructor);
+    }
+  }
+}
+class ScriptError extends AppError {
+  constructor(message, code) {
+    super(message, code || "SCRIPT_HANDLE_ERROR");
+    this.message = message;
+    this.code = code;
+  }
+}
+class GeminiError extends AppError {
+  hasToolThoughts;
+  constructor(message, code, hasToolThoughts) {
+    super(message, code || "GEMINI_API_ERROR");
+    this.hasToolThoughts = hasToolThoughts;
+  }
+}
+class KvNamespaceError extends AppError {
+  constructor(message, code) {
+    super(message, code || "KV_NAMESPACE_ERROR");
+    this.message = message;
+    this.code = code;
+  }
+}
+class ConfigError extends AppError {
+  constructor(message, code) {
+    super(message, code || "CONFIG_ERROR");
+  }
+}
+class TelegramError extends AppError {
+  constructor(message, code) {
+    super(message, code || "TELEGRAM_API_ERROR");
+  }
+}
+class StorageService {
+  scriptsStorageId;
+  constructor() {
+    const { scriptsStorageId } = config.load();
+    this.scriptsStorageId = scriptsStorageId;
+  }
+  async saveScript(scriptContent, tag) {
+    const result = await kv.write(this.scriptsStorageId, tag, scriptContent);
+    if (!result.success) {
+      throw new ScriptError(`脚本内容保存失败: ${result.error}`);
+    }
+    Log.info(`[StorageService] 脚本内容已保存, 标签: ${tag}`);
+  }
+  async getScript(tag) {
+    const result = await kv.read(this.scriptsStorageId, tag, "text");
+    if (!result.success) {
+      Log.error(`[StorageService] 读取脚本内容失败, 标签: ${tag}`, { err: result.error });
+      throw new ScriptError(`脚本内容读取失败: ${result.error}`);
+    }
+    if (result.data === null || result.data === void 0) {
+      throw new ScriptError(`脚本内容未找到, 标签: ${tag}`);
+    }
+    return result.data;
+  }
+  async deleteScript(tag) {
+    const result = await kv.delete(this.scriptsStorageId, tag);
+    if (!result.success) {
+      throw new ScriptError(`脚本内容删除失败: ${result.error}`);
+    }
+    Log.info(`[StorageService] 脚本内容已删除, 标签: ${tag}`);
+  }
+}
+const storageService = new StorageService();
 class ExecutionService {
   async executeScript(scriptContent, message, param) {
     const startTime = process.hrtime.bigint();
@@ -1473,7 +1587,7 @@ class ScriptManager {
   async uninstallForUser(userId, tag) {
     const userScripts = await this._getUserScripts(userId);
     if (!userScripts.includes(tag)) {
-      throw new ScriptError(`脚本卸载失败：未找到标签为 "${tag}" 的脚本。`);
+      throw new ScriptError(`脚本卸载失败：未找到标签为 "${tag.replace(`script_${userId}_`, "")}" 的脚本。`);
     }
     const updatedScripts = userScripts.filter((t) => t !== tag);
     await this._saveUserScripts(userId, updatedScripts);
@@ -1582,9 +1696,9 @@ const BaseCommands = [
       };
       let startResult;
       if (isCallback) {
-        startResult = await bot.editMessageText(chatId, messageId, formatters.Html(replaceText), { parseMode: "HTML", replyMarkup });
+        startResult = await bot.editMessageText(chatId, messageId, toHtml(replaceText), { parseMode: "HTML", replyMarkup });
       } else {
-        startResult = await bot.sendMessage(chatId, formatters.Html(replaceText), {
+        startResult = await bot.sendMessage(chatId, toHtml(replaceText), {
           replyToMessageId: messageId,
           parseMode: "HTML",
           replyMarkup
@@ -1618,12 +1732,12 @@ const BaseCommands = [
       };
       let faqResult;
       if (isCallback) {
-        faqResult = await bot.editMessageText(chatId, messageId, formatters.Html(faqReply.data.trim()), {
+        faqResult = await bot.editMessageText(chatId, messageId, toHtml(faqReply.data.trim()), {
           parseMode: "HTML",
           replyMarkup: backReplyMarkup
         });
       } else {
-        faqResult = await bot.sendMessage(chatId, formatters.Html(faqReply.data.trim()), { replyToMessageId: messageId, parseMode: "HTML" });
+        faqResult = await bot.sendMessage(chatId, toHtml(faqReply.data.trim()), { replyToMessageId: messageId, parseMode: "HTML" });
       }
       if (faqResult.ok) {
         scheduleDeletion({ chat_id: chatId, message_id: faqResult.messageId }, 5 * 6e4);
@@ -1673,8 +1787,10 @@ const BaseCommands = [
       Log.info("Executing tools command.");
       const { chatId, userId, messageId, isCallback = false } = params;
       const toolFunctions = geminiTools[0]?.functionDeclarations || [];
-      const toolList = toolFunctions?.map((tool) => `* **${tool.name}**
-    ${tool.description?.slice(0, 40)}...`).join("\n").trim() || "";
+      const toolList = toolFunctions?.map(
+        (tool) => `* **${tool.name}**
+    ${[...tool.description].length > 40 ? `${tool.description?.slice(0, 40)}...` : tool.description}`
+      ).join("\n").trim() || "";
       const randomTools = sampleByShuffle(toolFunctions, 4);
       const keyboard1 = randomTools.slice(0, 2).map((tool) => ({
         text: `🛠 ${tool.name}`,
@@ -1712,12 +1828,12 @@ ${toolList}`;
             ]
           ]
         };
-        toolsResult = await bot.editMessageText(chatId, messageId, formatters.Html(toolsText), {
+        toolsResult = await bot.editMessageText(chatId, messageId, toHtml(toolsText), {
           parseMode: "HTML",
           replyMarkup: backReplyMarkup
         });
       } else {
-        toolsResult = await bot.sendMessage(chatId, formatters.Html(toolsText), {
+        toolsResult = await bot.sendMessage(chatId, toHtml(toolsText), {
           replyToMessageId: messageId,
           parseMode: "HTML",
           replyMarkup
@@ -2422,6 +2538,12 @@ const geminiTools = [
 class GeminiApi {
   MAX_RETRIES_COMMON = 3;
   BASE_RETRY_DELAY_MS = 1e4;
+  maxApiCallRounds;
+  durableResourceId;
+  systemPromptKeyName;
+  geminiApiKeysKeyName;
+  modelName;
+  modelTemperature;
   SAFETY_SETTINGS = [
     { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
     { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -2429,21 +2551,29 @@ class GeminiApi {
     { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
     { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE }
   ];
+  constructor() {
+    const { maxApiCallRounds, durableResourceId, systemPromptKeyName, geminiApiKeysKeyName, modelName, modelTemperature } = config.load();
+    this.maxApiCallRounds = maxApiCallRounds;
+    this.durableResourceId = durableResourceId;
+    this.systemPromptKeyName = systemPromptKeyName;
+    this.geminiApiKeysKeyName = geminiApiKeysKeyName;
+    this.modelName = modelName;
+    this.modelTemperature = modelTemperature;
+  }
   async _initializeApiCallContext(chatParams, initialContents) {
-    const { durableResourceId, systemPromptKeyName, geminiApiKeysKeyName, modelName, modelTemperature } = config.load();
     const { chatId, userId, userMessageId, thinkMessageId } = chatParams;
-    const systemPrompt = await kv.read(durableResourceId, systemPromptKeyName, "text");
+    const systemPrompt = await kv.read(this.durableResourceId, this.systemPromptKeyName, "text");
     if (!systemPrompt.success) {
       throw new KvNamespaceError(`系统提示获取失败，${systemPrompt.error}`, "SYSTEM_PROMPT_NOT_FOUND");
     }
-    const apiKeys = await kv.read(durableResourceId, geminiApiKeysKeyName, "json");
+    const apiKeys = await kv.read(this.durableResourceId, this.geminiApiKeysKeyName, "json");
     if (!apiKeys.success) {
       throw new GeminiError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, "GEMINI_API_KEY_NOT_FOUND");
     }
     Log.info(`系统提示 (systemPrompt):`, { systemPrompt: systemPrompt.data.slice(0, 200) });
     const baseConfig = {
       maxOutputTokens: 65536,
-      temperature: modelTemperature,
+      temperature: this.modelTemperature,
       thinkingConfig: { includeThoughts: true, thinkingBudget: -1 },
       tools: geminiTools,
       toolConfig: {
@@ -2462,7 +2592,7 @@ class GeminiApi {
       thinkMessageId,
       systemPrompt: systemPrompt.data,
       apiKeys: apiKeys.data,
-      modelName,
+      modelName: this.modelName,
       config: baseConfig,
       contents: [...initialContents],
       metrics: {
@@ -2564,7 +2694,7 @@ ${err}`,
         if (context.thinkMessageId !== void 0) {
           const displayThoughtText = `<b>Thoughts</b>:
 
-<blockquote expandable>${escapers.Html(shortenString(thoughtTexts))}</blockquote>`;
+<blockquote expandable>${escaper.html(shortenString(thoughtTexts))}</blockquote>`;
           await bot.editMessageText(context.chatId, context.thinkMessageId, displayThoughtText, { parseMode: "HTML" });
         }
       }
@@ -2639,16 +2769,14 @@ ${err}`,
     };
   }
   async _writeApiKeysToKv(apiKeys) {
-    const { durableResourceId, geminiApiKeysKeyName } = config.load();
     try {
-      await kv.write(durableResourceId, geminiApiKeysKeyName, JSON.stringify(apiKeys));
+      await kv.write(this.durableResourceId, this.geminiApiKeysKeyName, JSON.stringify(apiKeys));
       Log.info("已将最新的 API 密钥组写入 KvNamespace。");
     } catch (error) {
       Log.error("写入 API 密钥到 kv 失败:", { error });
     }
   }
   generateContent = async (initialContents, chatParams) => {
-    const { maxApiCallRounds } = config.load();
     let context;
     try {
       context = await this._initializeApiCallContext(chatParams, initialContents);
@@ -2658,7 +2786,7 @@ ${err}`,
       throw err;
     }
     let apiCallRoundCounter = 0;
-    while (apiCallRoundCounter < maxApiCallRounds) {
+    while (apiCallRoundCounter < this.maxApiCallRounds) {
       let response;
       try {
         response = await this._executeApiCallWithRetries(context);
@@ -2748,7 +2876,7 @@ ${err}`,
         }
       }
     }
-    const errorMsg = `达到最大 API 调用轮次 (${maxApiCallRounds})，未能获取最终回复。`;
+    const errorMsg = `达到最大 API 调用轮次 (${this.maxApiCallRounds})，未能获取最终回复。`;
     Log.error(errorMsg);
     await this._writeApiKeysToKv(context.apiKeys);
     throw new GeminiError(errorMsg, "MAX_CALL_ROUNDS_REACHED", context.metrics.hasToolThoughts);
@@ -2998,7 +3126,7 @@ class TelegramBot {
     }
   }
   async sendPhoto(chatId, photoBuffer, options) {
-    const shorten = `<blockquote expandable>${escapers.Html(shortenString(String(options?.caption)))}</blockquote>`;
+    const shorten = `<blockquote expandable>${escaper.html(shortenString(String(options?.caption)))}</blockquote>`;
     const payload = {
       chat_id: chatId,
       photo: photoBuffer,
@@ -3672,7 +3800,7 @@ const ToolExecutors = {
       if (!result.ok) {
         return { success: false, error: `Error replying image message, ${result.error}` };
       }
-      void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1e3);
+      scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1e3);
       return { success: true, data: "Image generate and reply message successfully." };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -3708,7 +3836,7 @@ const ToolExecutors = {
       if (!result.ok) {
         return { success: false, error: `Error replying speech message, ${result.error}` };
       }
-      void scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1e3);
+      scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1e3);
       return { success: true, data: "Speech generate and reply message successfully." };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -3947,7 +4075,7 @@ class MentionHandler {
         replyToMessageId: userMessageId
       });
       if (rateLimitResult.ok) {
-        void scheduleDeletion({ chat_id: chat.id, message_id: rateLimitResult.messageId }, checkResult.retryAfterSeconds * 1e3);
+        scheduleDeletion({ chat_id: chat.id, message_id: rateLimitResult.messageId }, checkResult.retryAfterSeconds * 1e3);
       }
       return true;
     }
@@ -4004,7 +4132,7 @@ ${currentMessage.text || currentMessage.caption}`;
     }
     return thinkingResult.messageId;
   }
-  async processGeminiResponse(geminiResponse, chatId, userMessageId, thinkMessageId, botName, modelName, fromUserId, completeContentsBeforeCall) {
+  async processGeminiResponse(geminiResponse, chatId, userMessageId, thinkMessageId, modelName, fromUserId, completeContentsBeforeCall) {
     let hasDisplayedThoughts = false;
     const {
       response,
@@ -4023,7 +4151,7 @@ ${currentMessage.text || currentMessage.caption}`;
       hasDisplayedThoughts = true;
       const displayThoughtText = `<b>Thoughts</b>:
 
-<blockquote expandable>${escapers.Html(shortenString(resThoughtTexts))}</blockquote>`;
+<blockquote expandable>${escaper.html(shortenString(resThoughtTexts))}</blockquote>`;
       const replyMarkup = {
         inline_keyboard: makeInlineKeyboard(fromUserId)
       };
@@ -4032,7 +4160,7 @@ ${currentMessage.text || currentMessage.caption}`;
     if (!hasToolThoughts && !hasDisplayedThoughts) {
       await bot.deleteMessage(chatId, thinkMessageId);
     } else {
-      void scheduleDeletion({ chat_id: chatId, message_id: thinkMessageId }, 30 * 6e4);
+      scheduleDeletion({ chat_id: chatId, message_id: thinkMessageId }, 30 * 6e4);
     }
     const resTextParts = response.parts?.filter((part) => part.text && !part.thought);
     const resTexts = resTextParts?.map((part) => part.text).join("").trim() || "";
@@ -4046,7 +4174,7 @@ ${currentMessage.text || currentMessage.caption}`;
         replyMarkup
       });
       if (replyResult.ok) {
-        void scheduleDeletion({ chat_id: chatId, message_id: replyResult.messageId }, 3 * 60 * 1e3);
+        scheduleDeletion({ chat_id: chatId, message_id: replyResult.messageId }, 3 * 60 * 1e3);
       }
       return hasDisplayedThoughts;
     }
@@ -4054,7 +4182,7 @@ ${currentMessage.text || currentMessage.caption}`;
 
 ${resTexts}
 
-✨ 本次任务共成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试：无效回复 ${emptyReplyRetryCount} 次，客户端错误 ${errorRetryCount} 次，使用工具数：${usageToolCount}，耗时：${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}
+✨ 本次任务成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试（${emptyReplyRetryCount} 次无效回复，${errorRetryCount} 次客户端错误），共使用 ${usageToolCount} 个工具，耗时 ${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}
 
 ⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。`;
     const finalReplyResult = await sendFormattedMessage(chatId, fullText, userMessageId, fromUserId);
@@ -4073,13 +4201,12 @@ ${resTexts}
     }
     return hasDisplayedThoughts;
   }
-  async handleMention(message, isChat = false) {
+  async handleMention(message) {
     const { modelName, botName, adminId } = config.load();
     const { message_id: userMessageId, from, chat, reply_to_message } = message;
     Log.info("Handling mention message.", {
       chatId: chat.id,
-      messageId: userMessageId,
-      isChatMode: isChat
+      messageId: userMessageId
     });
     if (await this.handleRateLimiting(message, adminId)) {
       return;
@@ -4108,7 +4235,6 @@ ${resTexts}
         chat.id,
         userMessageId,
         thinkMessageId,
-        botName,
         modelName,
         from?.id,
         completeContents
@@ -4127,7 +4253,7 @@ ${resTexts}
         if (!err?.hasToolThoughts && !hasResThought) {
           await bot.deleteMessage(chat.id, thinkMessageId);
         } else {
-          void scheduleDeletion({ chat_id: chat.id, message_id: thinkMessageId }, 30 * 6e4);
+          scheduleDeletion({ chat_id: chat.id, message_id: thinkMessageId }, 30 * 6e4);
         }
       }
       throw apiError;
@@ -4135,7 +4261,9 @@ ${resTexts}
   }
 }
 const mention = new MentionHandler();
-const handleMention = mention.handleMention;
+const handleMention = async (message) => {
+  return await mention.handleMention(message);
+};
 const POLLING_TIMEOUT_MS = 3 * 60 * 1e3;
 const POLLING_INTERVAL_MS = 5 * 1e3;
 const pollChatMemberStatus = async (chatId, user, timeoutMs, intervalMs) => {
@@ -4219,13 +4347,13 @@ const handleNewMember = async (message) => {
           ]
         ]
       };
-      const welcomeResult = await bot.sendMessage(chat.id, formatters.Html(replaceText), {
+      const welcomeResult = await bot.sendMessage(chat.id, toHtml(replaceText), {
         replyToMessageId: message_id,
         parseMode: "HTML",
         replyMarkup
       });
       if (welcomeResult.ok) {
-        void scheduleDeletion({ chat_id: chat.id, message_id: welcomeResult.messageId }, 3 * 6e4);
+        scheduleDeletion({ chat_id: chat.id, message_id: welcomeResult.messageId }, 3 * 6e4);
       }
     } else {
       Log.warn(`新成员 ${newMember.first_name}(${newMember.id}) 未通过验证或超时，不发送欢迎消息。`, { chatId: chat.id, newMemberId: newMember.id });
@@ -4263,7 +4391,7 @@ const handleNormal = async (message) => {
       cleanMessage = { ...message, reply_to_message: { ...reply_to_message, text: cleanMessageTexts } };
     }
   }
-  return await handleMention(cleanMessage, true);
+  return await handleMention(cleanMessage);
 };
 const handleCallbackQuery = async (callbackQuery) => {
   if (!callbackQuery.message || !callbackQuery.data) {
@@ -4328,16 +4456,17 @@ const handleCallbackQuery = async (callbackQuery) => {
     case data.startsWith("reaction_"): {
       const reaction = data.split("_")[1];
       const keyName = `reacted_${chat.id}_${messageId}`;
-      const reactedUsers = await kv.read(rateLimitId, keyName, "json");
-      if (!reactedUsers.success || reactedUsers.data.includes(from.id)) {
+      const readResult = await kv.read(rateLimitId, keyName, "json");
+      const reactedUsers = readResult.success ? [...readResult.data] : [];
+      if (reactedUsers.includes(from.id)) {
         bot.answerCallbackQuery(queryId, {
           callbackText: "你已做出过反应"
         });
         return;
       }
       bot.answerCallbackQuery(queryId, { callbackText: "反应成功" });
-      const newReactedUsers = [...reactedUsers.data, from.id];
-      await kv.write(rateLimitId, keyName, JSON.stringify(newReactedUsers), { expiration_ttl: 48 * 60 * 60 });
+      reactedUsers.push(from.id);
+      await kv.write(rateLimitId, keyName, JSON.stringify(reactedUsers), { expiration_ttl: 48 * 60 * 60 });
       const newInlineKeyboard = JSON.parse(JSON.stringify(reply_markup?.inline_keyboard));
       let keyboardUpdated = false;
       for (const row of newInlineKeyboard) {
@@ -4434,13 +4563,13 @@ const handleUpdate = async (update) => {
     Log.error("Error while handling update", { err, updateId: update_id });
     await sendErrorNotification(err, `Error while handling update ${JSON.stringify({ chatId: chat.id, messageId: message_id })}`);
     const errorMessage = err instanceof Error ? err.message : String(err);
-    const shorten = `<blockquote expandable>${escapers.Html(shortenString(`❌ ${errorMessage}`))}</blockquote>`;
+    const shorten = `<blockquote expandable>${escaper.html(shortenString(`❌ ${errorMessage}`))}</blockquote>`;
     const replyMarkup = {
       inline_keyboard: [REACTiON_ROW]
     };
     const errorResult = await bot.sendMessage(chat.id, shorten, { replyToMessageId: message_id, parseMode: "HTML", replyMarkup });
     if (errorResult.ok) {
-      void scheduleDeletion({ chat_id: chat.id, message_id: errorResult.messageId }, 3 * 6e4);
+      scheduleDeletion({ chat_id: chat.id, message_id: errorResult.messageId }, 3 * 6e4);
     }
   }
 };

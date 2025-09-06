@@ -30,7 +30,7 @@ export class Parser {
   private text: string;
   private pos: number = 0;
   // 定义所有可能的标记符，用于文本解析
-  private readonly markers = ['**', '__', '~', '||', '`', '[', ']', '(', ')', '```', '\n', '>'];
+  private readonly markers = ['**', '__', '~~', '||', '`', '[', ']', '(', ')', '```', '\n', '>'];
 
   constructor(text: string) {
     // 规范化换行符，便于处理
@@ -95,7 +95,7 @@ export class Parser {
 
   private parseBold = (): AstNode | null => this.parseWithMarkers('bold', '**');
   private parseUnderline = (): AstNode | null => this.parseWithMarkers('underline', '__');
-  private parseStrikethrough = (): AstNode | null => this.parseWithMarkers('strikethrough', '~');
+  private parseStrikethrough = (): AstNode | null => this.parseWithMarkers('strikethrough', '~~');
   private parseSpoiler = (): AstNode | null => this.parseWithMarkers('spoiler', '||');
   private parseNewline = (): AstNode | null => {
     if (!this.match('\n')) return null;

@@ -19,7 +19,7 @@ const BaseCommands: BotCommandAction[] = [
       if (!startReply.success) {
         throw new KvNamespaceError(`Start 命令回复内容读取失败，${startReply.error}`, 'START_REPLY_NOT_FOUND');
       }
-      const replaceText = startReply.data.replace('MODEL_NAME', modelName).trim();
+      const replaceText = startReply.data.replace('${MODEL_NAME}', modelName).trim();
       const totalReactionsKeyName = `total_reactions_${chatId}`;
       const totalReactions = await kv.read<{ like: number; dislike: number }>(durableResourceId, totalReactionsKeyName, 'json');
       const replyMarkup: ReplyMarkup = {
@@ -242,7 +242,6 @@ const GenerateCommands: BotCommandAction[] = [
     action: async (params) => {
       Log.info('Executing gen_img command.');
       const { chatId, userId, messageId, cleanText } = params;
-      const { durableResourceId, geminiApiKeysKeyName } = config.load();
       if (!cleanText) {
         const notText = await bot.sendMessage(chatId, `:img [图片生成提示]`, { replyToMessageId: messageId });
         if (notText.ok) {
@@ -250,12 +249,6 @@ const GenerateCommands: BotCommandAction[] = [
         }
         return;
       }
-      const apiKeys = await kv.read<[string, string][]>(durableResourceId, geminiApiKeysKeyName, 'json');
-      if (!apiKeys.success) {
-        throw new KvNamespaceError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, 'GEMINI_API_KEY_NOT_FOUND');
-      }
-      const [apiKey, apiKeyId] = apiKeys.data[Math.floor(Math.random() * apiKeys.data.length)];
-      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
       let renderMessageId: number | undefined = undefined;
       const renderResult = await bot.sendMessage(chatId, `🎨 Rendering...`, { replyToMessageId: messageId });
       if (renderResult.ok) {
@@ -265,7 +258,6 @@ const GenerateCommands: BotCommandAction[] = [
         chatId,
         userId,
         userMessageId: messageId,
-        currentApiKey: apiKey,
         prompt: cleanText,
       };
       const response = await ToolExecutors.generateImage(args as ToolExecArgs);
@@ -284,7 +276,6 @@ const GenerateCommands: BotCommandAction[] = [
     action: async (params) => {
       Log.info('Executing gen_tts command.');
       const { chatId, userId, messageId, cleanText } = params;
-      const { durableResourceId, geminiApiKeysKeyName } = config.load();
       if (!cleanText) {
         const notText = await bot.sendMessage(chatId, `:tts [语音生成提示]`, { replyToMessageId: messageId });
         if (notText.ok) {
@@ -292,12 +283,6 @@ const GenerateCommands: BotCommandAction[] = [
         }
         return;
       }
-      const apiKeys = await kv.read<[string, string][]>(durableResourceId, geminiApiKeysKeyName, 'json');
-      if (!apiKeys.success) {
-        throw new KvNamespaceError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, 'GEMINI_API_KEY_NOT_FOUND');
-      }
-      const [apiKey, apiKeyId] = apiKeys.data[Math.floor(Math.random() * apiKeys.data.length)];
-      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
       let synthMessageId: number | undefined = undefined;
       const synthResult = await bot.sendMessage(chatId, `🎙 Synthesizing...`, { replyToMessageId: messageId });
       if (synthResult.ok) {
@@ -307,7 +292,6 @@ const GenerateCommands: BotCommandAction[] = [
         chatId,
         userId,
         userMessageId: messageId,
-        currentApiKey: apiKey,
         prompt: cleanText,
       };
       const response = await ToolExecutors.generateSpeech(args as ToolExecArgs);

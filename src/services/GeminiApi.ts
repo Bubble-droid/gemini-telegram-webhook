@@ -8,89 +8,87 @@ import { kv, rotateArray, shortenString, sleep } from '@/utils';
 import { escaper } from '@/utils/formatting';
 import type { ChatParams, GenerateContentSuccessResponse, ApiCallContext, ToolExecArgs, ToolName } from '@/types';
 
+export const GEMINI_SAFETY_SETTINGS: SafetySetting[] = [
+  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
+];
+
 /**
  * @class GeminiApi
  * @description 封装与 Google Gemini API 的交互逻辑。
  */
 export class GeminiApi {
   // 定义最大无效回复和客户端错误重试次数，以及基础重试延迟
-  private readonly MAX_RETRIES_COMMON: number = 3; // 无效回复和客户端错误共用最大重试次数
+  private readonly MAX_EMPTY_REPLY_RETRIES: number = 3;
+  private readonly MAX_CLIENT_ERROR_RETRIES: number = 3;
   private readonly BASE_RETRY_DELAY_MS: number = 10_000; // 10 秒
   private readonly maxApiCallRounds: number;
   private readonly durableResourceId: string;
   private readonly systemPromptKeyName: string;
-  private readonly geminiApiKeysKeyName: string;
   private readonly modelName: string;
   private readonly modelTemperature: number;
-  public readonly SAFETY_SETTINGS: SafetySetting[] = [
-    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
-  ];
+  private readonly chatId: number;
+  private readonly userId: number;
+  private readonly userMessageId: number;
+  private readonly thinkMessageId?: number;
+  private baseConfig: GenerateContentConfig = {
+    maxOutputTokens: 65536,
+    thinkingConfig: { includeThoughts: true, thinkingBudget: -1 },
+    tools: geminiTools,
+    toolConfig: {
+      functionCallingConfig: {
+        mode: FunctionCallingConfigMode.AUTO,
+      },
+    },
+    safetySettings: GEMINI_SAFETY_SETTINGS,
+  };
+  private readonly startProcessTime: bigint;
 
-  constructor() {
-    const { maxApiCallRounds, durableResourceId, systemPromptKeyName, geminiApiKeysKeyName, modelName, modelTemperature } = config.load();
+  constructor(chatParams: ChatParams) {
+    const { maxApiCallRounds, durableResourceId, systemPromptKeyName, modelName, modelTemperature } = config.load();
     this.maxApiCallRounds = maxApiCallRounds;
     this.durableResourceId = durableResourceId;
     this.systemPromptKeyName = systemPromptKeyName;
-    this.geminiApiKeysKeyName = geminiApiKeysKeyName;
     this.modelName = modelName;
     this.modelTemperature = modelTemperature;
+    this.chatId = chatParams.chatId;
+    this.userId = chatParams.userId;
+    this.userMessageId = chatParams.userMessageId;
+    this.thinkMessageId = chatParams.thinkMessageId;
+    this.startProcessTime = process.hrtime.bigint();
   }
 
   /**
    * 初始化 API 调用所需的配置和状态上下文。
-   * @param {ChatParams} chatParams - 聊天参数。
    * @param {Content[]} initialContents - 初始对话历史记录。
    * @returns {Promise<ApiCallContext>} 初始化后的上下文对象。
    * @throws {GeminiError} 如果 API 密钥未找到或初始化失败。
    */
-  private async _initializeApiCallContext(chatParams: ChatParams, initialContents: Content[]): Promise<ApiCallContext> {
-    const { chatId, userId, userMessageId, thinkMessageId } = chatParams;
-
+  private async _initializeApiCallContext(initialContents: Content[]): Promise<ApiCallContext> {
     // 从 kv 读取系统提示，如果不存在则使用默认值
     const systemPrompt = await kv.read<string>(this.durableResourceId, this.systemPromptKeyName, 'text');
 
     if (!systemPrompt.success) {
       throw new KvNamespaceError(`系统提示获取失败，${systemPrompt.error}`, 'SYSTEM_PROMPT_NOT_FOUND');
     }
-    // 读取 API 密钥，如果不存在则抛出错误
-    const apiKeys = await kv.read<[string, string][]>(this.durableResourceId, this.geminiApiKeysKeyName, 'json');
-    if (!apiKeys.success) {
-      throw new GeminiError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, 'GEMINI_API_KEY_NOT_FOUND');
-    }
 
     Log.info(`系统提示 (systemPrompt):`, { systemPrompt: systemPrompt.data.slice(0, 200) });
 
     // 构建 Gemini API 请求配置
     const baseConfig: GenerateContentConfig = {
-      maxOutputTokens: 65536,
+      ...this.baseConfig,
       temperature: this.modelTemperature,
-      thinkingConfig: { includeThoughts: true, thinkingBudget: -1 },
-      tools: geminiTools,
-      toolConfig: {
-        functionCallingConfig: {
-          mode: FunctionCallingConfigMode.AUTO,
-        },
-      },
-      responseMimeType: 'text/plain',
-      safetySettings: this.SAFETY_SETTINGS,
       systemInstruction: [{ text: systemPrompt.data }],
     };
 
     // 返回初始化后的上下文对象
     return {
-      chatId,
-      userId,
-      userMessageId,
-      thinkMessageId,
-      systemPrompt: systemPrompt.data,
-      apiKeys: apiKeys.data,
-      modelName: this.modelName,
       config: baseConfig,
       contents: [...initialContents], // 复制初始对话历史，避免副作用
+      mergeThinkingTexts: '',
       metrics: {
         apiCallSuccessCount: 0,
         totalUsageToken: 0,
@@ -98,7 +96,6 @@ export class GeminiApi {
         emptyReplyRetryCount: 0,
         errorRetryCount: 0, // 初始化客户端错误重试计数
         totalRetryCount: 0,
-        startProcessTime: Date.now(),
         totalDurationSecond: 0,
         hasToolThoughts: false, // 初始化为 false
       },
@@ -139,17 +136,15 @@ export class GeminiApi {
     });
 
     // 轮换 API 密钥并获取当前使用的密钥
-    const newApiKeys: [string, string][] = rotateArray<[string, string]>(context.apiKeys);
-    const [apiKey, apiKeyId] = newApiKeys[0];
-    const ai = new GoogleGenAI({ apiKey });
-    Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
-    context.apiKeys = newApiKeys; // 更新上下文中的 API 密钥列表以供后续轮次使用
+    const newApiKey = await rotateGeminiApiKey();
+
+    const ai = new GoogleGenAI({ apiKey: newApiKey });
 
     Log.info('发送 Gemini API 请求...');
     // 直接执行 API 调用，如果失败则将原始错误抛出，由调用者处理重试
     const response: GenerateContentResponse = await ai.models.generateContent({
-      model: context.modelName,
-      config: context.config,
+      model: this.modelName,
+      config: this.baseConfig,
       contents: context.contents,
     });
 
@@ -172,36 +167,35 @@ export class GeminiApi {
    * @throws {GeminiError} 如果所有客户端错误重试均失败。
    */
   private async _executeApiCallWithRetries(context: ApiCallContext): Promise<GenerateContentResponse> {
-    for (let attempt = 0; attempt <= this.MAX_RETRIES_COMMON; attempt++) {
+    for (let attempt = 0; attempt <= this.MAX_CLIENT_ERROR_RETRIES; attempt++) {
       try {
         const response = await this._callGeminiApi(context);
         return response; // 成功获取响应，返回
       } catch (error: unknown) {
         const err = error instanceof GeminiError ? error : new GeminiError(String(error), 'API_CLIENT_ERROR', context.metrics.hasToolThoughts);
-        Log.error(`Gemini API 客户端或网络错误 (尝试 ${attempt + 1}/${this.MAX_RETRIES_COMMON}):`, { err });
+        Log.error(`Gemini API 客户端或网络错误 (尝试 ${attempt + 1}/${this.MAX_CLIENT_ERROR_RETRIES}):`, { err });
 
-        if (attempt < this.MAX_RETRIES_COMMON) {
+        if (attempt < this.MAX_CLIENT_ERROR_RETRIES) {
           const delay = Math.floor(this.BASE_RETRY_DELAY_MS * Math.pow(2, attempt + 1) * (0.8 + Math.random() * 0.4));
           context.metrics.errorRetryCount++; // 递增客户端错误重试计数
           // 注意：这里没有重置 errorRetryCount，它会持续累积
 
-          if (context.thinkMessageId !== undefined) {
+          if (this.thinkMessageId !== undefined) {
             const errorRetryText = `Gemini API 客户端错误，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${attempt + 1} 次重试...`;
-            await bot.editMessageText(context.chatId, context.thinkMessageId, errorRetryText);
+            await bot.editMessageText(this.chatId, this.thinkMessageId, errorRetryText);
           }
           await sleep(delay);
           Log.info(`Gemini API 客户端错误，进行第 ${attempt + 1} 次重试...`);
         } else {
-          if (context.thinkMessageId) {
-            await bot.deleteMessage(context.chatId, context.thinkMessageId);
+          if (this.thinkMessageId) {
+            await bot.deleteMessage(this.chatId, this.thinkMessageId);
           }
           // 达到最大客户端错误重试次数
           const finalError = new GeminiError(
-            `Gemini API 客户端错误，已达最大重试次数 (${this.MAX_RETRIES_COMMON})。\n\n${err}`,
+            `Gemini API 客户端错误，已达最大重试次数 (${this.MAX_CLIENT_ERROR_RETRIES})。\n\n${err}`,
             'MAX_API_CLIENT_RETRIES_REACHED',
             context.metrics.hasToolThoughts,
           );
-          await this._writeApiKeysToKv(context.apiKeys); // 在抛出错误前写入 API 密钥
           throw finalError;
         }
       }
@@ -229,10 +223,11 @@ export class GeminiApi {
         .trim();
       if (thoughtTexts) {
         context.metrics.hasToolThoughts = true;
+        context.mergeThinkingTexts += thoughtTexts;
         // 如果存在 thinkMessageId，更新 Telegram 消息
-        if (context.thinkMessageId !== undefined) {
-          const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escaper.html(shortenString(thoughtTexts))}</blockquote>`;
-          await bot.editMessageText(context.chatId, context.thinkMessageId, displayThoughtText, { parseMode: 'HTML' });
+        if (this.thinkMessageId !== undefined) {
+          const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escaper.html(shortenString(context.mergeThinkingTexts))}</blockquote>`;
+          await bot.editMessageText(this.chatId, this.thinkMessageId, displayThoughtText, { parseMode: 'HTML' });
         }
       }
     }
@@ -247,10 +242,9 @@ export class GeminiApi {
       const functionName = functionCall.functionCall?.name;
       const functionArgs = functionCall.functionCall?.args;
       const toolExecArgs = {
-        chatId: context.chatId,
-        userId: context.userId,
-        userMessageId: context.userMessageId,
-        ...(functionName?.startsWith('generate') ? { currentApiKey: context.apiKeys[0][0] } : {}),
+        chatId: this.chatId,
+        userId: this.userId,
+        userMessageId: this.userMessageId,
         ...functionArgs,
       } as ToolExecArgs;
 
@@ -307,8 +301,8 @@ export class GeminiApi {
    * @returns {GenerateContentSuccessResponse} 最终的成功响应。
    */
   private _buildSuccessResponse(context: ApiCallContext, textParts: Part[]): GenerateContentSuccessResponse {
-    const finishedTime = Date.now();
-    context.metrics.totalDurationSecond = Math.round((finishedTime - context.metrics.startProcessTime) / 1000);
+    const endTime = process.hrtime.bigint();
+    const duration = Number(endTime - this.startProcessTime) / 1_000_000;
 
     return {
       response: {
@@ -319,41 +313,27 @@ export class GeminiApi {
       apiCallSuccessCount: context.metrics.apiCallSuccessCount,
       totalUsageToken: context.metrics.totalUsageToken,
       usageToolCount: context.metrics.usageToolCount,
-      totalDurationSecond: context.metrics.totalDurationSecond,
+      totalDurationSecond: Number((duration / 1000).toFixed(2)),
       hasToolThoughts: context.metrics.hasToolThoughts,
+      mergeThinkingTexts: context.mergeThinkingTexts,
       emptyReplyRetryCount: context.metrics.emptyReplyRetryCount, // 单独返回无效回复重试次数
       errorRetryCount: context.metrics.errorRetryCount, // 单独返回客户端错误重试次数
     };
   }
 
   /**
-   * 将当前轮换后的 API 密钥组写入 KvNamespace。
-   * @param {[string, string][]} apiKeys - 当前的 API 密钥组。
-   */
-  private async _writeApiKeysToKv(apiKeys: [string, string][]): Promise<void> {
-    try {
-      // 显式指定类型为 'json'，与读取时保持一致
-      await kv.write(this.durableResourceId, this.geminiApiKeysKeyName, JSON.stringify(apiKeys));
-      Log.info('已将最新的 API 密钥组写入 KvNamespace。');
-    } catch (error) {
-      Log.error('写入 API 密钥到 kv 失败:', { error });
-    }
-  }
-
-  /**
    * 调用 Gemini API 进行对话或生成内容，支持工具调用。
    * 这是主要的协调函数，它使用私有辅助方法来管理整个流程。
    * @param {Content[]} initialContents - 初始对话历史记录。
-   * @param {ChatParams} chatParams - 聊天参数。
    * @returns {Promise<GenerateContentSuccessResponse>} Gemini API 的最终响应对象，包含文本或工具调用结果。
    * @throws {GeminiError} 如果在任何阶段发生不可恢复的错误。
    */
-  public generateContent = async (initialContents: Content[], chatParams: ChatParams): Promise<GenerateContentSuccessResponse> => {
+  public generateContent = async (initialContents: Content[]): Promise<GenerateContentSuccessResponse> => {
     let context: ApiCallContext;
 
     try {
       // 1. 初始化 API 调用上下文
-      context = await this._initializeApiCallContext(chatParams, initialContents);
+      context = await this._initializeApiCallContext(initialContents);
     } catch (error: unknown) {
       // 初始化失败，直接抛出错误。
       // 这里确保即使在 context 未完全初始化的情况下，也能传递 hasToolThoughts（此时应为 false）
@@ -382,17 +362,17 @@ export class GeminiApi {
       // 3. 内部循环：处理无效回复重试
       let currentEmptyReplyAttempt = 0;
       while (!candidate || !candidate.content || !candidate.content.parts) {
-        if (currentEmptyReplyAttempt < this.MAX_RETRIES_COMMON) {
+        if (currentEmptyReplyAttempt < this.MAX_EMPTY_REPLY_RETRIES) {
           const delay = Math.floor(this.BASE_RETRY_DELAY_MS * Math.pow(2, currentEmptyReplyAttempt + 1) * (0.8 + Math.random() * 0.4));
           context.metrics.emptyReplyRetryCount++; // 递增全局无效回复重试计数
           currentEmptyReplyAttempt++; // 递增当前无效回复重试的局部计数
 
-          if (context.thinkMessageId !== undefined) {
+          if (this.thinkMessageId !== undefined) {
             const emptyReplyRetryText = `Gemini API 响应为空，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${currentEmptyReplyAttempt} 次重试...`;
-            await bot.editMessageText(context.chatId, context.thinkMessageId, emptyReplyRetryText);
+            await bot.editMessageText(this.chatId, this.thinkMessageId, emptyReplyRetryText);
           }
           Log.warn(
-            `Gemini API 返回结果不包含有效的 candidate 或 content，尝试重试 (无效回复重试 ${currentEmptyReplyAttempt}/${this.MAX_RETRIES_COMMON})。`,
+            `Gemini API 返回结果不包含有效的 candidate 或 content，尝试重试 (无效回复重试 ${currentEmptyReplyAttempt}/${this.MAX_EMPTY_REPLY_RETRIES})。`,
             { response },
           );
           await sleep(delay);
@@ -405,13 +385,12 @@ export class GeminiApi {
             throw error as GeminiError;
           }
         } else {
-          if (context.thinkMessageId) {
-            await bot.deleteMessage(context.chatId, context.thinkMessageId);
+          if (this.thinkMessageId) {
+            await bot.deleteMessage(this.chatId, this.thinkMessageId);
           }
           // 达到最大无效回复重试次数
-          const errorMsg = `Gemini API 未返回有效结果，已达最大无效回复重试次数 (${this.MAX_RETRIES_COMMON})，请稍后再重新提问。`;
+          const errorMsg = `Gemini API 未返回有效结果，已达最大无效回复重试次数 (${this.MAX_EMPTY_REPLY_RETRIES})，请稍后再重新提问。`;
           Log.error(errorMsg);
-          await this._writeApiKeysToKv(context.apiKeys);
           throw new GeminiError(errorMsg, 'MAX_EMPTY_REPLY_RETRIES_REACHED', context.metrics.hasToolThoughts);
         }
       }
@@ -445,10 +424,10 @@ export class GeminiApi {
         } else {
           // 理论上不应该发生：模型调用了工具但没有工具执行结果
           Log.warn('模型调用了工具，但没有工具执行结果被记录，可能出现逻辑问题。');
-          await this._writeApiKeysToKv(context.apiKeys); // 在返回前写入 API 密钥
           return {
             response: { role: 'model', parts: [{ text: '😥 抱歉，模型尝试使用工具但未能获取结果。' }] },
             ...context.metrics, // 返回当前已收集的指标
+            mergeThinkingTexts: context.mergeThinkingTexts,
             totalRetryCount: context.metrics.emptyReplyRetryCount + context.metrics.errorRetryCount,
             emptyReplyRetryCount: context.metrics.emptyReplyRetryCount,
             errorRetryCount: context.metrics.errorRetryCount,
@@ -460,14 +439,12 @@ export class GeminiApi {
 
         if (textParts.length > 0) {
           Log.info(`Gemini API 请求成功，返回文本响应。`);
-          await this._writeApiKeysToKv(context.apiKeys); // 在成功返回前写入 API 密钥
           // 构建并返回最终的成功响应
           return this._buildSuccessResponse(context, textParts);
         } else {
           // 7. 既没有工具调用也没有文本回复
           Log.warn('Gemini API 返回非工具调用响应，但没有文本内容或其他可处理的 parts。', { response });
           const finishReason = candidate.finishReason;
-          await this._writeApiKeysToKv(context.apiKeys); // 在返回前写入 API 密钥
           // 返回一个包含提示的响应
           return {
             response: {
@@ -475,6 +452,7 @@ export class GeminiApi {
               parts: [{ text: `😥 抱歉，未能获取有效的文本回复。Finish Reason: ${finishReason || '未知'}` }],
             },
             ...context.metrics, // 返回当前已收集的指标
+            mergeThinkingTexts: context.mergeThinkingTexts,
             totalRetryCount: context.metrics.emptyReplyRetryCount + context.metrics.errorRetryCount,
             emptyReplyRetryCount: context.metrics.emptyReplyRetryCount,
             errorRetryCount: context.metrics.errorRetryCount,
@@ -487,12 +465,23 @@ export class GeminiApi {
     const errorMsg = `达到最大 API 调用轮次 (${this.maxApiCallRounds})，未能获取最终回复。`;
     Log.error(errorMsg);
     // 确保新创建的 GeminiError 包含 hasToolThoughts
-    await this._writeApiKeysToKv(context.apiKeys); // 在抛出错误前写入 API 密钥
     throw new GeminiError(errorMsg, 'MAX_CALL_ROUNDS_REACHED', context.metrics.hasToolThoughts);
   };
 }
 
-export const genai: GeminiApi = new GeminiApi();
+export const rotateGeminiApiKey = async (): Promise<string> => {
+  const { durableResourceId, geminiApiKeysKeyName } = config.load();
+  // 读取 API 密钥，如果不存在则抛出错误
+  const apiKeys = await kv.read<[string, string][]>(durableResourceId, geminiApiKeysKeyName, 'json');
+  if (!apiKeys.success) {
+    throw new KvNamespaceError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, 'GEMINI_API_KEY_NOT_FOUND');
+  }
+  const [currentApiKey, currentApiKeyId] = apiKeys.data[0];
+  const nextApiKeys = rotateArray<[string, string]>(apiKeys.data);
+  await kv.write(durableResourceId, geminiApiKeysKeyName, JSON.stringify(nextApiKeys));
+  Log.info(`当前使用的 API 密钥: ${currentApiKeyId}`);
+  return currentApiKey;
+};
 
 export const simpleGeminiApiResponse = (response: GenerateContentResponse): GenerateContentResponse => {
   const simpleResponse = {

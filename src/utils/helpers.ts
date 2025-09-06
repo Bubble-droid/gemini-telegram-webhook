@@ -7,7 +7,7 @@ import { escaper } from './formatting';
 
 export const MARKDOWN_REGEX: MarkdownMarkRegex = {
   // 1. 代码块：必须最先匹配，其内部内容不应被其他规则解析。
-  CODE_BLOCK: /^```(\w*)\n([\s\S]+?)\n```/g,
+  CODE_BLOCK: /^\s*```(\w*)\n([\s\S]+?)\n\s*```\s*$/gm,
   // 2. 行内代码：优先级次之。
   INLINE_CODE: /`([^`]+?)`/g,
   // 3. 链接
@@ -16,10 +16,10 @@ export const MARKDOWN_REGEX: MarkdownMarkRegex = {
   BOLD_ASTERISK: /\*\*(?!\s)([\s\S]*?)(?<!\s)\*\*/g,
   // 5. 下划线 (__)
   UNDERLINE_UNDERSCORE: /__(?!\s)([\s\S]*?)(?<!\s)__/g,
-  // 6. 删除线 (~)
-  STRIKETHROUGH: /~(?!\s)([\s\S]*?)(?<!\s)~/g,
+  // 6. 删除线 (~~)
+  STRIKETHROUGH: /~~(?!\s)([\s\S]*?)(?<!\s)~~/g,
   // 7. 剧透 (||)
-  SPOILER: /\|\|(?!\s)([\s\S]*?)(?<!\s)\|\|/g,
+  SPOILER: /^\s*\|\|\s*\n([\s\S]*?)\n\s*\|\|\s*$/gm,
   // 8. 引用块 (行前缀 > 或 >>)，需要特殊处理多行。
   BLOCKQUOTE_LINE: /^(>>? .+(?:\n>>? .+)*)/gm,
 };
@@ -46,6 +46,41 @@ class SimpleFormatter {
       return `<pre>${code}</pre>`;
     });
 
+    // 4. 剧透 (||剧透||) - 内容转义，包裹在 <span class="tg-spoiler"> 标签中
+    processedText = processedText.replace(MARKDOWN_REGEX.SPOILER, (match, content: string): string => {
+      return `<span class="tg-spoiler">${content}</span>`;
+    });
+
+    processedText = processedText.replace(MARKDOWN_REGEX.BLOCKQUOTE_LINE, (match) => {
+      const isExpandable = match.startsWith('>>');
+      // 移除每行行首的 '>' 或 '>>' 及随后的空格
+      const content = match.replace(/^(>>?)\s/gm, '');
+      const escapedContent = escaper.html(content);
+
+      if (isExpandable) {
+        return `<blockquote expandable>${escapedContent}</blockquote>`;
+      }
+      return `<blockquote>${escapedContent}</blockquote>`;
+    });
+
+    // 6. 粗体 (**粗体**) - 内容转义，包裹在 <b> 标签中
+    processedText = processedText.replace(MARKDOWN_REGEX.BOLD_ASTERISK, (match, content: string): string => {
+      const escapedContent = escaper.html(content);
+      return `<b>${escapedContent}</b>`;
+    });
+
+    // 5. 删除线 (~~删除线~~) - 内容转义，包裹在 <s> 标签中
+    processedText = processedText.replace(MARKDOWN_REGEX.STRIKETHROUGH, (match, content: string): string => {
+      const escapedContent = escaper.html(content);
+      return `<s>${escapedContent}</s>`;
+    });
+
+    // 7. 下划线 (__下划线__) - 内容转义，包裹在 <u> 标签中
+    processedText = processedText.replace(MARKDOWN_REGEX.UNDERLINE_UNDERSCORE, (match, content: string): string => {
+      const escapedContent = escaper.html(content);
+      return `<u>${escapedContent}</u>`;
+    });
+
     // 2. 行内代码 (`` ` ``) - HTML中内容转义，包裹在 <code> 标签中
     processedText = processedText.replace(MARKDOWN_REGEX.INLINE_CODE, (match, code: string): string => {
       const escapedCode = escaper.html(code);
@@ -57,41 +92,6 @@ class SimpleFormatter {
       const escapedText = escaper.html(text);
       const escapedUrl = escaper.html(url); // URL中的特殊字符也需转义
       return `<a href="${escapedUrl}">${escapedText}</a>`;
-    });
-
-    // 4. 剧透 (||剧透||) - 内容转义，包裹在 <span class="tg-spoiler"> 标签中
-    processedText = processedText.replace(MARKDOWN_REGEX.SPOILER, (match, content: string): string => {
-      return `<span class="tg-spoiler">${content}</span>`;
-    });
-
-    // 5. 删除线 (~删除线~) - 内容转义，包裹在 <s> 标签中
-    processedText = processedText.replace(MARKDOWN_REGEX.STRIKETHROUGH, (match, content: string): string => {
-      const escapedContent = escaper.html(content);
-      return `<s>${escapedContent}</s>`;
-    });
-
-    // 6. 粗体 (**粗体**) - 内容转义，包裹在 <b> 标签中
-    processedText = processedText.replace(MARKDOWN_REGEX.BOLD_ASTERISK, (match, content: string): string => {
-      const escapedContent = escaper.html(content);
-      return `<b>${escapedContent}</b>`;
-    });
-
-    // 7. 下划线 (__下划线__) - 内容转义，包裹在 <u> 标签中
-    processedText = processedText.replace(MARKDOWN_REGEX.UNDERLINE_UNDERSCORE, (match, content: string): string => {
-      const escapedContent = escaper.html(content);
-      return `<u>${escapedContent}</u>`;
-    });
-
-    processedText = processedText.replace(/^(>>? .+(?:\n>>? .+)*)/gm, (match) => {
-      const isExpandable = match.startsWith('>>');
-      // 移除每行行首的 '>' 或 '>>' 及随后的空格
-      const content = match.replace(/^(>>?)\s/gm, '');
-      const escapedContent = escaper.html(content);
-
-      if (isExpandable) {
-        return `<blockquote expandable>${escapedContent}</blockquote>`;
-      }
-      return `<blockquote>${escapedContent}</blockquote>`;
     });
 
     return processedText;
@@ -275,8 +275,8 @@ export const sampleByShuffle = <T>(arr: readonly T[], k: number = 3): T[] => {
  */
 export const shortenString = (input: string): string => {
   const MAX = 4096;
-  const HEAD = 2000;
-  const TAIL = 2000;
+  const HEAD = 2040;
+  const TAIL = 2040;
 
   if (typeof input !== 'string') {
     throw new TypeError('input must be a string');
@@ -288,7 +288,7 @@ export const shortenString = (input: string): string => {
 
   const headPart = chars.slice(0, HEAD).join('');
   const tailPart = chars.slice(chars.length - TAIL).join('');
-  return `${headPart}\n\n......\n\n${tailPart}`;
+  return `${headPart}\n...\n${tailPart}`;
 };
 
 /**

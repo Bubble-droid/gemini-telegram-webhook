@@ -115,9 +115,9 @@ const handleNewMember = async (message: Message): Promise<void> => {
       const newMemberWelcome = await kv.read<string>(durableResourceId, newMemberWelcomeTextKeyName, 'text');
       if (!newMemberWelcome.success) return;
       const replaceText = newMemberWelcome.data
-        .replace('NEW_MEMBER_MENTION', newMemberMention)
-        .replace('CHAT_TITLE', chat.title as string)
-        .replace('BOT_NAME', botName)
+        .replace('${NEW_MEMBER_MENTION}', newMemberMention)
+        .replace('${CHAT_TITLE}', chat.title as string)
+        .replace('${BOT_NAME}', botName)
         .trim();
 
       Log.info(`向已验证的新成员 ${newMemberFullName}(${newMember.id}) 发送欢迎消息。`, { chatId: chat.id, newMemberId: newMember.id });

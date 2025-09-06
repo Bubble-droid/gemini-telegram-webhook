@@ -23,7 +23,7 @@ pnpm-workspace.yaml
 
 
 resources/_gemini_api_keys.json
-resources/system_prompt.md.bak
+resources/system_prompt_bak.md
 .roo/
 
 # Logs

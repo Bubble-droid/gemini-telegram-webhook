@@ -1,13 +1,17 @@
 // src/types/kv_namespace.d.ts
 
-export interface ValueActionBaseParams {
+export interface ValueBaseParams {
   namespaceId: string;
   keyName: string;
 }
 
-export interface ValueActionUpdateParams extends ValueActionBaseParams {
+export interface ValueUpdateActionParams {
   value: string;
-  expiration_ttl?: number;
+  options?: {
+    expiration?: number;
+    expiration_ttl?: number;
+    metadata?: unknown;
+  };
 }
 
 export type ValueAction = 'get' | 'update' | 'delete';

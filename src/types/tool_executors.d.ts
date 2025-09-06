@@ -6,7 +6,6 @@ export interface ToolExecArgs {
   chatId: number;
   userId: number;
   userMessageId: number;
-  currentApiKey: string;
   keyword: string;
   owner: string;
   repo: string;

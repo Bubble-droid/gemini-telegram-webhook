@@ -1,6 +1,6 @@
 // src/handlers/message/mention.ts
 
-import { config, bot, contexts, Log, genai, GeminiError, TelegramError, makeInlineKeyboard } from '@/services';
+import { config, bot, contexts, Log, GeminiError, TelegramError, makeInlineKeyboard, GeminiApi } from '@/services';
 import type { Message, GenerateContentSuccessResponse, ReplyMarkup } from '@/types';
 import type { Content, Part } from '@google/genai'; // 确保 Part 类型导入
 import { rateLimiterCheck, scheduleDeletion, shortenString, sleep } from '@/utils';
@@ -30,7 +30,14 @@ const containsFile = (message: Message | undefined): boolean => {
 const extractMessageParts = async (message: Message, botName: string): Promise<Part[]> => {
   const parts: Part[] = [];
   let messageText = message.text || message.caption || '';
-  messageText = messageText.replace(`@${botName}`, '').trim();
+  messageText = messageText.replace(`@${botName}`, '').replace(':ask', '').trim();
+
+  if (messageText.includes('🤖 模型：') || messageText.includes('✨ 本次任务')) {
+    messageText = messageText
+      .replace(/^🤖 模型：.*?\n+/g, '')
+      .replace(/✨ 本次任务[\s\S]*$/m, '')
+      .trim();
+  }
 
   // 处理文件内容（文档、图片）
   if (containsFile(message)) {
@@ -45,10 +52,11 @@ const extractMessageParts = async (message: Message, botName: string): Promise<P
       if (message.document) messageText = '分析这个文件';
       else if (message.photo) messageText = '分析这张图片';
       else if (message.video) messageText = '分析这个视频';
+      else messageText = '你好';
     }
   }
 
-  parts.push({ text: messageText ? messageText : '你好！' });
+  parts.push({ text: messageText });
 
   return parts;
 };
@@ -200,6 +208,7 @@ export class MentionHandler {
       usageToolCount,
       totalDurationSecond,
       hasToolThoughts, // 模型是否生成了思考 Part
+      mergeThinkingTexts,
       emptyReplyRetryCount,
       errorRetryCount,
     } = geminiResponse;
@@ -213,7 +222,8 @@ export class MentionHandler {
 
     if (resThoughtTexts) {
       hasDisplayedThoughts = true;
-      const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escaper.html(shortenString(resThoughtTexts))}</blockquote>`;
+      const finalThinkingText = mergeThinkingTexts + resThoughtTexts;
+      const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escaper.html(shortenString(finalThinkingText))}</blockquote>`;
       const replyMarkup: ReplyMarkup = {
         inline_keyboard: makeInlineKeyboard(fromUserId),
       };
@@ -326,13 +336,15 @@ ${resTexts}
       // 5. 发送“思考中”提示消息
       thinkMessageId = await this.sendThinkingMessage(chat.id, userMessageId);
 
-      // 6. 调用 Gemini API
-      const geminiResponse: GenerateContentSuccessResponse = await genai.generateContent(completeContents, {
+      const ai: GeminiApi = new GeminiApi({
         chatId: chat.id,
         userId: from?.id as number,
         userMessageId,
         thinkMessageId,
       });
+
+      // 6. 调用 Gemini API
+      const geminiResponse: GenerateContentSuccessResponse = await ai.generateContent(completeContents);
 
       // 7. 处理 Gemini API 响应并发送回复
       hasResThought = await this.processGeminiResponse(

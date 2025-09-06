@@ -1,6 +1,6 @@
 // src/configs/tool_executors.ts
 
-import { genai, GeminiError, Log, makeInlineKeyboard, simpleGeminiApiResponse, bot } from '@/services';
+import { GeminiError, Log, makeInlineKeyboard, simpleGeminiApiResponse, bot, GEMINI_SAFETY_SETTINGS, rotateGeminiApiKey } from '@/services';
 import type { ReplyMarkup } from '@/types';
 import type * as Github from '@/types/github';
 import type * as Tool from '@/types/tool_executors';
@@ -465,8 +465,9 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
   },
 
   generateImage: async (args) => {
-    Log.info('执行工具: sendPhotoMessage，参数:', { args: { ...args, currentApiKey: '***' } });
-    const { chatId, userId, userMessageId, currentApiKey, prompt } = args;
+    Log.info('执行工具: sendPhotoMessage，参数:', { args });
+    const { chatId, userId, userMessageId, prompt } = args;
+    const newApiKey = await rotateGeminiApiKey();
     const modelName: string = 'gemini-2.0-flash-preview-image-generation';
     const modelConfig: GenerateContentConfig = {
       responseModalities: ['IMAGE', 'TEXT'],
@@ -478,7 +479,7 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
       },
     ];
     try {
-      const response = await callMultiModalModels(currentApiKey, modelName, modelConfig, contents);
+      const response = await callMultiModalModels(newApiKey, modelName, modelConfig, contents);
       const resTexts = response.parts?.map((part) => part.text).join('') || '';
       const imageData = response.parts?.find((part) => part.inlineData && part.inlineData.data);
       const base64Data = imageData?.inlineData?.data as string;
@@ -499,8 +500,9 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
   },
 
   generateSpeech: async (args) => {
-    Log.info('执行工具: sendVoiceMessage，参数:', { args: { ...args, currentApiKey: '***' } });
-    const { chatId, userId, userMessageId, currentApiKey, prompt } = args;
+    Log.info('执行工具: sendVoiceMessage，参数:', { args });
+    const { chatId, userId, userMessageId, prompt } = args;
+    const newApiKey = await rotateGeminiApiKey();
     const modelName: string = 'gemini-2.5-flash-preview-tts';
     const modelConfig: GenerateContentConfig = {
       responseModalities: ['AUDIO'],
@@ -513,7 +515,7 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
       },
     ];
     try {
-      const response = await callMultiModalModels(currentApiKey, modelName, modelConfig, contents);
+      const response = await callMultiModalModels(newApiKey, modelName, modelConfig, contents);
       const audioData = response.parts?.find((part) => part.inlineData && part.inlineData.data);
       const base64Data = audioData?.inlineData?.data as string;
       const pcmAudioBuffer = Buffer.from(base64Data, 'base64');
@@ -545,7 +547,7 @@ export const callMultiModalModels = async (
   const ai = new GoogleGenAI({ apiKey });
   const config: GenerateContentConfig = {
     ...modelConfig,
-    safetySettings: genai.SAFETY_SETTINGS,
+    safetySettings: GEMINI_SAFETY_SETTINGS,
   };
   Log.info('发送 Gemini API 请求...');
   Log.info('当前发送的 contents:', { contents });

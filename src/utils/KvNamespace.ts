@@ -2,21 +2,22 @@
 
 import Cloudflare from 'cloudflare';
 import { Log, config, KvNamespaceError } from '@/services';
-import type { ValueAction, ValueActionBaseParams, ValueActionUpdateParams } from '@/types';
+import type { ValueAction, ValueBaseParams, ValueUpdateActionParams } from '@/types';
 
 export class KvNamespace {
-  private callCloudflareApi = async <P, R>(action: ValueAction, params: P): Promise<R | void> => {
+  private callCloudflareApi = async <P, R>(action: ValueAction, baseParams: ValueBaseParams, actionParams?: P): Promise<R | void> => {
     const { cloudflareToken, cloudflareAccountId } = config.load();
-    const { namespaceId, keyName, value, expiration_ttl } = params as ValueActionUpdateParams;
+    const { namespaceId, keyName } = baseParams;
     const client = new Cloudflare({
       apiToken: cloudflareToken,
     });
     try {
       if (action === 'update') {
+        const { value, options } = actionParams as ValueUpdateActionParams;
         await client.kv.namespaces.values[action](namespaceId, keyName, {
           account_id: cloudflareAccountId,
           value,
-          expiration_ttl,
+          ...options,
         });
       } else {
         const response = await client.kv.namespaces.values[action](namespaceId, keyName, {
@@ -45,7 +46,7 @@ export class KvNamespace {
     resData: 'json' | 'text',
   ): Promise<{ success: true; data: T } | { success: false; error: string }> => {
     try {
-      const data = (await this.callCloudflareApi<ValueActionBaseParams, Response>('get', {
+      const data = (await this.callCloudflareApi<ValueBaseParams, Response>('get', {
         namespaceId,
         keyName,
       })) as Response;
@@ -73,15 +74,17 @@ export class KvNamespace {
     namespaceId: string,
     keyName: string,
     value: string,
-    options: { expiration_ttl?: number } = {},
+    options?: ValueUpdateActionParams['options'],
   ): Promise<{ success: true } | { success: false; error: string }> => {
     try {
-      await this.callCloudflareApi<ValueActionUpdateParams, void>('update', {
-        namespaceId,
-        keyName,
-        value,
-        ...options,
-      });
+      await this.callCloudflareApi<ValueUpdateActionParams, void>(
+        'update',
+        { namespaceId, keyName },
+        {
+          value,
+          options,
+        },
+      );
       return {
         success: true,
       };
@@ -105,7 +108,7 @@ export class KvNamespace {
    */
   public delete = async (namespaceId: string, keyName: string): Promise<{ success: true } | { success: false; error: string }> => {
     try {
-      await this.callCloudflareApi<ValueActionBaseParams, void>('delete', {
+      await this.callCloudflareApi<ValueBaseParams, void>('delete', {
         namespaceId,
         keyName,
       });

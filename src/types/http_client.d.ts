@@ -110,3 +110,8 @@ interface ISandboxHttpClient {
  * @description 一个全局可用的网络请求客户端实例。
  */
 declare const Http: ISandboxHttpClient;
+
+declare const Utils: {
+  Http: typeof Http;
+  Body: typeof Body;
+};

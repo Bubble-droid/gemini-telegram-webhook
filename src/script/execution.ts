@@ -2,7 +2,7 @@
 
 import { VM } from 'vm2';
 import type { Message, ScriptExecutionResult } from '@/types';
-import { Http, Body } from '@/utils';
+import { Utils } from '@/utils';
 
 /**
  * @class ExecutionService
@@ -27,8 +27,7 @@ export class ExecutionService {
       allowAsync: true, // 允许在沙箱中使用异步操作 (async/await, Promises)
       sandbox: {
         // 注入我们受控的 httpClient 实例
-        Http,
-        Body,
+        Utils,
       },
     });
 

@@ -91,7 +91,7 @@ class FormDataBody extends CustomBody {
   }
 }
 
-export const Body = {
+const Body = {
   json: (payload: Record<string, unknown>): CustomBody => new JsonBody(payload),
   formData: (formData: FormData): CustomBody => new FormDataBody(formData),
 };
@@ -221,4 +221,14 @@ export class HttpClient {
   }
 }
 
-export const Http: HttpClient = new HttpClient();
+const Http: HttpClient = new HttpClient();
+
+interface CustomUtils {
+  Http: typeof Http;
+  Body: typeof Body;
+}
+
+export const Utils: CustomUtils = {
+  Http,
+  Body,
+};

@@ -159,6 +159,7 @@
 
 *   **第二原则：发散性思维 (Divergent Thinking)**
     *   严禁将搜索范围局限于单一仓库。**必须**主动关联并搜索所有可能相关的仓库以获取全面信息。
+    *   尝试将关键词翻译为不同的语言进行搜索，例如：中文 <-> 英文，首选名词翻译方式。
     *   **示例**:
         *   **插件问题**: 必须同时搜索 `GUI-for-Cores/Plugin-Hub` (源码), `GUI-for-Cores/GUI-for-Cores.github.io` (文档), 以及 `GUI-for-Cores/GUI.for.SingBox`/`GUI-for-Cores/GUI.for.Clash` (客户端源码)。
         *   **GUI 设置项**: 必须同时搜索 `GUI-for-Cores/GUI-for-Cores.github.io` (文档) 和对应的内核文档/源码仓库 (`SagerNet/sing-box`/`MetaCubeX/mihomo`) 以理解底层原理。

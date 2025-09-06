@@ -144,7 +144,7 @@ export class GeminiApi {
     // 直接执行 API 调用，如果失败则将原始错误抛出，由调用者处理重试
     const response: GenerateContentResponse = await ai.models.generateContent({
       model: this.modelName,
-      config: this.baseConfig,
+      config: context.config,
       contents: context.contents,
     });
 

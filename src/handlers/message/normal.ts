@@ -2,8 +2,8 @@
 
 import { Log, config } from '@/services';
 import type { Message } from '@/types/telegram';
-import { handleMention } from './mention';
 import { BotCommands } from '@/configs';
+import type { MentionHandler } from '@/handlers/message';
 
 /**
  * @function handleNormal
@@ -13,14 +13,14 @@ import { BotCommands } from '@/configs';
  * @param {Message} message - Telegram 消息对象。
  * @returns {Promise<void>}
  */
-const handleNormal = async (message: Message): Promise<void> => {
+const handleNormal = async (message: Message, mention: MentionHandler): Promise<void> => {
   const { botName } = config.load();
   if (message.text?.startsWith(':') || message.caption?.startsWith(':')) {
     const { message_id: messageId, text, caption, from, chat } = message;
     const messageText = text || caption || '';
     const [commandAlias, ...cleanText] = messageText.replace(':', '').split(' ');
     if (commandAlias === 'ask') {
-      return await handleMention(message);
+      return await mention.handleMention(message);
     }
     const commandAction = BotCommands.find(
       (command) => command.name === commandAlias || command.name === `script_${commandAlias}` || command.name === `gen_${commandAlias}`,
@@ -40,7 +40,7 @@ const handleNormal = async (message: Message): Promise<void> => {
   const { chat, message_id, reply_to_message } = message;
   if (!reply_to_message.from || reply_to_message.from.username !== botName) return;
   Log.info('Handling normal message.', { chatId: chat.id, messageId: message_id });
-  return await handleMention(message);
+  return await mention.handleMention(message);
 };
 
 export { handleNormal };

@@ -2,11 +2,11 @@
 
 import { config, Log, bot } from '@/services';
 import type { CallbackQuery, InlineKeyboardButton, Message } from '@/types';
-import { handleMention } from './message';
 import { BotCommands } from '@/configs';
 import { kv } from '@/utils';
+import type { MentionHandler } from '@/handlers/message';
 
-export const handleCallbackQuery = async (callbackQuery: CallbackQuery): Promise<void> => {
+export const handleCallbackQuery = async (callbackQuery: CallbackQuery, mention: MentionHandler): Promise<void> => {
   if (!callbackQuery.message || !callbackQuery.data) {
     Log.info('Invalid callback query', { queryId: callbackQuery.id });
     return;
@@ -32,7 +32,7 @@ export const handleCallbackQuery = async (callbackQuery: CallbackQuery): Promise
       const newMessageText: string = '简单说明下你能做什么？';
       const newMessage: Message = { ...message, message_id: reply_to_message?.message_id || messageId, from, text: newMessageText };
       delete newMessage.reply_to_message;
-      await handleMention(newMessage);
+      await mention.handleMention(newMessage);
       break;
     }
     case data.startsWith('tool_'): {
@@ -46,7 +46,7 @@ export const handleCallbackQuery = async (callbackQuery: CallbackQuery): Promise
         const newText = `请简单演示下 ${tool} 工具`;
         const newMessage: Message = { ...message, message_id: reply_to_message?.message_id || messageId, from, text: newText };
         delete newMessage.reply_to_message;
-        await handleMention(newMessage);
+        await mention.handleMention(newMessage);
       }
       break;
     }

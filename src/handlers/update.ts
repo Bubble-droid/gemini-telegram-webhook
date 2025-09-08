@@ -2,7 +2,7 @@
 
 import type { Message, MessageEntity, ReplyMarkup, Update } from '@/types';
 import { config, Log, REACTiON_ROW, bot } from '@/services';
-import { handleMention, handleCommand, handleNewMember, handleNormal } from '@/handlers/message';
+import { mention, handleCommand, handleNewMember, handleNormal } from '@/handlers/message';
 import { scheduleDeletion, sendErrorNotification, shortenString } from '@/utils';
 import { escaper } from '@/utils/formatting';
 import { handleCallbackQuery } from './callback_query';
@@ -20,7 +20,7 @@ const handleUpdate = async (update: Update): Promise<void> => {
   const { botName, allowGroups } = config.load();
   if (update.callback_query) {
     const { callback_query } = update;
-    if (callback_query && callback_query.message && callback_query.data) return await handleCallbackQuery(callback_query);
+    if (callback_query && callback_query.message && callback_query.data) return await handleCallbackQuery(callback_query, mention);
   }
   if (!update.message) return;
   const { update_id, message } = update;
@@ -31,13 +31,13 @@ const handleUpdate = async (update: Update): Promise<void> => {
 
   const messageText = message.text || message.caption || null;
   const messageEntities = message.entities || message.caption_entities || null;
-  if (!messageEntities || !messageText) return await handleNormal(message);
+  if (!messageEntities || !messageText) return await handleNormal(message, mention);
   try {
     for (const entity of messageEntities) {
       if (entity.type === 'mention' || entity.type === 'text_mention') {
         const mentionedText = messageText.substring(entity.offset, entity.offset + entity.length);
         if (mentionedText === `@${botName}`) {
-          return await handleMention(message);
+          return await mention.handleMention(message);
         }
       }
     }
@@ -80,7 +80,7 @@ const simplifyMessage = (message: Message | undefined): Message | undefined => {
   }
 
   // 辅助函数：用于截断文本
-  const truncate = (text?: string): string | undefined => (text ? `${text.slice(0, 20)}...` : undefined);
+  const truncate = (text?: string): string | undefined => (text ? (text.length > 20 ? `${text.slice(0, 20)}...` : text) : undefined);
 
   const filterEntity = (entities: MessageEntity[] | undefined): MessageEntity[] | undefined =>
     entities ? entities?.filter((e) => ['text_mention', 'mention', 'bot_command'].includes(e.type)) : undefined;

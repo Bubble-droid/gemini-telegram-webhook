@@ -30,6 +30,7 @@ export interface ApiCallContext {
   config: GenerateContentConfig;
   contents: Content[];
   mergeThinkingTexts: string;
+  lastRetryMessageId?: number;
   metrics: {
     apiCallSuccessCount: number;
     totalUsageToken: number;

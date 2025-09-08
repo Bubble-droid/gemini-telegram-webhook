@@ -1,5 +1,7 @@
 // src/types/http_client.d.ts
 
+import type { Message } from './telegram';
+
 /**
  * @file httpClient.d.ts
  * @description 为脚本沙箱环境中注入的全局 `httpClient` 对象提供类型定义。
@@ -111,7 +113,13 @@ interface ISandboxHttpClient {
  */
 declare const Http: ISandboxHttpClient;
 
-declare const Utils: {
+declare interface Utils {
   Http: typeof Http;
   Body: typeof Body;
-};
+}
+
+declare interface Options {
+  param?: string;
+  message: Message;
+  utils: Utils;
+}

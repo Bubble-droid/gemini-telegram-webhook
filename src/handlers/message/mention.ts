@@ -52,11 +52,10 @@ const extractMessageParts = async (message: Message, botName: string): Promise<P
       if (message.document) messageText = '分析这个文件';
       else if (message.photo) messageText = '分析这张图片';
       else if (message.video) messageText = '分析这个视频';
-      else messageText = '你好';
     }
   }
 
-  parts.push({ text: messageText });
+  parts.push({ text: messageText || '你好' });
 
   return parts;
 };
@@ -235,7 +234,7 @@ export class MentionHandler {
     if (!hasToolThoughts && !hasDisplayedThoughts) {
       await bot.deleteMessage(chatId, thinkMessageId);
     } else {
-      scheduleDeletion({ chat_id: chatId, message_id: thinkMessageId }, 30 * 60_000);
+      scheduleDeletion({ chat_id: chatId, message_id: thinkMessageId }, 60 * 60_000);
     }
 
     // 提取最终的回复文本（非思考内容）：从 `response.parts` 中过滤掉带有 `thought` 属性的 Part
@@ -265,7 +264,7 @@ export class MentionHandler {
 
 ${resTexts}
 
-✨ 本次任务成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试（${emptyReplyRetryCount} 次无效回复，${errorRetryCount} 次客户端错误），共使用 ${usageToolCount} 个工具，耗时 ${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}
+✨ API 调用 ${apiCallSuccessCount} 次，重试 ${totalRetryCount} 次 (无效 ${emptyReplyRetryCount}, 错误 ${errorRetryCount})。使用工具 ${usageToolCount} 次，耗时 ${totalDurationSecond} 秒，消耗 ${totalUsageToken} Token。
 
 ⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。`;
 
@@ -374,7 +373,7 @@ ${resTexts}
         if (!err?.hasToolThoughts && !hasResThought) {
           await bot.deleteMessage(chat.id, thinkMessageId);
         } else {
-          scheduleDeletion({ chat_id: chat.id, message_id: thinkMessageId }, 30 * 60_000);
+          scheduleDeletion({ chat_id: chat.id, message_id: thinkMessageId }, 60 * 60_000);
         }
       }
       throw apiError; // 重新抛出错误以便上层捕获
@@ -382,8 +381,4 @@ ${resTexts}
   }
 }
 
-const mention: MentionHandler = new MentionHandler();
-// 导出 handleMention 函数作为模块的默认导出，以便外部调用
-export const handleMention = async (message: Message): Promise<void> => {
-  return await mention.handleMention(message);
-};
+export const mention: MentionHandler = new MentionHandler();

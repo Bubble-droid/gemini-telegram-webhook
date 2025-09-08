@@ -149,7 +149,7 @@ export class ScriptManager {
    * @param param - (可选) 传递给脚本的参数。
    * @returns 返回脚本的执行结果。
    */
-  public async runForUser(userId: number, tag: string, message: Message, param?: unknown): Promise<ScriptExecutionResult> {
+  public async runForUser(userId: number, tag: string, message: Message, param?: string): Promise<ScriptExecutionResult> {
     Log.info(`[ScriptManager] 用户 ${userId} 准备执行脚本，标签: ${tag}`);
 
     // 安全性检查：确保用户拥有该脚本

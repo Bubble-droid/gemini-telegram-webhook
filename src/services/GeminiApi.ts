@@ -179,24 +179,28 @@ export class GeminiApi {
           const delay = Math.floor(this.BASE_RETRY_DELAY_MS * Math.pow(2, attempt + 1) * (0.8 + Math.random() * 0.4));
           context.metrics.errorRetryCount++; // 递增客户端错误重试计数
           // 注意：这里没有重置 errorRetryCount，它会持续累积
-
-          if (this.thinkMessageId !== undefined) {
-            const errorRetryText = `Gemini API 客户端错误，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${attempt + 1} 次重试...`;
-            await bot.editMessageText(this.chatId, this.thinkMessageId, errorRetryText);
+          const errorRetryText = `Gemini API 客户端错误，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${attempt + 1} 次重试...`;
+          if (context.lastRetryMessageId) {
+            await bot.editMessageText(this.chatId, context.lastRetryMessageId, errorRetryText);
+          } else {
+            const sendMsg = await bot.sendMessage(this.chatId, errorRetryText, { replyToMessageId: this.userMessageId });
+            if (sendMsg.ok) {
+              context.lastRetryMessageId = sendMsg.messageId;
+            }
           }
           await sleep(delay);
           Log.info(`Gemini API 客户端错误，进行第 ${attempt + 1} 次重试...`);
         } else {
-          if (this.thinkMessageId) {
-            await bot.deleteMessage(this.chatId, this.thinkMessageId);
-          }
           // 达到最大客户端错误重试次数
-          const finalError = new GeminiError(
+          if (context.lastRetryMessageId) {
+            await bot.deleteMessage(this.chatId, context.lastRetryMessageId);
+            context.lastRetryMessageId = undefined;
+          }
+          throw new GeminiError(
             `Gemini API 客户端错误，已达最大重试次数 (${this.MAX_CLIENT_ERROR_RETRIES})。\n\n${err}`,
             'MAX_API_CLIENT_RETRIES_REACHED',
             context.metrics.hasToolThoughts,
           );
-          throw finalError;
         }
       }
     }
@@ -366,16 +370,20 @@ export class GeminiApi {
           const delay = Math.floor(this.BASE_RETRY_DELAY_MS * Math.pow(2, currentEmptyReplyAttempt + 1) * (0.8 + Math.random() * 0.4));
           context.metrics.emptyReplyRetryCount++; // 递增全局无效回复重试计数
           currentEmptyReplyAttempt++; // 递增当前无效回复重试的局部计数
-
-          if (this.thinkMessageId !== undefined) {
-            const emptyReplyRetryText = `Gemini API 响应为空，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${currentEmptyReplyAttempt} 次重试...`;
-            await bot.editMessageText(this.chatId, this.thinkMessageId, emptyReplyRetryText);
+          const emptyReplyRetryText = `Gemini API 响应为空，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${currentEmptyReplyAttempt} 次重试...`;
+          if (context.lastRetryMessageId) {
+            await bot.editMessageText(this.chatId, context.lastRetryMessageId, emptyReplyRetryText);
+          } else {
+            const sendMsg = await bot.sendMessage(this.chatId, emptyReplyRetryText, { replyToMessageId: this.userMessageId });
+            if (sendMsg.ok) {
+              context.lastRetryMessageId = sendMsg.messageId;
+            }
           }
+          await sleep(delay);
           Log.warn(
             `Gemini API 返回结果不包含有效的 candidate 或 content，尝试重试 (无效回复重试 ${currentEmptyReplyAttempt}/${this.MAX_EMPTY_REPLY_RETRIES})。`,
             { response },
           );
-          await sleep(delay);
 
           // 重新尝试调用 API，获取有效响应
           try {
@@ -385,10 +393,11 @@ export class GeminiApi {
             throw error as GeminiError;
           }
         } else {
-          if (this.thinkMessageId) {
-            await bot.deleteMessage(this.chatId, this.thinkMessageId);
-          }
           // 达到最大无效回复重试次数
+          if (context.lastRetryMessageId) {
+            await bot.deleteMessage(this.chatId, context.lastRetryMessageId);
+            context.lastRetryMessageId = undefined;
+          }
           const errorMsg = `Gemini API 未返回有效结果，已达最大无效回复重试次数 (${this.MAX_EMPTY_REPLY_RETRIES})，请稍后再重新提问。`;
           Log.error(errorMsg);
           throw new GeminiError(errorMsg, 'MAX_EMPTY_REPLY_RETRIES_REACHED', context.metrics.hasToolThoughts);
@@ -397,6 +406,12 @@ export class GeminiApi {
 
       // 如果代码执行到这里，说明已经成功获取到一个非空且有效的 candidate
       // 此时才算作一次实际的 API 调用轮次完成
+
+      if (context.lastRetryMessageId) {
+        await bot.deleteMessage(this.chatId, context.lastRetryMessageId);
+        context.lastRetryMessageId = undefined;
+      }
+
       apiCallRoundCounter++;
       currentEmptyReplyAttempt = 0;
       context.metrics.apiCallSuccessCount++;

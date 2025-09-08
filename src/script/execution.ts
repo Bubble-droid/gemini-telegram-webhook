@@ -2,7 +2,7 @@
 
 import { VM } from 'vm2';
 import type { Message, ScriptExecutionResult } from '@/types';
-import { Utils } from '@/utils';
+import { Http, Body } from '@/utils';
 
 /**
  * @class ExecutionService
@@ -18,32 +18,38 @@ export class ExecutionService {
    * @param param - (可选) 需要传入脚本的参数，将被强制转换为字符串。
    * @returns 返回一个包含执行结果或错误信息的 Promise。
    */
-  public async executeScript(scriptContent: string, message: Message, param?: unknown): Promise<ScriptExecutionResult> {
+  public async executeScript(scriptContent: string, message: Message, param?: string): Promise<ScriptExecutionResult> {
     const startTime = process.hrtime.bigint();
 
     // 1. 创建 vm2 实例，并配置沙箱
     const vm = new VM({
       timeout: 60000, // 脚本总执行时间超时（10秒）
+      eval: false,
       allowAsync: true, // 允许在沙箱中使用异步操作 (async/await, Promises)
-      sandbox: {
-        // 注入我们受控的 httpClient 实例
-        Utils,
-      },
     });
+
+    const utils = {
+      Http,
+      Body,
+    };
+
+    const options = {
+      param,
+      message,
+      utils,
+    };
 
     try {
       // 2. 运行脚本内容，这会在沙箱的上下文中定义 `run` 函数
       vm.run(scriptContent);
 
       // 3. 准备传递给 `run` 函数的参数
-      const scriptArgument = String(param ?? '');
       // 将参数安全地 "冻结" 到沙箱的全局作用域中
-      vm.freeze(scriptArgument, 'scriptArgument');
-      vm.freeze(message, 'message');
+      vm.freeze(options, 'options');
 
       // 4. 动态调用沙箱中的 `run` 函数，并传入参数
       // vm2 会自动处理 Promise，所以可以直接 await
-      const result = await vm.run('run(scriptArgument, message)');
+      const result = await vm.run('run(options)');
 
       const endTime = process.hrtime.bigint();
       const duration = Number(endTime - startTime) / 1_000_000;

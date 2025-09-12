@@ -9,79 +9,95 @@ import { handleFile } from '@/handlers/file';
 import { sendFormattedMessage } from '@/utils/formatting';
 
 /**
-
-/**
- * 检查消息是否包含文件（文档或照片）
- * @param {Message | undefined} message - Telegram 消息对象，可能为 undefined
- * @returns {boolean} - 如果消息包含文件，返回 true，否则返回 false
- */
-const containsFile = (message: Message | undefined): boolean => {
-  return message ? (message.document || message.photo || message.video ? true : false) : false;
-};
-
-/**
- * @function extractMessageParts
- * @description 从 Telegram 消息中提取适用于 Gemini API 的内容部分（文本和文件数据）。
- *              同时处理移除 Bot 提及的逻辑。
- * @param {Message} message - Telegram 原始 Telegram 消息对象。
- * @param {string} botName - Bot 的用户名。
- * @returns {Promise<Part[]>} 包含文件数据和文本内容的 parts 数组。
- */
-const extractMessageParts = async (message: Message, botName: string): Promise<Part[]> => {
-  const parts: Part[] = [];
-  let messageText = message.text || message.caption || '';
-  messageText = messageText.replace(`@${botName}`, '').replace(':ask', '').trim();
-
-  if (messageText.includes('🤖 模型：') || messageText.includes('✨ 本次任务')) {
-    messageText = messageText
-      .replace(/^🤖 模型：.*?\n+/g, '')
-      .replace(/✨ 本次任务[\s\S]*$/m, '')
-      .trim();
-  }
-
-  // 处理文件内容（文档、图片）
-  if (containsFile(message)) {
-    const fileData = await handleFile(message);
-
-    if (fileData) {
-      parts.push({ inlineData: fileData });
-    }
-
-    // 如果没有提供文本，设置默认提示
-    if (!messageText) {
-      if (message.document) messageText = '分析这个文件';
-      else if (message.photo) messageText = '分析这张图片';
-      else if (message.video) messageText = '分析这个视频';
-    }
-  }
-
-  parts.push({ text: messageText || '你好' });
-
-  return parts;
-};
-
-/**
  * @class MentionHandler
  * @description 封装处理提及 Bot 消息或回复 Bot 消息的逻辑。
  */
 export class MentionHandler {
+  private readonly modelName: string;
+  private readonly botName: string;
+  private readonly adminId: number;
+  private readonly message: Message;
+  private readonly chatId: number;
+  private readonly userId: number;
+  private readonly userMessageId: number;
+  private readonly replyToMessage: Message | undefined;
+
+  constructor(message: Message) {
+    const { modelName, botName, adminId } = config.load();
+    const { message_id, chat, from, reply_to_message } = message;
+    this.modelName = modelName;
+    this.botName = botName;
+    this.adminId = adminId;
+    this.message = message;
+    this.chatId = chat.id;
+    this.userId = from?.id as number;
+    this.userMessageId = message_id;
+    this.replyToMessage = reply_to_message;
+  }
+
+  /**
+   * 检查消息是否包含文件（文档或照片）
+   * @param {Message | undefined} message - Telegram 消息对象，可能为 undefined
+   * @returns {boolean} - 如果消息包含文件，返回 true，否则返回 false
+   */
+  private isContainsFile(message: Message | undefined): boolean {
+    return message ? (message.document || message.photo || message.video ? true : false) : false;
+  }
+
+  /**
+   * @function extractMessageParts
+   * @description 从 Telegram 消息中提取适用于 Gemini API 的内容部分（文本和文件数据）。
+   *              同时处理移除 Bot 提及的逻辑。
+   * @param {Message} message - Telegram 原始 Telegram 消息对象。
+   * @returns {Promise<Part[]>} 包含文件数据和文本内容的 parts 数组。
+   */
+  private async extractMessageParts(message: Message): Promise<Part[]> {
+    const parts: Part[] = [];
+    let messageText = message.text || message.caption || '';
+    messageText = messageText.replace(`@${this.botName}`, '').replace(':ask', '').trim();
+
+    if (messageText.includes('🤖 模型：') || messageText.includes('✨ 本次任务')) {
+      messageText = messageText
+        .replace(/^🤖 模型：.*?\n+/g, '')
+        .replace(/✨ 本次任务[\s\S]*$/m, '')
+        .trim();
+    }
+
+    // 处理文件内容（文档、图片）
+    if (this.isContainsFile(message)) {
+      const fileData = await handleFile(message);
+
+      if (fileData) {
+        parts.push({ inlineData: fileData });
+      }
+
+      // 如果没有提供文本，设置默认提示
+      if (!messageText) {
+        if (message.document) messageText = '分析这个文件';
+        else if (message.photo) messageText = '分析这张图片';
+        else if (message.video) messageText = '分析这个视频';
+      }
+    }
+
+    parts.push({ text: messageText || '你好' });
+
+    return parts;
+  }
+
   /**
    * 检查并处理速率限制。
-   * @param {Message} message - Telegram 消息对象。
-   * @param {number | undefined} adminId - 管理员用户 ID。
    * @returns {Promise<boolean>} 如果被速率限制并已发送提示，返回 `true`，否则返回 `false`。
    */
-  private async handleRateLimiting(message: Message, adminId: number | undefined): Promise<boolean> {
-    const { message_id: userMessageId, from, chat } = message;
-    const checkResult = await rateLimiterCheck(chat.id);
+  private async handleRateLimiting(): Promise<boolean> {
+    const checkResult = await rateLimiterCheck(this.chatId);
 
-    if (!checkResult.canProceed && from?.id !== adminId) {
-      Log.info(`Rate limit exceeded for chat ${chat.id}. Retry after ${checkResult.retryAfterSeconds} seconds.`);
-      const rateLimitResult = await bot.sendMessage(chat.id, `超出速率限制，请等待 ${checkResult.retryAfterSeconds} 秒后重试。`, {
-        replyToMessageId: userMessageId,
+    if (!checkResult.canProceed && this.userId !== this.adminId) {
+      Log.info(`Rate limit exceeded for chat ${this.chatId}. Retry after ${checkResult.retryAfterSeconds} seconds.`);
+      const rateLimitResult = await bot.sendMessage(this.chatId, `超出速率限制，请等待 ${checkResult.retryAfterSeconds} 秒后重试。`, {
+        replyToMessageId: this.userMessageId,
       });
       if (rateLimitResult.ok) {
-        scheduleDeletion({ chat_id: chat.id, message_id: rateLimitResult.messageId }, checkResult.retryAfterSeconds * 1_000);
+        scheduleDeletion({ chat_id: this.chatId, message_id: rateLimitResult.messageId }, checkResult.retryAfterSeconds * 1_000);
       }
       return true; // 表示已处理速率限制
     }
@@ -90,21 +106,12 @@ export class MentionHandler {
 
   /**
    * 发送“文件上传中”提示消息。
-   * @param {Message} message - 当前消息。
-   * @param {Message | undefined} replyToMessage - 被回复的消息。
-   * @param {number} chatId - 聊天 ID。
-   * @param {number} userMessageId - 用户消息 ID。
    * @returns {Promise<number | null>} 文件上传提示消息的 ID，如果没有文件则为 null。
    */
-  private async sendFileUploadMessage(
-    message: Message,
-    replyToMessage: Message | undefined,
-    chatId: number,
-    userMessageId: number,
-  ): Promise<number | null> {
-    if (containsFile(message) || containsFile(replyToMessage)) {
-      const uploadingResult = await bot.sendMessage(chatId, '📄 File uploading...', {
-        replyToMessageId: userMessageId,
+  private async sendFileUploadMessage(): Promise<number | null> {
+    if (this.isContainsFile(this.message) || this.isContainsFile(this.replyToMessage)) {
+      const uploadingResult = await bot.sendMessage(this.chatId, '📄 File uploading...', {
+        replyToMessageId: this.userMessageId,
       });
       return uploadingResult.ok ? uploadingResult.messageId : null;
     }
@@ -113,27 +120,23 @@ export class MentionHandler {
 
   /**
    * 构建发送给 Gemini API 的完整内容历史。
-   * @param {number} chatId - 聊天 ID。
-   * @param {number | undefined} fromUserId - 发送消息的用户 ID。
-   * @param {Message} currentMessage - 当前用户消息。
-   * @param {string} botName - Bot 的用户名。
    * @returns {Promise<Content[]>} 完整的对话内容数组。
    */
-  private async buildCompleteContents(chatId: number, fromUserId: number | undefined, currentMessage: Message, botName: string): Promise<Content[]> {
-    const historyChatContents = await contexts.get(chatId, fromUserId as number);
+  private async buildCompleteContents(): Promise<Content[]> {
+    const historyChatContents = await contexts.get(this.chatId, this.userId as number);
     const completeContents: Content[] = [...historyChatContents];
 
-    let currentMessageCopy: Message = { ...currentMessage };
+    const currentMessageCopy: Message = { ...this.message };
     // 处理被回复的消息（如果存在）
-    if (currentMessage.reply_to_message) {
-      if (currentMessage.quote?.text) {
-        const quotedContents = `Quoted: "${currentMessage.quote.text}"\n\n${currentMessage.text || currentMessage.caption}`;
-        currentMessageCopy = { ...currentMessage, text: quotedContents };
+    if (this.replyToMessage) {
+      if (this.message.quote?.text) {
+        const quotedContents = `Quoted: "${this.message.quote.text}"\n\n${this.message.text || this.message.caption}`;
+        currentMessageCopy.text = quotedContents;
       }
-      const replyToParts = await extractMessageParts(currentMessage.reply_to_message, botName);
+      const replyToParts = await this.extractMessageParts(this.replyToMessage);
       if (replyToParts.length > 0) {
         // 判断被回复消息的角色：如果是 Bot，则是 'model'；否则是其他用户，是 'user'。
-        const replyRole = currentMessage.reply_to_message.from?.username === botName ? 'model' : 'user';
+        const replyRole = this.replyToMessage.from?.username === this.botName ? 'model' : 'user';
         completeContents.push({
           role: replyRole,
           parts: replyToParts,
@@ -142,7 +145,7 @@ export class MentionHandler {
     }
 
     // 处理当前消息，总是用户角色
-    const currentParts = await extractMessageParts(currentMessageCopy, botName);
+    const currentParts = await this.extractMessageParts(currentMessageCopy);
     if (currentParts.length > 0) {
       completeContents.push({
         role: 'user',
@@ -160,14 +163,12 @@ export class MentionHandler {
 
   /**
    * 发送“思考中”提示消息。
-   * @param {number} chatId - 聊天 ID。
-   * @param {number} userMessageId - 用户消息 ID。
    * @returns {Promise<number>} 思考中消息的 ID。
    * @throws {Error} 如果发送失败。
    */
-  private async sendThinkingMessage(chatId: number, userMessageId: number): Promise<number> {
-    const thinkingResult = await bot.sendMessage(chatId, '✨ Thinking...', {
-      replyToMessageId: userMessageId,
+  private async sendThinkingMessage(): Promise<number> {
+    const thinkingResult = await bot.sendMessage(this.chatId, '✨ Thinking...', {
+      replyToMessageId: this.userMessageId,
     });
     if (!thinkingResult.ok) {
       Log.error('Failed to send thinking message.');
@@ -179,24 +180,16 @@ export class MentionHandler {
   /**
    * 处理 Gemini API 的成功响应，包括显示思考内容、最终回复和更新聊天上下文。
    * @param {GenerateContentSuccessResponse} geminiResponse - Gemini API 的成功响应对象。
-   * @param {number} chatId - 聊天 ID。
-   * @param {number} userMessageId - 用户消息 ID。
    * @param {number} thinkMessageId - “思考中”消息的 ID。
-   * @param {string} modelName - 使用的模型名称。
-   * @param {number} fromUserId - 发送消息的用户 ID。
    * @param {Content[]} completeContentsBeforeCall - 调用 Gemini API 前的完整对话内容（用于更新历史）。
-   * @returns {Promise<boolean>}
+   * @returns {Promise<void>}
    * @throws {Error} 如果发送回复消息失败或模型未返回有效文本。
    */
   private async processGeminiResponse(
     geminiResponse: GenerateContentSuccessResponse,
-    chatId: number,
-    userMessageId: number,
     thinkMessageId: number,
-    modelName: string,
-    fromUserId: number,
     completeContentsBeforeCall: Content[],
-  ): Promise<boolean> {
+  ): Promise<void> {
     let hasDisplayedThoughts: boolean = false;
 
     const {
@@ -224,17 +217,17 @@ export class MentionHandler {
       const finalThinkingText = mergeThinkingTexts + resThoughtTexts;
       const displayThoughtText = `<b>Thoughts</b>:\n\n<blockquote expandable>${escaper.html(shortenString(finalThinkingText))}</blockquote>`;
       const replyMarkup: ReplyMarkup = {
-        inline_keyboard: makeInlineKeyboard(fromUserId),
+        inline_keyboard: makeInlineKeyboard(this.userId),
       };
-      await bot.editMessageText(chatId, thinkMessageId, displayThoughtText, { parseMode: 'HTML', replyMarkup });
+      await bot.editMessageText(this.chatId, thinkMessageId, displayThoughtText, { parseMode: 'HTML', replyMarkup });
     }
 
     // 根据模型是否生成了思考内容 (`hasToolThoughts`) 和是否实际显示了思考文本 (`hasDisplayedThoughts`)，
     // 决定是删除“思考中”消息还是安排其删除。
     if (!hasToolThoughts && !hasDisplayedThoughts) {
-      await bot.deleteMessage(chatId, thinkMessageId);
+      await bot.deleteMessage(this.chatId, thinkMessageId);
     } else {
-      scheduleDeletion({ chat_id: chatId, message_id: thinkMessageId }, 60 * 60_000);
+      scheduleDeletion({ chat_id: this.chatId, message_id: thinkMessageId }, 60 * 60_000);
     }
 
     // 提取最终的回复文本（非思考内容）：从 `response.parts` 中过滤掉带有 `thought` 属性的 Part
@@ -248,19 +241,19 @@ export class MentionHandler {
     if (!resTexts) {
       const replyText = 'Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。';
       const replyMarkup: ReplyMarkup = {
-        inline_keyboard: makeInlineKeyboard(fromUserId),
+        inline_keyboard: makeInlineKeyboard(this.userId),
       };
-      const replyResult = await bot.sendMessage(chatId, replyText, {
-        replyToMessageId: userMessageId,
+      const replyResult = await bot.sendMessage(this.chatId, replyText, {
+        replyToMessageId: this.userMessageId,
         replyMarkup,
       });
       if (replyResult.ok) {
-        scheduleDeletion({ chat_id: chatId, message_id: replyResult.messageId }, 3 * 60 * 1000);
+        scheduleDeletion({ chat_id: this.chatId, message_id: replyResult.messageId }, 3 * 60 * 1000);
       }
-      return hasDisplayedThoughts;
+      return;
     }
 
-    const fullText = `🤖 模型：\`${modelName}\`
+    const fullText = `🤖 模型：\`${this.modelName}\`
 
 ${resTexts}
 
@@ -269,7 +262,7 @@ ${resTexts}
 ⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。`;
 
     // 调用新的分块发送函数来处理回复消息
-    const finalReplyResult = await sendFormattedMessage(chatId, fullText, userMessageId, fromUserId);
+    const finalReplyResult = await sendFormattedMessage(this.chatId, fullText, this.userMessageId, this.userId);
 
     if (!finalReplyResult.ok) {
       throw finalReplyResult.error;
@@ -285,60 +278,53 @@ ${resTexts}
         parts: response.parts, // 保存模型所有 parts，包括思考内容，以便上下文完整
       };
 
-      await contexts.update(chatId, fromUserId, [
+      await contexts.update(this.chatId, this.userId, [
         ...completeContentsBeforeCall, // 现有历史记录 + 用户当前提问
         botResponseContent, // 模型本次回复
       ]);
     }
-
-    return hasDisplayedThoughts;
   }
 
   /**
    * 处理提及 Bot 的消息或回复 Bot 消息的普通消息。
-   * @param {Message} message - Telegram 消息对象。
    * @returns {Promise<void>}
    */
-  public async handleMention(message: Message): Promise<void> {
-    const { modelName, botName, adminId } = config.load();
-    const { message_id: userMessageId, from, chat, reply_to_message } = message;
-
+  public async handleMention(): Promise<void> {
     Log.info('Handling mention message.', {
-      chatId: chat.id,
-      messageId: userMessageId,
+      chatId: this.chatId,
+      messageId: this.userMessageId,
     });
 
     // 1. 检查并处理速率限制
-    if (await this.handleRateLimiting(message, adminId)) {
+    if (await this.handleRateLimiting()) {
       return; // 被速率限制，直接返回
     }
 
     let fileUploadMessageId: number | null = null;
     let thinkMessageId: number | null = null;
     let completeContents: Content[] = [];
-    let hasResThought: boolean = false;
 
     try {
       // 2. 发送文件上传提示消息（如果包含文件）
-      fileUploadMessageId = await this.sendFileUploadMessage(message, reply_to_message, chat.id, userMessageId);
+      fileUploadMessageId = await this.sendFileUploadMessage();
 
       // 3. 构建发送给 Gemini API 的完整内容历史
-      completeContents = await this.buildCompleteContents(chat.id, from?.id, message, botName);
+      completeContents = await this.buildCompleteContents();
 
       // 4. 删除文件上传提示消息（如果存在）
       if (fileUploadMessageId) {
         await sleep(3_000);
-        await bot.deleteMessage(chat.id, fileUploadMessageId);
+        await bot.deleteMessage(this.chatId, fileUploadMessageId);
         fileUploadMessageId = null; // 清空 ID，防止 finally 再次尝试删除
       }
 
       // 5. 发送“思考中”提示消息
-      thinkMessageId = await this.sendThinkingMessage(chat.id, userMessageId);
+      thinkMessageId = await this.sendThinkingMessage();
 
       const ai: GeminiApi = new GeminiApi({
-        chatId: chat.id,
-        userId: from?.id as number,
-        userMessageId,
+        chatId: this.chatId,
+        userId: this.userId,
+        userMessageId: this.userMessageId,
         thinkMessageId,
       });
 
@@ -346,39 +332,29 @@ ${resTexts}
       const geminiResponse: GenerateContentSuccessResponse = await ai.generateContent(completeContents);
 
       // 7. 处理 Gemini API 响应并发送回复
-      hasResThought = await this.processGeminiResponse(
-        geminiResponse,
-        chat.id,
-        userMessageId,
-        thinkMessageId,
-        modelName,
-        from?.id as number,
-        completeContents,
-      );
+      await this.processGeminiResponse(geminiResponse, thinkMessageId, completeContents);
     } catch (apiError: unknown) {
       Log.error('Error during Gemini API call or response processing.', {
         err: apiError,
-        chatId: chat.id,
-        messageId: userMessageId,
+        chatId: this.chatId,
+        messageId: this.userMessageId,
       });
 
       // 确保文件上传消息被删除
       if (fileUploadMessageId) {
-        await bot.deleteMessage(chat.id, fileUploadMessageId);
+        await bot.deleteMessage(this.chatId, fileUploadMessageId);
       }
 
       // 确保思考消息被正确处理（删除或安排删除）
       if (thinkMessageId) {
         const err = apiError instanceof GeminiError ? apiError : undefined;
-        if (!err?.hasToolThoughts && !hasResThought) {
-          await bot.deleteMessage(chat.id, thinkMessageId);
+        if (!err?.hasToolThoughts) {
+          await bot.deleteMessage(this.chatId, thinkMessageId);
         } else {
-          scheduleDeletion({ chat_id: chat.id, message_id: thinkMessageId }, 60 * 60_000);
+          scheduleDeletion({ chat_id: this.chatId, message_id: thinkMessageId }, 60 * 60_000);
         }
       }
       throw apiError; // 重新抛出错误以便上层捕获
     }
   }
 }
-
-export const mention: MentionHandler = new MentionHandler();

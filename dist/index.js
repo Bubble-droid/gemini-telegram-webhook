@@ -87,7 +87,7 @@ class BotConfig {
     const listenPort = this.parsePort(ENV.SERVER_LISTEN_PORT);
     const loggerLevel = this.parseLoggerLevel(ENV.SERVER_LOGGER_LEVEL);
     const modelName = ENV.GEMINI_MODEL_NAME || this.DEFAULT_MODEL_NAME;
-    const modelTemperature = Number(ENV.MODEL_CONFIG_TEMPERATURE) || 0.3;
+    const modelTemperature = Number(ENV.MODEL_CONFIG_TEMPERATURE) || 0.2;
     const maxApiCallRounds = Number(ENV.MAX_API_CALL_ROUNDS) || this.DEFAULT_MAX_API_CALL_ROUNDS;
     const cloudflareToken = ENV.CLOUDFLARE_API_TOKEN;
     const cloudflareAccountId = ENV.CLOUDFLARE_ACCOUNT_ID;
@@ -147,7 +147,7 @@ const config = new BotConfig();
 class Parser {
   text;
   pos = 0;
-  markers = ["**", "__", "~", "||", "`", "[", "]", "(", ")", "```", "\n", ">"];
+  markers = ["**", "__", "~~", "||", "`", "[", "]", "(", ")", "```", "\n", ">"];
   constructor(text) {
     this.text = text.replace(/\r\n/g, "\n");
   }
@@ -188,7 +188,7 @@ class Parser {
   }
   parseBold = () => this.parseWithMarkers("bold", "**");
   parseUnderline = () => this.parseWithMarkers("underline", "__");
-  parseStrikethrough = () => this.parseWithMarkers("strikethrough", "~");
+  parseStrikethrough = () => this.parseWithMarkers("strikethrough", "~~");
   parseSpoiler = () => this.parseWithMarkers("spoiler", "||");
   parseNewline = () => {
     if (!this.match("\n")) return null;
@@ -837,13 +837,13 @@ const sendFormattedMessage = async (chatId, standardMarkdownText, replyToMessage
   return { ok: false, error: lastError ?? new TelegramError("未知错误导致所有格式化模式发送失败", "ALL_FORMAT_MODES_FAILED") };
 };
 const MARKDOWN_REGEX = {
-  CODE_BLOCK: /^```(\w*)\n([\s\S]+?)\n```/g,
+  CODE_BLOCK: /^\s*```(\w*)\n([\s\S]+?)\n\s*```\s*$/gm,
   INLINE_CODE: /`([^`]+?)`/g,
   LINK: /\[([^\]]+?)\]\(([^)]+?)\)/g,
   BOLD_ASTERISK: /\*\*(?!\s)([\s\S]*?)(?<!\s)\*\*/g,
   UNDERLINE_UNDERSCORE: /__(?!\s)([\s\S]*?)(?<!\s)__/g,
-  STRIKETHROUGH: /~(?!\s)([\s\S]*?)(?<!\s)~/g,
-  SPOILER: /\|\|(?!\s)([\s\S]*?)(?<!\s)\|\|/g,
+  STRIKETHROUGH: /~~(?!\s)([\s\S]*?)(?<!\s)~~/g,
+  SPOILER: /^\s*\|\|\s*\n([\s\S]*?)\n\s*\|\|\s*$/gm,
   BLOCKQUOTE_LINE: /^(>>? .+(?:\n>>? .+)*)/gm
 };
 class SimpleFormatter {
@@ -855,6 +855,30 @@ class SimpleFormatter {
       }
       return `<pre>${code}</pre>`;
     });
+    processedText = processedText.replace(MARKDOWN_REGEX.SPOILER, (match, content) => {
+      return `<span class="tg-spoiler">${content}</span>`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.BLOCKQUOTE_LINE, (match) => {
+      const isExpandable = match.startsWith(">>");
+      const content = match.replace(/^(>>?)\s/gm, "");
+      const escapedContent = escaper.html(content);
+      if (isExpandable) {
+        return `<blockquote expandable>${escapedContent}</blockquote>`;
+      }
+      return `<blockquote>${escapedContent}</blockquote>`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.BOLD_ASTERISK, (match, content) => {
+      const escapedContent = escaper.html(content);
+      return `<b>${escapedContent}</b>`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.STRIKETHROUGH, (match, content) => {
+      const escapedContent = escaper.html(content);
+      return `<s>${escapedContent}</s>`;
+    });
+    processedText = processedText.replace(MARKDOWN_REGEX.UNDERLINE_UNDERSCORE, (match, content) => {
+      const escapedContent = escaper.html(content);
+      return `<u>${escapedContent}</u>`;
+    });
     processedText = processedText.replace(MARKDOWN_REGEX.INLINE_CODE, (match, code) => {
       const escapedCode = escaper.html(code);
       return `<code>${escapedCode}</code>`;
@@ -863,30 +887,6 @@ class SimpleFormatter {
       const escapedText = escaper.html(text);
       const escapedUrl = escaper.html(url);
       return `<a href="${escapedUrl}">${escapedText}</a>`;
-    });
-    processedText = processedText.replace(MARKDOWN_REGEX.SPOILER, (match, content) => {
-      return `<span class="tg-spoiler">${content}</span>`;
-    });
-    processedText = processedText.replace(MARKDOWN_REGEX.STRIKETHROUGH, (match, content) => {
-      const escapedContent = escaper.html(content);
-      return `<s>${escapedContent}</s>`;
-    });
-    processedText = processedText.replace(MARKDOWN_REGEX.BOLD_ASTERISK, (match, content) => {
-      const escapedContent = escaper.html(content);
-      return `<b>${escapedContent}</b>`;
-    });
-    processedText = processedText.replace(MARKDOWN_REGEX.UNDERLINE_UNDERSCORE, (match, content) => {
-      const escapedContent = escaper.html(content);
-      return `<u>${escapedContent}</u>`;
-    });
-    processedText = processedText.replace(/^(>>? .+(?:\n>>? .+)*)/gm, (match) => {
-      const isExpandable = match.startsWith(">>");
-      const content = match.replace(/^(>>?)\s/gm, "");
-      const escapedContent = escaper.html(content);
-      if (isExpandable) {
-        return `<blockquote expandable>${escapedContent}</blockquote>`;
-      }
-      return `<blockquote>${escapedContent}</blockquote>`;
     });
     return processedText;
   };
@@ -980,8 +980,8 @@ const sampleByShuffle = (arr, k = 3) => {
 };
 const shortenString = (input) => {
   const MAX = 4096;
-  const HEAD = 2e3;
-  const TAIL = 2e3;
+  const HEAD = 2040;
+  const TAIL = 2040;
   if (typeof input !== "string") {
     throw new TypeError("input must be a string");
   }
@@ -990,9 +990,7 @@ const shortenString = (input) => {
   const headPart = chars.slice(0, HEAD).join("");
   const tailPart = chars.slice(chars.length - TAIL).join("");
   return `${headPart}
-
-......
-
+...
 ${tailPart}`;
 };
 const convertPcmToMp3 = async (pcmBuffer) => {
@@ -1112,18 +1110,19 @@ const makeRawFileRequest = async (rawPath) => {
   }
 };
 class KvNamespace {
-  callCloudflareApi = async (action, params) => {
+  callCloudflareApi = async (action, baseParams, actionParams) => {
     const { cloudflareToken, cloudflareAccountId } = config.load();
-    const { namespaceId, keyName, value, expiration_ttl } = params;
+    const { namespaceId, keyName } = baseParams;
     const client = new Cloudflare({
       apiToken: cloudflareToken
     });
     try {
       if (action === "update") {
+        const { value, options } = actionParams;
         await client.kv.namespaces.values[action](namespaceId, keyName, {
           account_id: cloudflareAccountId,
           value,
-          expiration_ttl
+          ...options
         });
       } else {
         const response = await client.kv.namespaces.values[action](namespaceId, keyName, {
@@ -1157,14 +1156,16 @@ class KvNamespace {
       };
     }
   };
-  write = async (namespaceId, keyName, value, options = {}) => {
+  write = async (namespaceId, keyName, value, options) => {
     try {
-      await this.callCloudflareApi("update", {
-        namespaceId,
-        keyName,
-        value,
-        ...options
-      });
+      await this.callCloudflareApi(
+        "update",
+        { namespaceId, keyName },
+        {
+          value,
+          options
+        }
+      );
       return {
         success: true
       };
@@ -1491,18 +1492,22 @@ class ExecutionService {
     const startTime = process.hrtime.bigint();
     const vm = new VM({
       timeout: 6e4,
-      allowAsync: true,
-      sandbox: {
-        Http,
-        Body
-      }
+      eval: false,
+      allowAsync: true
     });
+    const utils = {
+      Http,
+      Body
+    };
+    const options = {
+      param,
+      message,
+      utils
+    };
     try {
       vm.run(scriptContent);
-      const scriptArgument = String(param ?? "");
-      vm.freeze(scriptArgument, "scriptArgument");
-      vm.freeze(message, "message");
-      const result = await vm.run("run(scriptArgument, message)");
+      vm.freeze(options, "options");
+      const result = await vm.run("run(options)");
       const endTime = process.hrtime.bigint();
       const duration = Number(endTime - startTime) / 1e6;
       return {
@@ -1637,7 +1642,7 @@ const BaseCommands = [
       if (!startReply.success) {
         throw new KvNamespaceError(`Start 命令回复内容读取失败，${startReply.error}`, "START_REPLY_NOT_FOUND");
       }
-      const replaceText = startReply.data.replace("MODEL_NAME", modelName).trim();
+      const replaceText = startReply.data.replace("${MODEL_NAME}", modelName).trim();
       const totalReactionsKeyName = `total_reactions_${chatId}`;
       const totalReactions = await kv.read(durableResourceId, totalReactionsKeyName, "json");
       const replyMarkup = {
@@ -1852,7 +1857,6 @@ const GenerateCommands = [
     action: async (params) => {
       Log.info("Executing gen_img command.");
       const { chatId, userId, messageId, cleanText } = params;
-      const { durableResourceId, geminiApiKeysKeyName } = config.load();
       if (!cleanText) {
         const notText = await bot.sendMessage(chatId, `:img [图片生成提示]`, { replyToMessageId: messageId });
         if (notText.ok) {
@@ -1860,12 +1864,6 @@ const GenerateCommands = [
         }
         return;
       }
-      const apiKeys = await kv.read(durableResourceId, geminiApiKeysKeyName, "json");
-      if (!apiKeys.success) {
-        throw new KvNamespaceError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, "GEMINI_API_KEY_NOT_FOUND");
-      }
-      const [apiKey, apiKeyId] = apiKeys.data[Math.floor(Math.random() * apiKeys.data.length)];
-      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
       let renderMessageId = void 0;
       const renderResult = await bot.sendMessage(chatId, `🎨 Rendering...`, { replyToMessageId: messageId });
       if (renderResult.ok) {
@@ -1875,7 +1873,6 @@ const GenerateCommands = [
         chatId,
         userId,
         userMessageId: messageId,
-        currentApiKey: apiKey,
         prompt: cleanText
       };
       const response = await ToolExecutors.generateImage(args);
@@ -1894,7 +1891,6 @@ const GenerateCommands = [
     action: async (params) => {
       Log.info("Executing gen_tts command.");
       const { chatId, userId, messageId, cleanText } = params;
-      const { durableResourceId, geminiApiKeysKeyName } = config.load();
       if (!cleanText) {
         const notText = await bot.sendMessage(chatId, `:tts [语音生成提示]`, { replyToMessageId: messageId });
         if (notText.ok) {
@@ -1902,12 +1898,6 @@ const GenerateCommands = [
         }
         return;
       }
-      const apiKeys = await kv.read(durableResourceId, geminiApiKeysKeyName, "json");
-      if (!apiKeys.success) {
-        throw new KvNamespaceError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, "GEMINI_API_KEY_NOT_FOUND");
-      }
-      const [apiKey, apiKeyId] = apiKeys.data[Math.floor(Math.random() * apiKeys.data.length)];
-      Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
       let synthMessageId = void 0;
       const synthResult = await bot.sendMessage(chatId, `🎙 Synthesizing...`, { replyToMessageId: messageId });
       if (synthResult.ok) {
@@ -1917,7 +1907,6 @@ const GenerateCommands = [
         chatId,
         userId,
         userMessageId: messageId,
-        currentApiKey: apiKey,
         prompt: cleanText
       };
       const response = await ToolExecutors.generateSpeech(args);
@@ -1966,8 +1955,8 @@ const ScriptCommands = [
       try {
         await scriptManager.installForUser(userId, fileUrl, scriptTag);
         const successMessage = `✅ 脚本安装成功！
-<b>标签:</b> <code>${cleanText}</code>`;
-        const sentMsg = await bot.sendMessage(chatId, successMessage, {
+**标签:** \`${cleanText}\``;
+        const sentMsg = await bot.sendMessage(chatId, toHtml(successMessage), {
           replyToMessageId: messageId,
           parseMode: "HTML"
         });
@@ -2000,8 +1989,8 @@ const ScriptCommands = [
       try {
         await scriptManager.uninstallForUser(userId, scriptTag);
         const successMessage = `🗑️ 脚本删除成功！
-<b>标签:</b> <code>${cleanText}</code>`;
-        const sentMsg = await bot.sendMessage(chatId, successMessage, {
+**标签:** \`${cleanText}\``;
+        const sentMsg = await bot.sendMessage(chatId, toHtml(successMessage), {
           replyToMessageId: messageId,
           parseMode: "HTML"
         });
@@ -2032,11 +2021,11 @@ const ScriptCommands = [
         if (scripts.length === 0) {
           replyText = "你还没有安装任何脚本。";
         } else {
-          const scriptList = scripts.map((tag) => `  • <code>${tag.replace(`script_${userId}_`, "")}</code>`).join("\n");
+          const scriptList = scripts.map((tag) => `  • \`${tag.replace(`script_${userId}_`, "")}\``).join("\n");
           replyText = `你已安装以下脚本：
 ${scriptList}`;
         }
-        const sentMsg = await bot.sendMessage(chatId, replyText, {
+        const sentMsg = await bot.sendMessage(chatId, toHtml(replyText), {
           replyToMessageId: messageId,
           parseMode: "HTML"
         });
@@ -2071,15 +2060,19 @@ ${scriptList}`;
       const result = await scriptManager.runForUser(userId, scriptTag, message, scriptParam);
       let replyText;
       if (result.success) {
-        replyText = `✅ <b>脚本执行成功</b> (耗时: ${result.duration > 1e3 ? (result.duration / 1e3).toFixed(2) + "s" : result.duration.toFixed(2) + "ms"})
+        replyText = `✅ **脚本执行成功** (耗时: ${result.duration > 1e3 ? (result.duration / 1e3).toFixed(2) + "s" : result.duration.toFixed(2) + "ms"})
 
-<pre><code class="language-markdown">${result.result}</code></pre>`;
+\`\`\`markdown
+${result.result}
+\`\`\``;
       } else {
-        replyText = `❌ <b>脚本执行失败</b> (耗时:  ${result.duration > 1e3 ? (result.duration / 1e3).toFixed(2) + "s" : result.duration.toFixed(2) + "ms"})
+        replyText = `❌ **脚本执行失败** (耗时:  ${result.duration > 1e3 ? (result.duration / 1e3).toFixed(2) + "s" : result.duration.toFixed(2) + "ms"})
 
-<pre><code class="language-markdown">${result.error}</code></pre>`;
+\`\`\`markdown
+${result.error}
+\`\`\``;
       }
-      const sentMsg = await bot.sendMessage(chatId, replyText, {
+      const sentMsg = await bot.sendMessage(chatId, toHtml(replyText), {
         replyToMessageId: messageId,
         parseMode: "HTML"
       });
@@ -2101,24 +2094,19 @@ const functionForSearch = [
       properties: {
         keyword: {
           type: Type.STRING,
-          description: '用于搜索文件内容的关键词，多个关键词请用 AND 或 OR 分隔，例如 "路由 AND 拦截"。',
-          example: "路由 AND 拦截"
+          description: '用于搜索文件内容的关键词，多个关键词请用 AND 或 OR 分隔，例如 "路由 AND 拦截"。'
         },
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
-          example: "SagerNet"
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。'
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称，例如 "sing-box"。',
-          example: "sing-box"
+          description: 'GitHub 仓库名称，例如 "sing-box"。'
         },
         branch: {
           type: Type.STRING,
-          description: "要搜索的仓库分支，默认为仓库默认分支（如 main 或 master）。",
-          default: "main",
-          example: "main"
+          description: "要搜索的仓库分支，默认为仓库默认分支（如 main 或 master）。"
         }
       },
       required: ["keyword", "owner", "repo"]
@@ -2134,18 +2122,15 @@ const functionForSearch = [
       properties: {
         keyword: {
           type: Type.STRING,
-          description: '用于搜索提交消息内容的关键词，多个关键词请用 AND 或 OR 分隔，例如 "fix AND bug"。',
-          example: "fix AND bug"
+          description: '用于搜索提交消息内容的关键词，多个关键词请用 AND 或 OR 分隔，例如 "fix AND bug"。'
         },
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
-          example: "SagerNet"
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。'
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称，例如 "sing-box"。',
-          example: "sing-box"
+          description: 'GitHub 仓库名称，例如 "sing-box"。'
         }
       },
       required: ["keyword", "owner", "repo"]
@@ -2161,25 +2146,21 @@ const functionForSearch = [
       properties: {
         keyword: {
           type: Type.STRING,
-          description: '用于搜索 Issue 内容和标题的关键词，多个关键词请用 AND 或 OR 分隔，例如 "tun AND error"。',
-          example: "tun AND error"
+          description: '用于搜索 Issue 内容和标题的关键词，多个关键词请用 AND 或 OR 分隔，例如 "tun AND error"。'
         },
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
-          example: "SagerNet"
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。'
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称，例如 "sing-box"。',
-          example: "sing-box"
+          description: 'GitHub 仓库名称，例如 "sing-box"。'
         },
         state: {
           type: Type.STRING,
           description: 'Issue 的状态，可以是 "open"（开放）、"closed"（关闭），默认为 "open"。',
           default: "open",
-          enum: ["open", "closed"],
-          example: "open"
+          enum: ["open", "closed"]
         }
       },
       required: ["keyword", "owner", "repo"]
@@ -2189,7 +2170,7 @@ const functionForSearch = [
 const functionForList = [
   {
     name: "listRepoTree",
-    description: "递归列出指定 GitHub 仓库和分支下的所有文件及其完整路径。此工具旨在辅助获取仓库的完整文件结构，用于深度分析。",
+    description: "递归列出指定 GitHub 仓库和分支下的所有文件及其完整路径。",
     behavior: Behavior.BLOCKING,
     parameters: {
       type: Type.OBJECT,
@@ -2197,19 +2178,15 @@ const functionForList = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
-          example: "SagerNet"
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。'
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称，例如 "sing-box"。',
-          example: "sing-box"
+          description: 'GitHub 仓库名称，例如 "sing-box"。'
         },
         branch: {
           type: Type.STRING,
-          description: "要查询的仓库分支，默认为仓库默认分支（如 main 或 master）。",
-          default: "main",
-          example: "main"
+          description: "要查询的仓库分支，默认为仓库默认分支（如 main 或 master）。"
         }
       },
       required: ["owner", "repo"]
@@ -2217,7 +2194,7 @@ const functionForList = [
   },
   {
     name: "listDirContents",
-    description: "列出指定 GitHub 仓库、指定目录内的所有文件和子目录（只包含顶层内容）。此工具旨在辅助探索仓库指定目录的文件结构。",
+    description: "列出指定 GitHub 仓库、指定目录内的所有文件和子目录（只包含顶层内容）。",
     behavior: Behavior.BLOCKING,
     parameters: {
       type: Type.OBJECT,
@@ -2225,25 +2202,20 @@ const functionForList = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
-          example: "SagerNet"
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。'
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称，例如 "sing-box"。',
-          example: "sing-box"
+          description: 'GitHub 仓库名称，例如 "sing-box"。'
         },
         path: {
           type: Type.STRING,
           description: '要列出文件和子目录的路径，默认为仓库根目录。例如 "docs/configuration/"。此路径应相对于仓库根目录。',
-          default: "",
-          example: "docs/configuration/"
+          default: ""
         },
         branch: {
           type: Type.STRING,
-          description: "要查询的仓库分支，默认为仓库默认分支（如 main 或 master）。",
-          default: "main",
-          example: "main"
+          description: "要查询的仓库分支，默认为仓库默认分支（如 main 或 master）。"
         }
       },
       required: ["owner", "repo"]
@@ -2259,28 +2231,24 @@ const functionForList = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
-          example: "SagerNet"
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。'
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称，例如 "sing-box"。',
-          example: "sing-box"
+          description: 'GitHub 仓库名称，例如 "sing-box"。'
         },
         per_page: {
           type: Type.NUMBER,
           description: "每页返回的提交数量，默认为 20，最大 100。",
           default: 20,
           minimum: 1,
-          maximum: 100,
-          example: 20
+          maximum: 100
         },
         page: {
           type: Type.NUMBER,
           description: "页码，默认为 1。",
           default: 1,
-          minimum: 1,
-          example: 1
+          minimum: 1
         }
       },
       required: ["owner", "repo"]
@@ -2296,28 +2264,24 @@ const functionForList = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
-          example: "SagerNet"
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。'
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称，例如 "sing-box"。',
-          example: "sing-box"
+          description: 'GitHub 仓库名称，例如 "sing-box"。'
         },
         per_page: {
           type: Type.NUMBER,
           description: "每页返回的发布版本数量，默认为 10，最大 100。",
           default: 10,
           minimum: 1,
-          maximum: 100,
-          example: 10
+          maximum: 100
         },
         page: {
           type: Type.NUMBER,
           description: "页码，默认为 1。",
           default: 1,
-          minimum: 1,
-          example: 1
+          minimum: 1
         }
       },
       required: ["owner", "repo"]
@@ -2333,13 +2297,11 @@ const functionForList = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
-          example: "SagerNet"
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。'
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称，例如 "sing-box"。',
-          example: "sing-box"
+          description: 'GitHub 仓库名称，例如 "sing-box"。'
         }
       },
       required: ["owner", "repo"]
@@ -2357,15 +2319,13 @@ const functionForGet = [
       properties: {
         filePaths: {
           type: Type.ARRAY,
-          description: "需要查询的文件路径列表，每次最少查询 4 个文件 ",
+          description: '需要查询的文件路径列表，每次最少查询 4 个文件，例如：["MetaCubeX/Meta-docs/refs/heads/main/docs/api/index.md", "SagerNet/sing-box/refs/heads/dev-next/src/main.go"]',
           items: {
             type: Type.STRING,
             title: "File Path Item",
-            description: '单个文件的完整路径，格式为 "owner/repo/refs/heads/branch/path/to/file.ext"',
-            example: "MetaCubeX/Meta-docs/refs/heads/main/docs/api/index.md"
+            description: '单个文件的完整路径，格式为 "owner/repo/refs/heads/branch/path/to/file.ext"'
           },
-          minItems: "4",
-          example: ["MetaCubeX/Meta-docs/refs/heads/main/docs/api/index.md", "SagerNet/sing-box/refs/heads/dev-next/src/main.go"]
+          minItems: "4"
         }
       },
       required: ["filePaths"]
@@ -2381,18 +2341,15 @@ const functionForGet = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
-          example: "SagerNet"
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。'
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称，例如 "sing-box"。',
-          example: "sing-box"
+          description: 'GitHub 仓库名称，例如 "sing-box"。'
         },
         commit_sha: {
           type: Type.STRING,
-          description: '要查询的提交的 SHA 值，例如 "2464ced48c504eb0dee616c6d474813621779afc"。',
-          example: "2464ced48c504eb0dee616c6d474813621779afc"
+          description: '要查询的提交的 SHA 值，例如 "2464ced48c504eb0dee616c6d474813621779afc"。'
         }
       },
       required: ["owner", "repo", "commit_sha"]
@@ -2408,18 +2365,15 @@ const functionForGet = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者，例如 "SagerNet"。',
-          example: "SagerNet"
+          description: 'GitHub 仓库所有者，例如 "SagerNet"。'
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称，例如 "sing-box"。',
-          example: "sing-box"
+          description: 'GitHub 仓库名称，例如 "sing-box"。'
         },
         issue_number: {
           type: Type.NUMBER,
-          description: "Issue 的编号，例如 3202。",
-          example: 3202
+          description: "Issue 的编号，例如 3202。"
         }
       },
       required: ["owner", "repo", "issue_number"]
@@ -2435,24 +2389,20 @@ const functionForGet = [
       properties: {
         owner: {
           type: Type.STRING,
-          description: 'GitHub 仓库所有者，例如 "GUI-for-Cores"。',
-          example: "GUI-for-Cores"
+          description: 'GitHub 仓库所有者，例如 "GUI-for-Cores"。'
         },
         repo: {
           type: Type.STRING,
-          description: 'GitHub 仓库名称，例如 "GUI.for.SingBox"。',
-          example: "GUI.for.SingBox"
+          description: 'GitHub 仓库名称，例如 "GUI.for.SingBox"。'
         },
         release_id: {
           type: Type.NUMBER,
           description: "发布版本的 ID，例如 227541695。如果提供，将优先使用此 ID。",
-          example: 227541695,
           nullable: true
         },
         tag_name: {
           type: Type.STRING,
           description: '发布版本的标签名称，例如 "rolling-release-alpha"。如果未提供 release_id 或其查询失败，将尝试使用此标签名称。',
-          example: "rolling-release-alpha",
           nullable: true
         }
       },
@@ -2477,8 +2427,8 @@ const functionForGenerate = [
         prompt: {
           type: Type.STRING,
           title: "Image Generation Prompt",
-          description: "用于生成图片的文本提示。",
-          example: `A photorealistic [shot type] of [subject], [action or expression], set in
+          description: `用于生成图片的文本提示。例如：
+          A photorealistic [shot type] of [subject], [action or expression], set in
 [environment]. The scene is illuminated by [lighting description], creating
 a [mood] atmosphere. Captured with a [camera/lens details], emphasizing
 [key textures and details]. The image should be in a [aspect ratio] format.
@@ -2513,8 +2463,8 @@ focus on [key detail]. [Aspect ratio].`
         prompt: {
           type: Type.STRING,
           title: "Speech Generation Prompt",
-          description: `用于生成语音的文本提示，可以使用自然语言提示来控制语音的样式、语调、口音和语速。`,
-          example: `Say in a helpless tone:
+          description: `用于生成语音的文本提示，可以使用自然语言提示来控制语音的样式、语调、口音和语速。例如：
+          Say in a helpless tone:
 "拜托！我不会算命啊！"
 
 Say in an spooky whisper:
@@ -2535,66 +2485,66 @@ const geminiTools = [
     functionDeclarations: [...functionForSearch, ...functionForList, ...functionForGet, ...functionForGenerate]
   }
 ];
+const GEMINI_SAFETY_SETTINGS = [
+  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE }
+];
 class GeminiApi {
-  MAX_RETRIES_COMMON = 3;
+  MAX_EMPTY_REPLY_RETRIES = 3;
+  MAX_CLIENT_ERROR_RETRIES = 3;
   BASE_RETRY_DELAY_MS = 1e4;
   maxApiCallRounds;
   durableResourceId;
   systemPromptKeyName;
-  geminiApiKeysKeyName;
   modelName;
   modelTemperature;
-  SAFETY_SETTINGS = [
-    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE }
-  ];
-  constructor() {
-    const { maxApiCallRounds, durableResourceId, systemPromptKeyName, geminiApiKeysKeyName, modelName, modelTemperature } = config.load();
+  chatId;
+  userId;
+  userMessageId;
+  thinkMessageId;
+  baseConfig = {
+    maxOutputTokens: 65536,
+    thinkingConfig: { includeThoughts: true, thinkingBudget: -1 },
+    tools: geminiTools,
+    toolConfig: {
+      functionCallingConfig: {
+        mode: FunctionCallingConfigMode.AUTO
+      }
+    },
+    safetySettings: GEMINI_SAFETY_SETTINGS
+  };
+  startProcessTime;
+  constructor(chatParams) {
+    const { maxApiCallRounds, durableResourceId, systemPromptKeyName, modelName, modelTemperature } = config.load();
     this.maxApiCallRounds = maxApiCallRounds;
     this.durableResourceId = durableResourceId;
     this.systemPromptKeyName = systemPromptKeyName;
-    this.geminiApiKeysKeyName = geminiApiKeysKeyName;
     this.modelName = modelName;
     this.modelTemperature = modelTemperature;
+    this.chatId = chatParams.chatId;
+    this.userId = chatParams.userId;
+    this.userMessageId = chatParams.userMessageId;
+    this.thinkMessageId = chatParams.thinkMessageId;
+    this.startProcessTime = process.hrtime.bigint();
   }
-  async _initializeApiCallContext(chatParams, initialContents) {
-    const { chatId, userId, userMessageId, thinkMessageId } = chatParams;
+  async _initializeApiCallContext(initialContents) {
     const systemPrompt = await kv.read(this.durableResourceId, this.systemPromptKeyName, "text");
     if (!systemPrompt.success) {
       throw new KvNamespaceError(`系统提示获取失败，${systemPrompt.error}`, "SYSTEM_PROMPT_NOT_FOUND");
     }
-    const apiKeys = await kv.read(this.durableResourceId, this.geminiApiKeysKeyName, "json");
-    if (!apiKeys.success) {
-      throw new GeminiError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, "GEMINI_API_KEY_NOT_FOUND");
-    }
     Log.info(`系统提示 (systemPrompt):`, { systemPrompt: systemPrompt.data.slice(0, 200) });
     const baseConfig = {
-      maxOutputTokens: 65536,
+      ...this.baseConfig,
       temperature: this.modelTemperature,
-      thinkingConfig: { includeThoughts: true, thinkingBudget: -1 },
-      tools: geminiTools,
-      toolConfig: {
-        functionCallingConfig: {
-          mode: FunctionCallingConfigMode.AUTO
-        }
-      },
-      responseMimeType: "text/plain",
-      safetySettings: this.SAFETY_SETTINGS,
       systemInstruction: [{ text: systemPrompt.data }]
     };
     return {
-      chatId,
-      userId,
-      userMessageId,
-      thinkMessageId,
-      systemPrompt: systemPrompt.data,
-      apiKeys: apiKeys.data,
-      modelName: this.modelName,
       config: baseConfig,
       contents: [...initialContents],
+      mergeThinkingTexts: "",
       metrics: {
         apiCallSuccessCount: 0,
         totalUsageToken: 0,
@@ -2602,7 +2552,6 @@ class GeminiApi {
         emptyReplyRetryCount: 0,
         errorRetryCount: 0,
         totalRetryCount: 0,
-        startProcessTime: Date.now(),
         totalDurationSecond: 0,
         hasToolThoughts: false
       }
@@ -2632,14 +2581,11 @@ class GeminiApi {
         })
       }))
     });
-    const newApiKeys = rotateArray(context.apiKeys);
-    const [apiKey, apiKeyId] = newApiKeys[0];
-    const ai = new GoogleGenAI({ apiKey });
-    Log.info(`当前使用的 API 密钥: ${apiKeyId}`);
-    context.apiKeys = newApiKeys;
+    const newApiKey = await rotateGeminiApiKey();
+    const ai = new GoogleGenAI({ apiKey: newApiKey });
     Log.info("发送 Gemini API 请求...");
     const response = await ai.models.generateContent({
-      model: context.modelName,
+      model: this.modelName,
       config: context.config,
       contents: context.contents
     });
@@ -2650,35 +2596,39 @@ class GeminiApi {
     return response;
   }
   async _executeApiCallWithRetries(context) {
-    for (let attempt = 0; attempt <= this.MAX_RETRIES_COMMON; attempt++) {
+    for (let attempt = 0; attempt <= this.MAX_CLIENT_ERROR_RETRIES; attempt++) {
       try {
         const response = await this._callGeminiApi(context);
         return response;
       } catch (error) {
         const err = error instanceof GeminiError ? error : new GeminiError(String(error), "API_CLIENT_ERROR", context.metrics.hasToolThoughts);
-        Log.error(`Gemini API 客户端或网络错误 (尝试 ${attempt + 1}/${this.MAX_RETRIES_COMMON}):`, { err });
-        if (attempt < this.MAX_RETRIES_COMMON) {
+        Log.error(`Gemini API 客户端或网络错误 (尝试 ${attempt + 1}/${this.MAX_CLIENT_ERROR_RETRIES}):`, { err });
+        if (attempt < this.MAX_CLIENT_ERROR_RETRIES) {
           const delay = Math.floor(this.BASE_RETRY_DELAY_MS * Math.pow(2, attempt + 1) * (0.8 + Math.random() * 0.4));
           context.metrics.errorRetryCount++;
-          if (context.thinkMessageId !== void 0) {
-            const errorRetryText = `Gemini API 客户端错误，将在 ${Math.floor(delay / 1e3)} 秒后，进行第 ${attempt + 1} 次重试...`;
-            await bot.editMessageText(context.chatId, context.thinkMessageId, errorRetryText);
+          const errorRetryText = `Gemini API 客户端错误，将在 ${Math.floor(delay / 1e3)} 秒后，进行第 ${attempt + 1} 次重试...`;
+          if (context.lastRetryMessageId) {
+            await bot.editMessageText(this.chatId, context.lastRetryMessageId, errorRetryText);
+          } else {
+            const sendMsg = await bot.sendMessage(this.chatId, errorRetryText, { replyToMessageId: this.userMessageId });
+            if (sendMsg.ok) {
+              context.lastRetryMessageId = sendMsg.messageId;
+            }
           }
           await sleep(delay);
           Log.info(`Gemini API 客户端错误，进行第 ${attempt + 1} 次重试...`);
         } else {
-          if (context.thinkMessageId) {
-            await bot.deleteMessage(context.chatId, context.thinkMessageId);
+          if (context.lastRetryMessageId) {
+            await bot.deleteMessage(this.chatId, context.lastRetryMessageId);
+            context.lastRetryMessageId = void 0;
           }
-          const finalError = new GeminiError(
-            `Gemini API 客户端错误，已达最大重试次数 (${this.MAX_RETRIES_COMMON})。
+          throw new GeminiError(
+            `Gemini API 客户端错误，已达最大重试次数 (${this.MAX_CLIENT_ERROR_RETRIES})。
 
 ${err}`,
             "MAX_API_CLIENT_RETRIES_REACHED",
             context.metrics.hasToolThoughts
           );
-          await this._writeApiKeysToKv(context.apiKeys);
-          throw finalError;
         }
       }
     }
@@ -2691,11 +2641,12 @@ ${err}`,
       const thoughtTexts = functionTexts.map((part) => part.text).join("").trim();
       if (thoughtTexts) {
         context.metrics.hasToolThoughts = true;
-        if (context.thinkMessageId !== void 0) {
+        context.mergeThinkingTexts += thoughtTexts;
+        if (this.thinkMessageId !== void 0) {
           const displayThoughtText = `<b>Thoughts</b>:
 
-<blockquote expandable>${escaper.html(shortenString(thoughtTexts))}</blockquote>`;
-          await bot.editMessageText(context.chatId, context.thinkMessageId, displayThoughtText, { parseMode: "HTML" });
+<blockquote expandable>${escaper.html(shortenString(context.mergeThinkingTexts))}</blockquote>`;
+          await bot.editMessageText(this.chatId, this.thinkMessageId, displayThoughtText, { parseMode: "HTML" });
         }
       }
     }
@@ -2706,10 +2657,9 @@ ${err}`,
       const functionName = functionCall.functionCall?.name;
       const functionArgs = functionCall.functionCall?.args;
       const toolExecArgs = {
-        chatId: context.chatId,
-        userId: context.userId,
-        userMessageId: context.userMessageId,
-        ...functionName?.startsWith("generate") ? { currentApiKey: context.apiKeys[0][0] } : {},
+        chatId: this.chatId,
+        userId: this.userId,
+        userMessageId: this.userMessageId,
         ...functionArgs
       };
       if (typeof functionName === "string" && functionName in ToolExecutors) {
@@ -2751,8 +2701,8 @@ ${err}`,
     return toolResponseParts;
   }
   _buildSuccessResponse(context, textParts) {
-    const finishedTime = Date.now();
-    context.metrics.totalDurationSecond = Math.round((finishedTime - context.metrics.startProcessTime) / 1e3);
+    const endTime = process.hrtime.bigint();
+    const duration = Number(endTime - this.startProcessTime) / 1e6;
     return {
       response: {
         role: "model",
@@ -2762,24 +2712,17 @@ ${err}`,
       apiCallSuccessCount: context.metrics.apiCallSuccessCount,
       totalUsageToken: context.metrics.totalUsageToken,
       usageToolCount: context.metrics.usageToolCount,
-      totalDurationSecond: context.metrics.totalDurationSecond,
+      totalDurationSecond: Number((duration / 1e3).toFixed(2)),
       hasToolThoughts: context.metrics.hasToolThoughts,
+      mergeThinkingTexts: context.mergeThinkingTexts,
       emptyReplyRetryCount: context.metrics.emptyReplyRetryCount,
       errorRetryCount: context.metrics.errorRetryCount
     };
   }
-  async _writeApiKeysToKv(apiKeys) {
-    try {
-      await kv.write(this.durableResourceId, this.geminiApiKeysKeyName, JSON.stringify(apiKeys));
-      Log.info("已将最新的 API 密钥组写入 KvNamespace。");
-    } catch (error) {
-      Log.error("写入 API 密钥到 kv 失败:", { error });
-    }
-  }
-  generateContent = async (initialContents, chatParams) => {
+  generateContent = async (initialContents) => {
     let context;
     try {
-      context = await this._initializeApiCallContext(chatParams, initialContents);
+      context = await this._initializeApiCallContext(initialContents);
     } catch (error) {
       const err = error instanceof GeminiError ? error : new GeminiError(String(error), "INITIALIZATION_ERROR", false);
       Log.error("初始化 API 调用上下文失败:", { err });
@@ -2796,19 +2739,24 @@ ${err}`,
       let candidate = response.candidates?.[0];
       let currentEmptyReplyAttempt = 0;
       while (!candidate || !candidate.content || !candidate.content.parts) {
-        if (currentEmptyReplyAttempt < this.MAX_RETRIES_COMMON) {
+        if (currentEmptyReplyAttempt < this.MAX_EMPTY_REPLY_RETRIES) {
           const delay = Math.floor(this.BASE_RETRY_DELAY_MS * Math.pow(2, currentEmptyReplyAttempt + 1) * (0.8 + Math.random() * 0.4));
           context.metrics.emptyReplyRetryCount++;
           currentEmptyReplyAttempt++;
-          if (context.thinkMessageId !== void 0) {
-            const emptyReplyRetryText = `Gemini API 响应为空，将在 ${Math.floor(delay / 1e3)} 秒后，进行第 ${currentEmptyReplyAttempt} 次重试...`;
-            await bot.editMessageText(context.chatId, context.thinkMessageId, emptyReplyRetryText);
+          const emptyReplyRetryText = `Gemini API 响应为空，将在 ${Math.floor(delay / 1e3)} 秒后，进行第 ${currentEmptyReplyAttempt} 次重试...`;
+          if (context.lastRetryMessageId) {
+            await bot.editMessageText(this.chatId, context.lastRetryMessageId, emptyReplyRetryText);
+          } else {
+            const sendMsg = await bot.sendMessage(this.chatId, emptyReplyRetryText, { replyToMessageId: this.userMessageId });
+            if (sendMsg.ok) {
+              context.lastRetryMessageId = sendMsg.messageId;
+            }
           }
+          await sleep(delay);
           Log.warn(
-            `Gemini API 返回结果不包含有效的 candidate 或 content，尝试重试 (无效回复重试 ${currentEmptyReplyAttempt}/${this.MAX_RETRIES_COMMON})。`,
+            `Gemini API 返回结果不包含有效的 candidate 或 content，尝试重试 (无效回复重试 ${currentEmptyReplyAttempt}/${this.MAX_EMPTY_REPLY_RETRIES})。`,
             { response }
           );
-          await sleep(delay);
           try {
             response = await this._executeApiCallWithRetries(context);
             candidate = response.candidates?.[0];
@@ -2816,14 +2764,18 @@ ${err}`,
             throw error;
           }
         } else {
-          if (context.thinkMessageId) {
-            await bot.deleteMessage(context.chatId, context.thinkMessageId);
+          if (context.lastRetryMessageId) {
+            await bot.deleteMessage(this.chatId, context.lastRetryMessageId);
+            context.lastRetryMessageId = void 0;
           }
-          const errorMsg2 = `Gemini API 未返回有效结果，已达最大无效回复重试次数 (${this.MAX_RETRIES_COMMON})，请稍后再重新提问。`;
+          const errorMsg2 = `Gemini API 未返回有效结果，已达最大无效回复重试次数 (${this.MAX_EMPTY_REPLY_RETRIES})，请稍后再重新提问。`;
           Log.error(errorMsg2);
-          await this._writeApiKeysToKv(context.apiKeys);
           throw new GeminiError(errorMsg2, "MAX_EMPTY_REPLY_RETRIES_REACHED", context.metrics.hasToolThoughts);
         }
+      }
+      if (context.lastRetryMessageId) {
+        await bot.deleteMessage(this.chatId, context.lastRetryMessageId);
+        context.lastRetryMessageId = void 0;
       }
       apiCallRoundCounter++;
       currentEmptyReplyAttempt = 0;
@@ -2844,10 +2796,10 @@ ${err}`,
           Log.info("工具执行结果已添加到消息历史，准备下一轮 API 调用");
         } else {
           Log.warn("模型调用了工具，但没有工具执行结果被记录，可能出现逻辑问题。");
-          await this._writeApiKeysToKv(context.apiKeys);
           return {
             response: { role: "model", parts: [{ text: "😥 抱歉，模型尝试使用工具但未能获取结果。" }] },
             ...context.metrics,
+            mergeThinkingTexts: context.mergeThinkingTexts,
             totalRetryCount: context.metrics.emptyReplyRetryCount + context.metrics.errorRetryCount,
             emptyReplyRetryCount: context.metrics.emptyReplyRetryCount,
             errorRetryCount: context.metrics.errorRetryCount
@@ -2857,18 +2809,17 @@ ${err}`,
         const textParts = parts.filter((part) => part.text);
         if (textParts.length > 0) {
           Log.info(`Gemini API 请求成功，返回文本响应。`);
-          await this._writeApiKeysToKv(context.apiKeys);
           return this._buildSuccessResponse(context, textParts);
         } else {
           Log.warn("Gemini API 返回非工具调用响应，但没有文本内容或其他可处理的 parts。", { response });
           const finishReason = candidate.finishReason;
-          await this._writeApiKeysToKv(context.apiKeys);
           return {
             response: {
               role: "model",
               parts: [{ text: `😥 抱歉，未能获取有效的文本回复。Finish Reason: ${finishReason || "未知"}` }]
             },
             ...context.metrics,
+            mergeThinkingTexts: context.mergeThinkingTexts,
             totalRetryCount: context.metrics.emptyReplyRetryCount + context.metrics.errorRetryCount,
             emptyReplyRetryCount: context.metrics.emptyReplyRetryCount,
             errorRetryCount: context.metrics.errorRetryCount
@@ -2878,11 +2829,21 @@ ${err}`,
     }
     const errorMsg = `达到最大 API 调用轮次 (${this.maxApiCallRounds})，未能获取最终回复。`;
     Log.error(errorMsg);
-    await this._writeApiKeysToKv(context.apiKeys);
     throw new GeminiError(errorMsg, "MAX_CALL_ROUNDS_REACHED", context.metrics.hasToolThoughts);
   };
 }
-const genai = new GeminiApi();
+const rotateGeminiApiKey = async () => {
+  const { durableResourceId, geminiApiKeysKeyName } = config.load();
+  const apiKeys = await kv.read(durableResourceId, geminiApiKeysKeyName, "json");
+  if (!apiKeys.success) {
+    throw new KvNamespaceError(`无法获取 API 密钥，请检查配置，${apiKeys.error}`, "GEMINI_API_KEY_NOT_FOUND");
+  }
+  const [currentApiKey, currentApiKeyId] = apiKeys.data[0];
+  const nextApiKeys = rotateArray(apiKeys.data);
+  await kv.write(durableResourceId, geminiApiKeysKeyName, JSON.stringify(nextApiKeys));
+  Log.info(`当前使用的 API 密钥: ${currentApiKeyId}`);
+  return currentApiKey;
+};
 const simpleGeminiApiResponse = (response) => {
   const simpleResponse = {
     ...response,
@@ -3775,8 +3736,9 @@ const ToolExecutors = {
     return { success: true, data: { currentTime } };
   },
   generateImage: async (args) => {
-    Log.info("执行工具: sendPhotoMessage，参数:", { args: { ...args, currentApiKey: "***" } });
-    const { chatId, userId, userMessageId, currentApiKey, prompt } = args;
+    Log.info("执行工具: sendPhotoMessage，参数:", { args });
+    const { chatId, userId, userMessageId, prompt } = args;
+    const newApiKey = await rotateGeminiApiKey();
     const modelName = "gemini-2.0-flash-preview-image-generation";
     const modelConfig = {
       responseModalities: ["IMAGE", "TEXT"]
@@ -3788,7 +3750,7 @@ const ToolExecutors = {
       }
     ];
     try {
-      const response = await callMultiModalModels(currentApiKey, modelName, modelConfig, contents);
+      const response = await callMultiModalModels(newApiKey, modelName, modelConfig, contents);
       const resTexts = response.parts?.map((part) => part.text).join("") || "";
       const imageData = response.parts?.find((part) => part.inlineData && part.inlineData.data);
       const base64Data = imageData?.inlineData?.data;
@@ -3808,8 +3770,9 @@ const ToolExecutors = {
     }
   },
   generateSpeech: async (args) => {
-    Log.info("执行工具: sendVoiceMessage，参数:", { args: { ...args, currentApiKey: "***" } });
-    const { chatId, userId, userMessageId, currentApiKey, prompt } = args;
+    Log.info("执行工具: sendVoiceMessage，参数:", { args });
+    const { chatId, userId, userMessageId, prompt } = args;
+    const newApiKey = await rotateGeminiApiKey();
     const modelName = "gemini-2.5-flash-preview-tts";
     const modelConfig = {
       responseModalities: ["AUDIO"],
@@ -3822,7 +3785,7 @@ const ToolExecutors = {
       }
     ];
     try {
-      const response = await callMultiModalModels(currentApiKey, modelName, modelConfig, contents);
+      const response = await callMultiModalModels(newApiKey, modelName, modelConfig, contents);
       const audioData = response.parts?.find((part) => part.inlineData && part.inlineData.data);
       const base64Data = audioData?.inlineData?.data;
       const pcmAudioBuffer = Buffer.from(base64Data, "base64");
@@ -3848,7 +3811,7 @@ const callMultiModalModels = async (apiKey, model, modelConfig, contents) => {
   const ai = new GoogleGenAI({ apiKey });
   const config2 = {
     ...modelConfig,
-    safetySettings: genai.SAFETY_SETTINGS
+    safetySettings: GEMINI_SAFETY_SETTINGS
   };
   Log.info("发送 Gemini API 请求...");
   Log.info("当前发送的 contents:", { contents });
@@ -3861,27 +3824,6 @@ const callMultiModalModels = async (apiKey, model, modelConfig, contents) => {
     throw new GeminiError("Gemini API 返回结果不包含有效的内容", "INVALID_RESPONSE");
   }
   return candidate.content;
-};
-const handleCommand = async (message) => {
-  const { message_id: messageId, from, chat } = message;
-  Log.info("Handling commands message...", { chatId: chat.id, messageId });
-  const messageText = message.text || message.caption;
-  const messageEntities = message.entities || message.caption_entities;
-  const commandEntity = messageEntities.find((entity) => entity.type === "bot_command");
-  const fullCommandText = messageText.substring(commandEntity.offset, commandEntity.offset + commandEntity.length);
-  bot.setBotCommands(chat.id, from?.id);
-  const commandName = fullCommandText.slice(1).split("@")[0].trim();
-  const cleanText = messageText.replace(fullCommandText, "").trim();
-  const targetCommand = BotCommands.find((cmd) => cmd.name === commandName);
-  if (targetCommand) {
-    await targetCommand.action({
-      chatId: chat.id,
-      userId: from?.id,
-      messageId,
-      cleanText,
-      message
-    });
-  }
 };
 const downloadFileAsArrayBuffer = async (url) => {
   try {
@@ -4044,73 +3986,95 @@ const handleFile = async (message) => {
   }
   return;
 };
-const containsFile = (message) => {
-  return message ? message.document || message.photo || message.video ? true : false : false;
-};
-const extractMessageParts = async (message, botName) => {
-  const parts = [];
-  let messageText = message.text || message.caption || "";
-  messageText = messageText.replace(`@${botName}`, "").trim();
-  if (containsFile(message)) {
-    const fileData = await handleFile(message);
-    if (fileData) {
-      parts.push({ inlineData: fileData });
-    }
-    if (!messageText) {
-      if (message.document) messageText = "分析这个文件";
-      else if (message.photo) messageText = "分析这张图片";
-      else if (message.video) messageText = "分析这个视频";
-    }
-  }
-  parts.push({ text: messageText ? messageText : "你好！" });
-  return parts;
-};
 class MentionHandler {
-  async handleRateLimiting(message, adminId) {
-    const { message_id: userMessageId, from, chat } = message;
-    const checkResult = await rateLimiterCheck(chat.id);
-    if (!checkResult.canProceed && from?.id !== adminId) {
-      Log.info(`Rate limit exceeded for chat ${chat.id}. Retry after ${checkResult.retryAfterSeconds} seconds.`);
-      const rateLimitResult = await bot.sendMessage(chat.id, `超出速率限制，请等待 ${checkResult.retryAfterSeconds} 秒后重试。`, {
-        replyToMessageId: userMessageId
+  modelName;
+  botName;
+  adminId;
+  message;
+  chatId;
+  userId;
+  userMessageId;
+  replyToMessage;
+  constructor(message) {
+    const { modelName, botName, adminId } = config.load();
+    const { message_id, chat, from, reply_to_message } = message;
+    this.modelName = modelName;
+    this.botName = botName;
+    this.adminId = adminId;
+    this.message = message;
+    this.chatId = chat.id;
+    this.userId = from?.id;
+    this.userMessageId = message_id;
+    this.replyToMessage = reply_to_message;
+  }
+  isContainsFile(message) {
+    return message ? message.document || message.photo || message.video ? true : false : false;
+  }
+  async extractMessageParts(message) {
+    const parts = [];
+    let messageText = message.text || message.caption || "";
+    messageText = messageText.replace(`@${this.botName}`, "").replace(":ask", "").trim();
+    if (messageText.includes("🤖 模型：") || messageText.includes("✨ 本次任务")) {
+      messageText = messageText.replace(/^🤖 模型：.*?\n+/g, "").replace(/✨ 本次任务[\s\S]*$/m, "").trim();
+    }
+    if (this.isContainsFile(message)) {
+      const fileData = await handleFile(message);
+      if (fileData) {
+        parts.push({ inlineData: fileData });
+      }
+      if (!messageText) {
+        if (message.document) messageText = "分析这个文件";
+        else if (message.photo) messageText = "分析这张图片";
+        else if (message.video) messageText = "分析这个视频";
+      }
+    }
+    parts.push({ text: messageText || "你好" });
+    return parts;
+  }
+  async handleRateLimiting() {
+    const checkResult = await rateLimiterCheck(this.chatId);
+    if (!checkResult.canProceed && this.userId !== this.adminId) {
+      Log.info(`Rate limit exceeded for chat ${this.chatId}. Retry after ${checkResult.retryAfterSeconds} seconds.`);
+      const rateLimitResult = await bot.sendMessage(this.chatId, `超出速率限制，请等待 ${checkResult.retryAfterSeconds} 秒后重试。`, {
+        replyToMessageId: this.userMessageId
       });
       if (rateLimitResult.ok) {
-        scheduleDeletion({ chat_id: chat.id, message_id: rateLimitResult.messageId }, checkResult.retryAfterSeconds * 1e3);
+        scheduleDeletion({ chat_id: this.chatId, message_id: rateLimitResult.messageId }, checkResult.retryAfterSeconds * 1e3);
       }
       return true;
     }
     return false;
   }
-  async sendFileUploadMessage(message, replyToMessage, chatId, userMessageId) {
-    if (containsFile(message) || containsFile(replyToMessage)) {
-      const uploadingResult = await bot.sendMessage(chatId, "📄 File uploading...", {
-        replyToMessageId: userMessageId
+  async sendFileUploadMessage() {
+    if (this.isContainsFile(this.message) || this.isContainsFile(this.replyToMessage)) {
+      const uploadingResult = await bot.sendMessage(this.chatId, "📄 File uploading...", {
+        replyToMessageId: this.userMessageId
       });
       return uploadingResult.ok ? uploadingResult.messageId : null;
     }
     return null;
   }
-  async buildCompleteContents(chatId, fromUserId, currentMessage, botName) {
-    const historyChatContents = await contexts.get(chatId, fromUserId);
+  async buildCompleteContents() {
+    const historyChatContents = await contexts.get(this.chatId, this.userId);
     const completeContents = [...historyChatContents];
-    let currentMessageCopy = { ...currentMessage };
-    if (currentMessage.reply_to_message) {
-      if (currentMessage.quote?.text) {
-        const quotedContents = `Quoted: "${currentMessage.quote.text}"
+    const currentMessageCopy = { ...this.message };
+    if (this.replyToMessage) {
+      if (this.message.quote?.text) {
+        const quotedContents = `Quoted: "${this.message.quote.text}"
 
-${currentMessage.text || currentMessage.caption}`;
-        currentMessageCopy = { ...currentMessage, text: quotedContents };
+${this.message.text || this.message.caption}`;
+        currentMessageCopy.text = quotedContents;
       }
-      const replyToParts = await extractMessageParts(currentMessage.reply_to_message, botName);
+      const replyToParts = await this.extractMessageParts(this.replyToMessage);
       if (replyToParts.length > 0) {
-        const replyRole = currentMessage.reply_to_message.from?.username === botName ? "model" : "user";
+        const replyRole = this.replyToMessage.from?.username === this.botName ? "model" : "user";
         completeContents.push({
           role: replyRole,
           parts: replyToParts
         });
       }
     }
-    const currentParts = await extractMessageParts(currentMessageCopy, botName);
+    const currentParts = await this.extractMessageParts(currentMessageCopy);
     if (currentParts.length > 0) {
       completeContents.push({
         role: "user",
@@ -4122,9 +4086,9 @@ ${currentMessage.text || currentMessage.caption}`;
     }
     return completeContents;
   }
-  async sendThinkingMessage(chatId, userMessageId) {
-    const thinkingResult = await bot.sendMessage(chatId, "✨ Thinking...", {
-      replyToMessageId: userMessageId
+  async sendThinkingMessage() {
+    const thinkingResult = await bot.sendMessage(this.chatId, "✨ Thinking...", {
+      replyToMessageId: this.userMessageId
     });
     if (!thinkingResult.ok) {
       Log.error("Failed to send thinking message.");
@@ -4132,7 +4096,7 @@ ${currentMessage.text || currentMessage.caption}`;
     }
     return thinkingResult.messageId;
   }
-  async processGeminiResponse(geminiResponse, chatId, userMessageId, thinkMessageId, modelName, fromUserId, completeContentsBeforeCall) {
+  async processGeminiResponse(geminiResponse, thinkMessageId, completeContentsBeforeCall) {
     let hasDisplayedThoughts = false;
     const {
       response,
@@ -4142,6 +4106,7 @@ ${currentMessage.text || currentMessage.caption}`;
       usageToolCount,
       totalDurationSecond,
       hasToolThoughts,
+      mergeThinkingTexts,
       emptyReplyRetryCount,
       errorRetryCount
     } = geminiResponse;
@@ -4149,43 +4114,44 @@ ${currentMessage.text || currentMessage.caption}`;
     const resThoughtTexts = resThoughtParts?.map((part) => part.text).join("").trim();
     if (resThoughtTexts) {
       hasDisplayedThoughts = true;
+      const finalThinkingText = mergeThinkingTexts + resThoughtTexts;
       const displayThoughtText = `<b>Thoughts</b>:
 
-<blockquote expandable>${escaper.html(shortenString(resThoughtTexts))}</blockquote>`;
+<blockquote expandable>${escaper.html(shortenString(finalThinkingText))}</blockquote>`;
       const replyMarkup = {
-        inline_keyboard: makeInlineKeyboard(fromUserId)
+        inline_keyboard: makeInlineKeyboard(this.userId)
       };
-      await bot.editMessageText(chatId, thinkMessageId, displayThoughtText, { parseMode: "HTML", replyMarkup });
+      await bot.editMessageText(this.chatId, thinkMessageId, displayThoughtText, { parseMode: "HTML", replyMarkup });
     }
     if (!hasToolThoughts && !hasDisplayedThoughts) {
-      await bot.deleteMessage(chatId, thinkMessageId);
+      await bot.deleteMessage(this.chatId, thinkMessageId);
     } else {
-      scheduleDeletion({ chat_id: chatId, message_id: thinkMessageId }, 30 * 6e4);
+      scheduleDeletion({ chat_id: this.chatId, message_id: thinkMessageId }, 60 * 6e4);
     }
     const resTextParts = response.parts?.filter((part) => part.text && !part.thought);
     const resTexts = resTextParts?.map((part) => part.text).join("").trim() || "";
     if (!resTexts) {
       const replyText = "Gemini API 未返回有效文本回复：模型可能只生成了工具调用或思考内容。";
       const replyMarkup = {
-        inline_keyboard: makeInlineKeyboard(fromUserId)
+        inline_keyboard: makeInlineKeyboard(this.userId)
       };
-      const replyResult = await bot.sendMessage(chatId, replyText, {
-        replyToMessageId: userMessageId,
+      const replyResult = await bot.sendMessage(this.chatId, replyText, {
+        replyToMessageId: this.userMessageId,
         replyMarkup
       });
       if (replyResult.ok) {
-        scheduleDeletion({ chat_id: chatId, message_id: replyResult.messageId }, 3 * 60 * 1e3);
+        scheduleDeletion({ chat_id: this.chatId, message_id: replyResult.messageId }, 3 * 60 * 1e3);
       }
-      return hasDisplayedThoughts;
+      return;
     }
-    const fullText = `🤖 模型：\`${modelName}\`
+    const fullText = `🤖 模型：\`${this.modelName}\`
 
 ${resTexts}
 
-✨ 本次任务成功调用 Gemini API ${apiCallSuccessCount} 次，${totalRetryCount} 次重试（${emptyReplyRetryCount} 次无效回复，${errorRetryCount} 次客户端错误），共使用 ${usageToolCount} 个工具，耗时 ${totalDurationSecond} 秒，消耗 Token：${totalUsageToken}
+✨ API 调用 ${apiCallSuccessCount} 次，重试 ${totalRetryCount} 次 (无效 ${emptyReplyRetryCount}, 错误 ${errorRetryCount})。使用工具 ${usageToolCount} 次，耗时 ${totalDurationSecond} 秒，消耗 ${totalUsageToken} Token。
 
 ⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。`;
-    const finalReplyResult = await sendFormattedMessage(chatId, fullText, userMessageId, fromUserId);
+    const finalReplyResult = await sendFormattedMessage(this.chatId, fullText, this.userMessageId, this.userId);
     if (!finalReplyResult.ok) {
       throw finalReplyResult.error;
     }
@@ -4194,75 +4160,81 @@ ${resTexts}
         role: "model",
         parts: response.parts
       };
-      await contexts.update(chatId, fromUserId, [
+      await contexts.update(this.chatId, this.userId, [
         ...completeContentsBeforeCall,
         botResponseContent
       ]);
     }
-    return hasDisplayedThoughts;
   }
-  async handleMention(message) {
-    const { modelName, botName, adminId } = config.load();
-    const { message_id: userMessageId, from, chat, reply_to_message } = message;
+  async handleMention() {
     Log.info("Handling mention message.", {
-      chatId: chat.id,
-      messageId: userMessageId
+      chatId: this.chatId,
+      messageId: this.userMessageId
     });
-    if (await this.handleRateLimiting(message, adminId)) {
+    if (await this.handleRateLimiting()) {
       return;
     }
     let fileUploadMessageId = null;
     let thinkMessageId = null;
     let completeContents = [];
-    let hasResThought = false;
     try {
-      fileUploadMessageId = await this.sendFileUploadMessage(message, reply_to_message, chat.id, userMessageId);
-      completeContents = await this.buildCompleteContents(chat.id, from?.id, message, botName);
+      fileUploadMessageId = await this.sendFileUploadMessage();
+      completeContents = await this.buildCompleteContents();
       if (fileUploadMessageId) {
         await sleep(3e3);
-        await bot.deleteMessage(chat.id, fileUploadMessageId);
+        await bot.deleteMessage(this.chatId, fileUploadMessageId);
         fileUploadMessageId = null;
       }
-      thinkMessageId = await this.sendThinkingMessage(chat.id, userMessageId);
-      const geminiResponse = await genai.generateContent(completeContents, {
-        chatId: chat.id,
-        userId: from?.id,
-        userMessageId,
+      thinkMessageId = await this.sendThinkingMessage();
+      const ai = new GeminiApi({
+        chatId: this.chatId,
+        userId: this.userId,
+        userMessageId: this.userMessageId,
         thinkMessageId
       });
-      hasResThought = await this.processGeminiResponse(
-        geminiResponse,
-        chat.id,
-        userMessageId,
-        thinkMessageId,
-        modelName,
-        from?.id,
-        completeContents
-      );
+      const geminiResponse = await ai.generateContent(completeContents);
+      await this.processGeminiResponse(geminiResponse, thinkMessageId, completeContents);
     } catch (apiError) {
       Log.error("Error during Gemini API call or response processing.", {
         err: apiError,
-        chatId: chat.id,
-        messageId: userMessageId
+        chatId: this.chatId,
+        messageId: this.userMessageId
       });
       if (fileUploadMessageId) {
-        await bot.deleteMessage(chat.id, fileUploadMessageId);
+        await bot.deleteMessage(this.chatId, fileUploadMessageId);
       }
       if (thinkMessageId) {
         const err = apiError instanceof GeminiError ? apiError : void 0;
-        if (!err?.hasToolThoughts && !hasResThought) {
-          await bot.deleteMessage(chat.id, thinkMessageId);
+        if (!err?.hasToolThoughts) {
+          await bot.deleteMessage(this.chatId, thinkMessageId);
         } else {
-          scheduleDeletion({ chat_id: chat.id, message_id: thinkMessageId }, 30 * 6e4);
+          scheduleDeletion({ chat_id: this.chatId, message_id: thinkMessageId }, 60 * 6e4);
         }
       }
       throw apiError;
     }
   }
 }
-const mention = new MentionHandler();
-const handleMention = async (message) => {
-  return await mention.handleMention(message);
+const handleCommand = async (message) => {
+  const { message_id: messageId, from, chat } = message;
+  Log.info("Handling commands message...", { chatId: chat.id, messageId });
+  const messageText = message.text || message.caption;
+  const messageEntities = message.entities || message.caption_entities;
+  const commandEntity = messageEntities.find((entity) => entity.type === "bot_command");
+  const fullCommandText = messageText.substring(commandEntity.offset, commandEntity.offset + commandEntity.length);
+  bot.setBotCommands(chat.id, from?.id);
+  const commandName = fullCommandText.slice(1).split("@")[0].trim();
+  const cleanText = messageText.replace(fullCommandText, "").trim();
+  const targetCommand = BotCommands.find((cmd) => cmd.name === commandName);
+  if (targetCommand) {
+    await targetCommand.action({
+      chatId: chat.id,
+      userId: from?.id,
+      messageId,
+      cleanText,
+      message
+    });
+  }
 };
 const POLLING_TIMEOUT_MS = 3 * 60 * 1e3;
 const POLLING_INTERVAL_MS = 5 * 1e3;
@@ -4330,7 +4302,7 @@ const handleNewMember = async (message) => {
       const newMemberMention = `[${newMemberFullName}](tg://user?id=${newMember.id})`;
       const newMemberWelcome = await kv.read(durableResourceId, newMemberWelcomeTextKeyName, "text");
       if (!newMemberWelcome.success) return;
-      const replaceText = newMemberWelcome.data.replace("NEW_MEMBER_MENTION", newMemberMention).replace("CHAT_TITLE", chat.title).replace("BOT_NAME", botName).trim();
+      const replaceText = newMemberWelcome.data.replace("${NEW_MEMBER_MENTION}", newMemberMention).replace("${CHAT_TITLE}", chat.title).replace("${BOT_NAME}", botName).trim();
       Log.info(`向已验证的新成员 ${newMemberFullName}(${newMember.id}) 发送欢迎消息。`, { chatId: chat.id, newMemberId: newMember.id });
       const replyMarkup = {
         inline_keyboard: [
@@ -4362,17 +4334,20 @@ const handleNewMember = async (message) => {
 };
 const handleNormal = async (message) => {
   const { botName } = config.load();
+  const { message_id: messageId, from, chat, reply_to_message } = message;
   if (message.text?.startsWith(":") || message.caption?.startsWith(":")) {
-    const { message_id: messageId, text, caption, from, chat: chat2 } = message;
-    const messageText = text || caption || "";
+    const messageText = message.text || message.caption || "";
     const [commandAlias, ...cleanText] = messageText.replace(":", "").split(" ");
+    if (commandAlias === "ask") {
+      return await handleMention(message);
+    }
     const commandAction = BotCommands.find(
       (command) => command.name === commandAlias || command.name === `script_${commandAlias}` || command.name === `gen_${commandAlias}`
     );
     if (commandAction) {
-      Log.info("Handling commands message...", { chatId: chat2.id, messageId });
+      Log.info("Handling commands message...", { chatId: chat.id, messageId });
       return await commandAction.action({
-        chatId: chat2.id,
+        chatId: chat.id,
         userId: from?.id,
         messageId,
         cleanText: cleanText.join(" ").trim(),
@@ -4380,18 +4355,14 @@ const handleNormal = async (message) => {
       });
     }
   }
-  if (!message.reply_to_message) return;
-  const { chat, message_id, reply_to_message } = message;
+  if (!reply_to_message) return;
   if (!reply_to_message.from || reply_to_message.from.username !== botName) return;
-  Log.info("Handling normal message.", { chatId: chat.id, messageId: message_id });
-  let cleanMessage = { ...message };
-  if (reply_to_message.text) {
-    if (reply_to_message.text.includes("🤖 模型：") || reply_to_message.text.includes("✨ 本次任务")) {
-      const cleanMessageTexts = reply_to_message.text.replace(/^🤖 模型：.*?\n+/g, "").replace(/✨ 本次任务[\s\S]*$/m, "");
-      cleanMessage = { ...message, reply_to_message: { ...reply_to_message, text: cleanMessageTexts } };
-    }
-  }
-  return await handleMention(cleanMessage);
+  Log.info("Handling normal message.", { chatId: chat.id, messageId });
+  return await handleMention(message);
+};
+const handleMention = async (message) => {
+  const mention = new MentionHandler(message);
+  return await mention.handleMention();
 };
 const handleCallbackQuery = async (callbackQuery) => {
   if (!callbackQuery.message || !callbackQuery.data) {
@@ -4402,6 +4373,7 @@ const handleCallbackQuery = async (callbackQuery) => {
   const { id: queryId, from, message, data } = callbackQuery;
   const { chat, message_id: messageId, date, reply_to_message, reply_markup } = message;
   Log.info("Handling callback query", { chatId: chat.id, messageId, userId: from.id, data });
+  const newMessage = { ...message, message_id: reply_to_message?.message_id || messageId, from };
   switch (true) {
     case data === "PLACEHOLDER": {
       bot.answerCallbackQuery(queryId);
@@ -4415,7 +4387,7 @@ const handleCallbackQuery = async (callbackQuery) => {
       }
       bot.answerCallbackQuery(queryId, { callbackText: "询问请求..." });
       const newMessageText = "简单说明下你能做什么？";
-      const newMessage = { ...message, message_id: reply_to_message?.message_id || messageId, from, text: newMessageText };
+      newMessage.text = newMessageText;
       delete newMessage.reply_to_message;
       await handleMention(newMessage);
       break;
@@ -4428,8 +4400,8 @@ const handleCallbackQuery = async (callbackQuery) => {
       }
       if (action === "demo") {
         bot.answerCallbackQuery(queryId, { callbackText: "开始演示工具..." });
-        const newText = `请简单演示下 ${tool} 工具`;
-        const newMessage = { ...message, message_id: reply_to_message?.message_id || messageId, from, text: newText };
+        const newMessageText = `请简单演示下 ${tool} 工具`;
+        newMessage.text = newMessageText;
         delete newMessage.reply_to_message;
         await handleMention(newMessage);
       }
@@ -4577,7 +4549,7 @@ const simplifyMessage = (message) => {
   if (!message) {
     return void 0;
   }
-  const truncate = (text) => text ? `${text.slice(0, 20)}...` : void 0;
+  const truncate = (text) => text ? text.length > 20 ? `${text.slice(0, 20)}...` : text : void 0;
   const filterEntity = (entities) => entities ? entities?.filter((e) => ["text_mention", "mention", "bot_command"].includes(e.type)) : void 0;
   const simplified = { ...message };
   if (simplified.text) {

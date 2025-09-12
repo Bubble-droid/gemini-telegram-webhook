@@ -349,8 +349,8 @@ const ScriptCommands: BotCommandAction[] = [
       try {
         await scriptManager.installForUser(userId, fileUrl, scriptTag);
 
-        const successMessage = `✅ 脚本安装成功！\n<b>标签:</b> <code>${cleanText}</code>`;
-        const sentMsg = await bot.sendMessage(chatId, successMessage, {
+        const successMessage = `✅ 脚本安装成功！\n**标签:** \`${cleanText}\``;
+        const sentMsg = await bot.sendMessage(chatId, toHtml(successMessage), {
           replyToMessageId: messageId,
           parseMode: 'HTML',
         });
@@ -384,8 +384,8 @@ const ScriptCommands: BotCommandAction[] = [
 
       try {
         await scriptManager.uninstallForUser(userId, scriptTag);
-        const successMessage = `🗑️ 脚本删除成功！\n<b>标签:</b> <code>${cleanText}</code>`;
-        const sentMsg = await bot.sendMessage(chatId, successMessage, {
+        const successMessage = `🗑️ 脚本删除成功！\n**标签:** \`${cleanText}\``;
+        const sentMsg = await bot.sendMessage(chatId, toHtml(successMessage), {
           replyToMessageId: messageId,
           parseMode: 'HTML',
         });
@@ -418,11 +418,11 @@ const ScriptCommands: BotCommandAction[] = [
           replyText = '你还没有安装任何脚本。';
         } else {
           // 从完整标签中移除用户ID前缀，只显示用户关心的部分
-          const scriptList = scripts.map((tag) => `  • <code>${tag.replace(`script_${userId}_`, '')}</code>`).join('\n');
+          const scriptList = scripts.map((tag) => `  • \`${tag.replace(`script_${userId}_`, '')}\``).join('\n');
           replyText = `你已安装以下脚本：\n${scriptList}`;
         }
 
-        const sentMsg = await bot.sendMessage(chatId, replyText, {
+        const sentMsg = await bot.sendMessage(chatId, toHtml(replyText), {
           replyToMessageId: messageId,
           parseMode: 'HTML',
         });
@@ -461,12 +461,20 @@ const ScriptCommands: BotCommandAction[] = [
 
       let replyText: string;
       if (result.success) {
-        replyText = `✅ <b>脚本执行成功</b> (耗时: ${result.duration > 1000 ? (result.duration / 1000).toFixed(2) + 's' : result.duration.toFixed(2) + 'ms'})\n\n<pre><code class="language-markdown">${result.result}</code></pre>`;
+        replyText = `✅ **脚本执行成功** (耗时: ${result.duration > 1000 ? (result.duration / 1000).toFixed(2) + 's' : result.duration.toFixed(2) + 'ms'})
+
+\`\`\`markdown
+${result.result}
+\`\`\``;
       } else {
-        replyText = `❌ <b>脚本执行失败</b> (耗时:  ${result.duration > 1000 ? (result.duration / 1000).toFixed(2) + 's' : result.duration.toFixed(2) + 'ms'})\n\n<pre><code class="language-markdown">${result.error}</code></pre>`;
+        replyText = `❌ **脚本执行失败** (耗时:  ${result.duration > 1000 ? (result.duration / 1000).toFixed(2) + 's' : result.duration.toFixed(2) + 'ms'})
+
+\`\`\`markdown
+${result.error}
+\`\`\``;
       }
 
-      const sentMsg = await bot.sendMessage(chatId, replyText, {
+      const sentMsg = await bot.sendMessage(chatId, toHtml(replyText), {
         replyToMessageId: messageId,
         parseMode: 'HTML',
       });

@@ -3,7 +3,7 @@
 import { Log, config } from '@/services';
 import type { Message } from '@/types/telegram';
 import { BotCommands } from '@/configs';
-import type { MentionHandler } from '@/handlers/message';
+import { handleMention } from '@/handlers/message';
 
 /**
  * @function handleNormal
@@ -13,14 +13,15 @@ import type { MentionHandler } from '@/handlers/message';
  * @param {Message} message - Telegram 消息对象。
  * @returns {Promise<void>}
  */
-const handleNormal = async (message: Message, mention: MentionHandler): Promise<void> => {
+const handleNormal = async (message: Message): Promise<void> => {
   const { botName } = config.load();
+  const { message_id: messageId, from, chat, reply_to_message } = message;
+  Log.info('Handling normal message.', { chatId: chat.id, messageId });
   if (message.text?.startsWith(':') || message.caption?.startsWith(':')) {
-    const { message_id: messageId, text, caption, from, chat } = message;
-    const messageText = text || caption || '';
+    const messageText = message.text || message.caption || '';
     const [commandAlias, ...cleanText] = messageText.replace(':', '').split(' ');
     if (commandAlias === 'ask') {
-      return await mention.handleMention(message);
+      return await handleMention(message);
     }
     const commandAction = BotCommands.find(
       (command) => command.name === commandAlias || command.name === `script_${commandAlias}` || command.name === `gen_${commandAlias}`,
@@ -36,11 +37,9 @@ const handleNormal = async (message: Message, mention: MentionHandler): Promise<
       });
     }
   }
-  if (!message.reply_to_message) return;
-  const { chat, message_id, reply_to_message } = message;
+  if (!reply_to_message) return;
   if (!reply_to_message.from || reply_to_message.from.username !== botName) return;
-  Log.info('Handling normal message.', { chatId: chat.id, messageId: message_id });
-  return await mention.handleMention(message);
+  return await handleMention(message);
 };
 
 export { handleNormal };

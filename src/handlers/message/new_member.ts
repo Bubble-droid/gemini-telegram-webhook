@@ -90,7 +90,7 @@ const pollChatMemberStatus = async (
  * @param {Message} message - Telegram Message 对象。
  * @returns {Promise<void>}
  */
-const handleNewMember = async (message: Message): Promise<void> => {
+export const handleNewMember = async (message: Message): Promise<void> => {
   const { botName, durableResourceId, newMemberWelcomeTextKeyName } = config.load();
   const { message_id, chat, new_chat_members } = message;
   if (!new_chat_members || new_chat_members.length === 0) return;
@@ -151,5 +151,3 @@ const handleNewMember = async (message: Message): Promise<void> => {
     }
   }
 };
-
-export { handleNewMember };

@@ -6,147 +6,184 @@ import { BotCommands } from '@/configs';
 import { kv } from '@/utils';
 import { handleMention } from '@/handlers/message';
 
-export const handleCallbackQuery = async (callbackQuery: CallbackQuery): Promise<void> => {
-  if (!callbackQuery.message || !callbackQuery.data) {
-    Log.info('Invalid callback query', { queryId: callbackQuery.id });
-    return;
+export class CallbackQueryHandler {
+  private message: Message;
+  private data: string;
+  private queryId: string;
+  private userId: number;
+  private chatId: number;
+  private messageId: number;
+  private date: number;
+  private replyMarkup: InlineKeyboardButton[][] | undefined;
+
+  constructor(callbackQuery: CallbackQuery) {
+    if (!callbackQuery.message || !callbackQuery.data) {
+      Log.info('Invalid callback query', { queryId: callbackQuery.id });
+      throw new Error('Invalid callback query');
+    }
+
+    const { id: queryId, from, message, data } = callbackQuery;
+    const { chat, message_id: messageId, date, reply_to_message, reply_markup } = message;
+
+    this.queryId = queryId;
+    this.userId = from.id;
+    this.chatId = chat.id;
+    this.messageId = reply_to_message?.message_id || messageId;
+    this.date = date;
+    this.data = data;
+    this.replyMarkup = reply_markup?.inline_keyboard;
+
+    this.message = { ...message, message_id: this.messageId, from };
+
+    Log.info('Handling callback query', { chatId: this.chatId, messageId: this.messageId, userId: this.userId, data: this.data });
   }
-  const { durableResourceId, rateLimitId } = config.load();
-  const { id: queryId, from, message, data } = callbackQuery;
-  const { chat, message_id: messageId, date, reply_to_message, reply_markup } = message;
 
-  Log.info('Handling callback query', { chatId: chat.id, messageId, userId: from.id, data });
-
-  const newMessage: Message = { ...message, message_id: reply_to_message?.message_id || messageId, from };
-
-  switch (true) {
-    case data === 'PLACEHOLDER': {
-      bot.answerCallbackQuery(queryId);
-      break;
+  private async _handleMention(): Promise<void> {
+    const [, , allowUserId] = this.data.split('_');
+    if (this.userId !== Number(allowUserId)) {
+      bot.answerCallbackQuery(this.queryId, { callbackText: '你没有权限进行此操作' });
+      return;
     }
-    case data.startsWith('mention_'): {
-      const [, , allowUserId] = data.split('_');
-      if (from.id !== Number(allowUserId)) {
-        bot.answerCallbackQuery(queryId, { callbackText: '你没有权限进行此操作' });
-        return;
-      }
-      bot.answerCallbackQuery(queryId, { callbackText: '询问请求...' });
-      const newMessageText: string = '简单说明下你能做什么？';
-      newMessage.text = newMessageText;
-      delete newMessage.reply_to_message;
-      await handleMention(newMessage);
-      break;
+    bot.answerCallbackQuery(this.queryId, { callbackText: '询问请求...' });
+    const newMessageText: string = '简单说明下你能做什么？';
+    this.message.text = newMessageText;
+    delete this.message.reply_to_message;
+    await handleMention(this.message);
+  }
+
+  private async _handleTool(): Promise<void> {
+    const [, action, tool, allowUserId] = this.data.split('_');
+    if (this.userId !== Number(allowUserId)) {
+      bot.answerCallbackQuery(this.queryId, { callbackText: '你没有权限进行此操作' });
+      return;
     }
-    case data.startsWith('tool_'): {
-      const [, action, tool, allowUserId] = data.split('_');
-      if (from.id !== Number(allowUserId)) {
-        bot.answerCallbackQuery(queryId, { callbackText: '你没有权限进行此操作' });
-        return;
-      }
-      if (action === 'demo') {
-        bot.answerCallbackQuery(queryId, { callbackText: '开始演示工具...' });
-        const newMessageText = `请简单演示下 ${tool} 工具`;
-        newMessage.text = newMessageText;
-        delete newMessage.reply_to_message;
-        await handleMention(newMessage);
-      }
-      break;
+    if (action === 'demo') {
+      bot.answerCallbackQuery(this.queryId, { callbackText: '开始演示工具...' });
+      const newMessageText = `请简单演示下 ${tool} 工具`;
+      this.message.text = newMessageText;
+      delete this.message.reply_to_message;
+      await handleMention(this.message);
     }
-    case data.startsWith('cmd_'): {
-      const [, command, allowUserId] = data.split('_');
-      if (from.id !== Number(allowUserId)) {
-        bot.answerCallbackQuery(queryId, { callbackText: '你没有权限进行此操作' });
-        return;
-      }
-      bot.answerCallbackQuery(queryId, { callbackText: '开始执行...' });
-      const targetCommand = BotCommands.find((cmd) => cmd.name === command);
-      if (targetCommand) {
-        await targetCommand.action({
-          chatId: chat.id,
-          messageId,
-          userId: Number(allowUserId),
-          isCallback: true,
-        });
-      }
-      break;
+  }
+
+  private async _handleCommand(): Promise<void> {
+    const [, command, allowUserId] = this.data.split('_');
+    if (this.userId !== Number(allowUserId)) {
+      bot.answerCallbackQuery(this.queryId, { callbackText: '你没有权限进行此操作' });
+      return;
     }
-    case data.startsWith('reaction_'): {
-      const reaction = data.split('_')[1];
-      const keyName = `reacted_${chat.id}_${messageId}`;
-      const readResult = await kv.read<number[]>(rateLimitId, keyName, 'json');
+    bot.answerCallbackQuery(this.queryId, { callbackText: '开始执行...' });
+    const targetCommand = BotCommands.find((cmd) => cmd.name === command);
+    if (targetCommand) {
+      await targetCommand.action({
+        chatId: this.chatId,
+        messageId: this.messageId,
+        userId: Number(allowUserId),
+        isCallback: true,
+      });
+    }
+  }
 
-      const reactedUsers = readResult.success ? [...readResult.data] : [];
+  private async _handleReaction(): Promise<void> {
+    const { rateLimitId, durableResourceId } = config.load();
+    const reaction = this.data.split('_')[1];
+    const keyName = `reacted_${this.chatId}_${this.messageId}`;
+    const readResult = await kv.read<number[]>(rateLimitId, keyName, 'json');
 
-      if (reactedUsers.includes(from.id)) {
-        // Notify the user that they have already reacted and stop.
-        bot.answerCallbackQuery(queryId, {
-          callbackText: '你已做出过反应',
-        });
-        return;
-      }
+    const reactedUsers = readResult.success ? [...readResult.data] : [];
 
-      bot.answerCallbackQuery(queryId, { callbackText: '反应成功' });
-      // Add the user to the reacted list and save it for 48 hours.
-      reactedUsers.push(from.id);
-      await kv.write(rateLimitId, keyName, JSON.stringify(reactedUsers), { expiration_ttl: 48 * 60 * 60 });
+    if (reactedUsers.includes(this.userId)) {
+      bot.answerCallbackQuery(this.queryId, {
+        callbackText: '你已做出过反应',
+      });
+      return;
+    }
 
-      // Create a deep copy of the keyboard to modify.
-      const newInlineKeyboard: InlineKeyboardButton[][] = JSON.parse(JSON.stringify(reply_markup?.inline_keyboard));
+    bot.answerCallbackQuery(this.queryId, { callbackText: '反应成功' });
+    reactedUsers.push(this.userId);
+    await kv.write(rateLimitId, keyName, JSON.stringify(reactedUsers), { expiration_ttl: 48 * 60 * 60 });
 
-      let keyboardUpdated = false;
-      // Iterate over the keyboard to find and update the correct button.
-      for (const row of newInlineKeyboard) {
-        for (const button of row) {
-          if (button.callback_data === `reaction_${reaction}`) {
-            const currentText = button.text;
-            const parts = currentText.split(' ');
-            const emoji = parts[0];
-            const currentCount = parseInt(parts[1] || '0', 10);
+    const newInlineKeyboard: InlineKeyboardButton[][] = JSON.parse(JSON.stringify(this.replyMarkup));
 
-            if (!isNaN(currentCount)) {
-              const newCount = currentCount + 1;
-              button.text = `${emoji} ${newCount}`;
-              keyboardUpdated = true;
-              break; // Button found and updated, exit inner loop.
-            }
+    let keyboardUpdated = false;
+    for (const row of newInlineKeyboard) {
+      for (const button of row) {
+        if (button.callback_data === `reaction_${reaction}`) {
+          const currentText = button.text;
+          const parts = currentText.split(' ');
+          const emoji = parts[0];
+          const currentCount = parseInt(parts[1] || '0', 10);
+
+          if (!isNaN(currentCount)) {
+            const newCount = currentCount + 1;
+            button.text = `${emoji} ${newCount}`;
+            keyboardUpdated = true;
+            break;
           }
         }
-        if (keyboardUpdated) {
-          break; // Row containing the button found, exit outer loop.
-        }
       }
-
       if (keyboardUpdated) {
-        // If the keyboard was changed, edit the message to show the new keyboard.
-        await bot.editMessageReplyMarkup(chat.id, messageId, {
-          inline_keyboard: newInlineKeyboard,
-        });
+        break;
       }
-      const totalReactionsKeyName = `total_reactions_${chat.id}`;
-      const oldTotalReactions = await kv.read<{ like: number; dislike: number }>(durableResourceId, totalReactionsKeyName, 'json');
-      if (!oldTotalReactions.success) return;
-      const newTotalReactions = {
-        like: reaction === 'like' ? oldTotalReactions.data.like + 1 : oldTotalReactions.data.like,
-        dislike: reaction === 'dislike' ? oldTotalReactions.data.dislike + 1 : oldTotalReactions.data.dislike,
-      };
-      await kv.write(durableResourceId, totalReactionsKeyName, JSON.stringify(newTotalReactions));
-      break;
     }
-    case data.startsWith('delete_'): {
-      const [, content, allowUserId] = data.split('_');
-      if (from.id !== Number(allowUserId)) {
-        bot.answerCallbackQuery(queryId, { callbackText: '你没有权限进行此操作' });
+
+    if (keyboardUpdated) {
+      await bot.editMessageReplyMarkup(this.chatId, this.messageId, {
+        inline_keyboard: newInlineKeyboard,
+      });
+    }
+    const totalReactionsKeyName = `total_reactions_${this.chatId}`;
+    const oldTotalReactions = await kv.read<{ like: number; dislike: number }>(durableResourceId, totalReactionsKeyName, 'json');
+    if (!oldTotalReactions.success) return;
+    const newTotalReactions = {
+      like: reaction === 'like' ? oldTotalReactions.data.like + 1 : oldTotalReactions.data.like,
+      dislike: reaction === 'dislike' ? oldTotalReactions.data.dislike + 1 : oldTotalReactions.data.dislike,
+    };
+    await kv.write(durableResourceId, totalReactionsKeyName, JSON.stringify(newTotalReactions));
+  }
+
+  private async _handleDelete(): Promise<void> {
+    const [, content, allowUserId] = this.data.split('_');
+    if (this.userId !== Number(allowUserId)) {
+      bot.answerCallbackQuery(this.queryId, { callbackText: '你没有权限进行此操作' });
+      return;
+    }
+    if (content === 'message') {
+      if (Date.now() - this.date * 1000 <= 30 * 60 * 1000) {
+        bot.answerCallbackQuery(this.queryId, { callbackText: '消息锁定中，无法删除' });
         return;
       }
-      if (content === 'message') {
-        if (Date.now() - date * 1000 <= 30 * 60 * 1000) {
-          bot.answerCallbackQuery(queryId, { callbackText: '消息锁定中，无法删除' });
-          return;
-        }
-        bot.answerCallbackQuery(queryId, { callbackText: '删除成功' });
-        await bot.deleteMessage(chat.id, messageId);
-      }
-      break;
+      bot.answerCallbackQuery(this.queryId, { callbackText: '删除成功' });
+      await bot.deleteMessage(this.chatId, this.messageId);
     }
   }
-};
+
+  public async process(): Promise<void> {
+    switch (true) {
+      case this.data === 'PLACEHOLDER': {
+        bot.answerCallbackQuery(this.queryId);
+        break;
+      }
+      case this.data.startsWith('mention_'): {
+        await this._handleMention();
+        break;
+      }
+      case this.data.startsWith('tool_'): {
+        await this._handleTool();
+        break;
+      }
+      case this.data.startsWith('cmd_'): {
+        await this._handleCommand();
+        break;
+      }
+      case this.data.startsWith('reaction_'): {
+        await this._handleReaction();
+        break;
+      }
+      case this.data.startsWith('delete_'): {
+        await this._handleDelete();
+        break;
+      }
+    }
+  }
+}

@@ -155,7 +155,7 @@ export class GeminiApi {
         : context.metrics.totalUsageToken;
 
     Log.info(`Gemini API 响应: `, {
-      response: simpleGeminiApiResponse(response),
+      response: simplifyGeminiApiResponse(response),
     });
     return response;
   }
@@ -498,8 +498,8 @@ export const rotateGeminiApiKey = async (): Promise<string> => {
   return currentApiKey;
 };
 
-export const simpleGeminiApiResponse = (response: GenerateContentResponse): GenerateContentResponse => {
-  const simpleResponse = {
+export const simplifyGeminiApiResponse = (response: GenerateContentResponse): GenerateContentResponse => {
+  const simplifyResponse = {
     ...response,
     candidates: response.candidates?.map((candidate) => ({
       ...candidate,
@@ -520,5 +520,5 @@ export const simpleGeminiApiResponse = (response: GenerateContentResponse): Gene
       },
     })),
   };
-  return simpleResponse as GenerateContentResponse;
+  return simplifyResponse as GenerateContentResponse;
 };

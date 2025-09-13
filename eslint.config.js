@@ -9,7 +9,7 @@ import prettierConfig from 'eslint-config-prettier';
 import { defineConfig, globalIgnores } from 'eslint/config';
 
 export default defineConfig([
-  globalIgnores(['node_modules/*', 'dist/*', 'resources/script-example/*']),
+  globalIgnores(['node_modules/*', 'dist/*', 'script-example/*']),
   pluginJs.configs.recommended,
   ...tseslint.configs.recommended,
   {

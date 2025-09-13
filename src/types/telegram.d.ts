@@ -571,15 +571,15 @@ export type ApiMethod =
   | 'answerInlineQuery'
   | 'answerCallbackQuery';
 
-export interface ApiResponseSuccess<T> {
+interface SuccessResponse<T> {
   ok: true;
   result: T;
 }
 
-export interface ApiResponseError {
+interface ErrorResponse {
   ok: false;
   error_code: number;
   description: string;
 }
 
-export type ApiResponse<T> = ApiResponseSuccess<T> | ApiResponseError;
+export type ApiResponse<T> = SuccessResponse<T> | ErrorResponse;

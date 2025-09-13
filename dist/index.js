@@ -7,6 +7,7 @@ import "node:crypto";
 import * as lame from "@breezystack/lamejs";
 import Cloudflare from "cloudflare";
 import { VM } from "vm2";
+import * as path from "path";
 const LOGGER_LEVELS = ["trace", "debug", "info", "warn", "error", "fatal"];
 class BotConfig {
   DEFAULT_LISTEN_HOST = "127.0.0.1";
@@ -2591,7 +2592,7 @@ class GeminiApi {
     });
     context.metrics.totalUsageToken = response.usageMetadata?.totalTokenCount && !isNaN(response.usageMetadata.totalTokenCount) ? context.metrics.totalUsageToken + response.usageMetadata.totalTokenCount : context.metrics.totalUsageToken;
     Log.info(`Gemini API 响应: `, {
-      response: simpleGeminiApiResponse(response)
+      response: simplifyGeminiApiResponse(response)
     });
     return response;
   }
@@ -2844,8 +2845,8 @@ const rotateGeminiApiKey = async () => {
   Log.info(`当前使用的 API 密钥: ${currentApiKeyId}`);
   return currentApiKey;
 };
-const simpleGeminiApiResponse = (response) => {
-  const simpleResponse = {
+const simplifyGeminiApiResponse = (response) => {
+  const simplifyResponse = {
     ...response,
     candidates: response.candidates?.map((candidate) => ({
       ...candidate,
@@ -2866,7 +2867,7 @@ const simpleGeminiApiResponse = (response) => {
       }
     }))
   };
-  return simpleResponse;
+  return simplifyResponse;
 };
 let tslogInstance = null;
 const mapLoggerLevelToNumber = (levelStr) => {
@@ -3504,8 +3505,8 @@ const ToolExecutors = {
   },
   listDirContents: async (args) => {
     Log.info("执行工具: listDirContents, 参数:", { args });
-    const { owner, repo, path = "", branch = "main" } = args;
-    const cleanedPath = path.startsWith("/") ? path.substring(1) : path;
+    const { owner, repo, path: path2 = "", branch = "main" } = args;
+    const cleanedPath = path2.startsWith("/") ? path2.substring(1) : path2;
     const urlPath = `repos/${owner}/${repo}/contents/${cleanedPath}`;
     const queryParams = `ref=${branch}`;
     const result = await makeGitHubApiRequest({
@@ -3738,7 +3739,6 @@ const ToolExecutors = {
   generateImage: async (args) => {
     Log.info("执行工具: sendPhotoMessage，参数:", { args });
     const { chatId, userId, userMessageId, prompt } = args;
-    const newApiKey = await rotateGeminiApiKey();
     const modelName = "gemini-2.0-flash-preview-image-generation";
     const modelConfig = {
       responseModalities: ["IMAGE", "TEXT"]
@@ -3750,7 +3750,7 @@ const ToolExecutors = {
       }
     ];
     try {
-      const response = await callMultiModalModels(newApiKey, modelName, modelConfig, contents);
+      const response = await callMultiModalModels(modelName, modelConfig, contents);
       const resTexts = response.parts?.map((part) => part.text).join("") || "";
       const imageData = response.parts?.find((part) => part.inlineData && part.inlineData.data);
       const base64Data = imageData?.inlineData?.data;
@@ -3772,7 +3772,6 @@ const ToolExecutors = {
   generateSpeech: async (args) => {
     Log.info("执行工具: sendVoiceMessage，参数:", { args });
     const { chatId, userId, userMessageId, prompt } = args;
-    const newApiKey = await rotateGeminiApiKey();
     const modelName = "gemini-2.5-flash-preview-tts";
     const modelConfig = {
       responseModalities: ["AUDIO"],
@@ -3785,7 +3784,7 @@ const ToolExecutors = {
       }
     ];
     try {
-      const response = await callMultiModalModels(newApiKey, modelName, modelConfig, contents);
+      const response = await callMultiModalModels(modelName, modelConfig, contents);
       const audioData = response.parts?.find((part) => part.inlineData && part.inlineData.data);
       const base64Data = audioData?.inlineData?.data;
       const pcmAudioBuffer = Buffer.from(base64Data, "base64");
@@ -3807,8 +3806,9 @@ const ToolExecutors = {
     }
   }
 };
-const callMultiModalModels = async (apiKey, model, modelConfig, contents) => {
-  const ai = new GoogleGenAI({ apiKey });
+const callMultiModalModels = async (model, modelConfig, contents) => {
+  const newApiKey = await rotateGeminiApiKey();
+  const ai = new GoogleGenAI({ apiKey: newApiKey });
   const config2 = {
     ...modelConfig,
     safetySettings: GEMINI_SAFETY_SETTINGS
@@ -3817,13 +3817,58 @@ const callMultiModalModels = async (apiKey, model, modelConfig, contents) => {
   Log.info("当前发送的 contents:", { contents });
   const response = await ai.models.generateContent({ model, contents, config: config2 });
   Log.info(`Gemini API 响应: `, {
-    response: simpleGeminiApiResponse(response)
+    response: simplifyGeminiApiResponse(response)
   });
   const candidate = response.candidates?.[0];
   if (!candidate || !candidate.content || !candidate.content.parts) {
     throw new GeminiError("Gemini API 返回结果不包含有效的内容", "INVALID_RESPONSE");
   }
   return candidate.content;
+};
+const SUPPORTED_MIME_TYPES = [
+  "text/html",
+  "text/css",
+  "text/csv",
+  "text/plain",
+  "text/markdown",
+  "application/json",
+  "application/yaml",
+  "application/javascript",
+  "application/x-shellscript",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "video/webm",
+  "video/mpeg"
+];
+const FILE_EXTENSION_MIME_MAP = {
+  txt: "text/plain",
+  html: "text/html",
+  css: "text/css",
+  csv: "text/csv",
+  md: "text/markdown",
+  js: "application/javascript",
+  json: "application/json",
+  yaml: "application/yaml",
+  yml: "application/yaml",
+  sh: "application/x-shellscript",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mpeg: "video/mpeg"
+};
+const getTelegramFileUrl = async (fileId, botToken) => {
+  const result = await bot.getFile(fileId);
+  if (!result.ok) {
+    throw new AppError(`Failed to get file path for file_id: ${fileId}`, "TELEGRAM_API_ERROR");
+  }
+  return `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
 };
 const downloadFileAsArrayBuffer = async (url) => {
   try {
@@ -3850,62 +3895,11 @@ const downloadFileAsArrayBuffer = async (url) => {
     throw new AppError(errorMessage, "FILE_DOWNLOAD_ERROR");
   }
 };
-const handleImage = async (image) => {
-  const { botToken } = config.load();
-  const { file_id } = image[image.length - 1];
-  const result = await bot.getFile(file_id);
-  if (result.ok) {
-    const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
-    const imageArrayBuffer = await downloadFileAsArrayBuffer(fileUrl);
-    const base64ImageData = Buffer.from(imageArrayBuffer).toString("base64");
-    return { data: base64ImageData, mimeType: "image/jpeg" };
-  }
-};
-const SUPPORTED_MIME_TYPES = [
-  "text/html",
-  "text/css",
-  "text/csv",
-  "text/plain",
-  "text/markdown",
-  "text/javascript",
-  "text/x-javascript",
-  "application/json",
-  "application/yaml",
-  "application/javascript",
-  "application/x-javascript",
-  "application/x-shellscript",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-  "video/mp4",
-  "video/webm",
-  "video/mpeg"
-];
-const handleDocument = async (document) => {
-  const { botToken } = config.load();
-  const { file_id, mime_type } = document;
-  let universalMimeType = void 0;
-  if (!SUPPORTED_MIME_TYPES.includes(String(mime_type))) {
-    if (mime_type?.startsWith("text/")) {
-      universalMimeType = "text/plain";
-    } else if (mime_type?.startsWith("application/") && !isBinaryApplicationMime(mime_type, { defaultToBinary: true })) {
-      universalMimeType = "text/plain";
-    } else if (mime_type?.startsWith("image/")) {
-      universalMimeType = "image/jpeg";
-    } else if (mime_type?.startsWith("video/")) {
-      universalMimeType = "video/mp4";
-    } else {
-      throw new AppError(`不支持的文件类型: ${mime_type || "未知"}`, "FILE_TYPE_NOT_SUPPORTED");
-    }
-  }
-  const result = await bot.getFile(file_id);
-  if (result.ok) {
-    const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
-    const documentArrayBuffer = await downloadFileAsArrayBuffer(fileUrl);
-    const base64DocumentData = Buffer.from(documentArrayBuffer).toString("base64");
-    return { data: base64DocumentData, mimeType: universalMimeType ? universalMimeType : mime_type };
-  }
+const downloadAndEncodeFile = async (fileId, botToken, mimeType) => {
+  const fileUrl = await getTelegramFileUrl(fileId, botToken);
+  const arrayBuffer = await downloadFileAsArrayBuffer(fileUrl);
+  const base64Data = Buffer.from(arrayBuffer).toString("base64");
+  return { data: base64Data, mimeType };
 };
 const isBinaryApplicationMime = (mime, opts) => {
   const defaultToBinary = opts?.defaultToBinary ?? true;
@@ -3961,30 +3955,82 @@ const isBinaryApplicationMime = (mime, opts) => {
   if (subtype.startsWith("vnd.")) return true;
   return defaultToBinary;
 };
-const handleVideo = async (video) => {
-  const { botToken } = config.load();
-  const { file_id } = video;
-  const result = await bot.getFile(file_id);
-  if (result.ok) {
-    const fileUrl = `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
-    const videoArrayBuffer = await downloadFileAsArrayBuffer(fileUrl);
-    const base64VideoData = Buffer.from(videoArrayBuffer).toString("base64");
-    return { data: base64VideoData, mimeType: "video/mp4" };
+class FileHandler {
+  message;
+  botToken;
+  constructor(message) {
+    this.message = message;
+    this.botToken = config.load().botToken;
   }
+  async handleImage(photo) {
+    const { file_id } = photo[photo.length - 1];
+    return downloadAndEncodeFile(file_id, this.botToken, "image/jpeg");
+  }
+  async handleVideo(video) {
+    const { file_id } = video;
+    return downloadAndEncodeFile(file_id, this.botToken, "video/mp4");
+  }
+  async handleDocument(document) {
+    const { file_id, mime_type, file_name } = document;
+    let determinedMimeType = mime_type;
+    if (!determinedMimeType && file_name) {
+      const ext = path.extname(file_name).toLowerCase().replace(".", "");
+      if (ext && FILE_EXTENSION_MIME_MAP[ext]) {
+        determinedMimeType = FILE_EXTENSION_MIME_MAP[ext];
+        Log.info(`通过文件后缀 "${ext}" 确定 MIME 类型为 "${determinedMimeType}"`);
+      }
+    }
+    let finalMimeType = determinedMimeType;
+    if (!determinedMimeType || !SUPPORTED_MIME_TYPES.includes(String(determinedMimeType))) {
+      if (determinedMimeType?.startsWith("text/")) {
+        finalMimeType = "text/plain";
+      } else if (determinedMimeType?.startsWith("application/") && !isBinaryApplicationMime(determinedMimeType, { defaultToBinary: true })) {
+        finalMimeType = "text/plain";
+      } else if (determinedMimeType?.startsWith("image/")) {
+        finalMimeType = "image/jpeg";
+      } else if (determinedMimeType?.startsWith("video/")) {
+        finalMimeType = "video/mp4";
+      } else {
+        throw new AppError(`不支持的文件类型: ${determinedMimeType || file_name || "未知"}`, "FILE_TYPE_NOT_SUPPORTED");
+      }
+    }
+    return downloadAndEncodeFile(file_id, this.botToken, finalMimeType || "application/octet-stream");
+  }
+  async process() {
+    const { document, photo, video } = this.message;
+    if (photo) {
+      return this.handleImage(photo);
+    } else if (document) {
+      return this.handleDocument(document);
+    } else if (video) {
+      return this.handleVideo(video);
+    }
+    return;
+  }
+}
+const isContainsFile = (message) => {
+  return message ? message.document || message.photo || message.video ? true : false : false;
 };
-const handleFile = async (message) => {
-  const { document, photo, video } = message;
-  if (photo) {
-    const imageData = await handleImage(photo);
-    if (imageData) return imageData;
-  } else if (document) {
-    const documentData = await handleDocument(document);
-    if (documentData) return documentData;
-  } else if (video) {
-    const videoData = await handleVideo(video);
-    if (videoData) return videoData;
+const extractMessageParts = async (message, botName) => {
+  const parts = [];
+  let messageText = message.text || message.caption || "";
+  messageText = messageText.replace(`@${botName}`, "").replace(":ask", "").trim();
+  if (messageText.includes("🤖 模型：") || messageText.includes("✨ 本次任务")) {
+    messageText = messageText.replace(/^🤖 模型：.*?\n+/g, "").replace(/✨ 本次任务[\s\S]*$/m, "").trim();
   }
-  return;
+  if (isContainsFile(message)) {
+    const fileData = await handleFile(message);
+    if (fileData) {
+      parts.push({ inlineData: fileData });
+    }
+    if (!messageText) {
+      if (message.document) messageText = "分析这个文件";
+      else if (message.photo) messageText = "分析这张图片";
+      else if (message.video) messageText = "分析这个视频";
+    }
+  }
+  parts.push({ text: messageText || "你好" });
+  return parts;
 };
 class MentionHandler {
   modelName;
@@ -4007,30 +4053,6 @@ class MentionHandler {
     this.userMessageId = message_id;
     this.replyToMessage = reply_to_message;
   }
-  isContainsFile(message) {
-    return message ? message.document || message.photo || message.video ? true : false : false;
-  }
-  async extractMessageParts(message) {
-    const parts = [];
-    let messageText = message.text || message.caption || "";
-    messageText = messageText.replace(`@${this.botName}`, "").replace(":ask", "").trim();
-    if (messageText.includes("🤖 模型：") || messageText.includes("✨ 本次任务")) {
-      messageText = messageText.replace(/^🤖 模型：.*?\n+/g, "").replace(/✨ 本次任务[\s\S]*$/m, "").trim();
-    }
-    if (this.isContainsFile(message)) {
-      const fileData = await handleFile(message);
-      if (fileData) {
-        parts.push({ inlineData: fileData });
-      }
-      if (!messageText) {
-        if (message.document) messageText = "分析这个文件";
-        else if (message.photo) messageText = "分析这张图片";
-        else if (message.video) messageText = "分析这个视频";
-      }
-    }
-    parts.push({ text: messageText || "你好" });
-    return parts;
-  }
   async handleRateLimiting() {
     const checkResult = await rateLimiterCheck(this.chatId);
     if (!checkResult.canProceed && this.userId !== this.adminId) {
@@ -4046,7 +4068,7 @@ class MentionHandler {
     return false;
   }
   async sendFileUploadMessage() {
-    if (this.isContainsFile(this.message) || this.isContainsFile(this.replyToMessage)) {
+    if (isContainsFile(this.message) || isContainsFile(this.replyToMessage)) {
       const uploadingResult = await bot.sendMessage(this.chatId, "📄 File uploading...", {
         replyToMessageId: this.userMessageId
       });
@@ -4065,7 +4087,7 @@ class MentionHandler {
 ${this.message.text || this.message.caption}`;
         currentMessageCopy.text = quotedContents;
       }
-      const replyToParts = await this.extractMessageParts(this.replyToMessage);
+      const replyToParts = await extractMessageParts(this.replyToMessage, this.botName);
       if (replyToParts.length > 0) {
         const replyRole = this.replyToMessage.from?.username === this.botName ? "model" : "user";
         completeContents.push({
@@ -4074,7 +4096,7 @@ ${this.message.text || this.message.caption}`;
         });
       }
     }
-    const currentParts = await this.extractMessageParts(currentMessageCopy);
+    const currentParts = await extractMessageParts(currentMessageCopy, this.botName);
     if (currentParts.length > 0) {
       completeContents.push({
         role: "user",
@@ -4166,7 +4188,7 @@ ${resTexts}
       ]);
     }
   }
-  async handleMention() {
+  async process() {
     Log.info("Handling mention message.", {
       chatId: this.chatId,
       messageId: this.userMessageId
@@ -4335,6 +4357,7 @@ const handleNewMember = async (message) => {
 const handleNormal = async (message) => {
   const { botName } = config.load();
   const { message_id: messageId, from, chat, reply_to_message } = message;
+  Log.info("Handling normal message.", { chatId: chat.id, messageId });
   if (message.text?.startsWith(":") || message.caption?.startsWith(":")) {
     const messageText = message.text || message.caption || "";
     const [commandAlias, ...cleanText] = messageText.replace(":", "").split(" ");
@@ -4357,144 +4380,177 @@ const handleNormal = async (message) => {
   }
   if (!reply_to_message) return;
   if (!reply_to_message.from || reply_to_message.from.username !== botName) return;
-  Log.info("Handling normal message.", { chatId: chat.id, messageId });
   return await handleMention(message);
 };
 const handleMention = async (message) => {
   const mention = new MentionHandler(message);
-  return await mention.handleMention();
+  return await mention.process();
 };
-const handleCallbackQuery = async (callbackQuery) => {
-  if (!callbackQuery.message || !callbackQuery.data) {
-    Log.info("Invalid callback query", { queryId: callbackQuery.id });
-    return;
+class CallbackQueryHandler {
+  message;
+  data;
+  queryId;
+  userId;
+  chatId;
+  messageId;
+  date;
+  replyMarkup;
+  constructor(callbackQuery) {
+    if (!callbackQuery.message || !callbackQuery.data) {
+      Log.info("Invalid callback query", { queryId: callbackQuery.id });
+      throw new Error("Invalid callback query");
+    }
+    const { id: queryId, from, message, data } = callbackQuery;
+    const { chat, message_id: messageId, date, reply_to_message, reply_markup } = message;
+    this.queryId = queryId;
+    this.userId = from.id;
+    this.chatId = chat.id;
+    this.messageId = reply_to_message?.message_id || messageId;
+    this.date = date;
+    this.data = data;
+    this.replyMarkup = reply_markup?.inline_keyboard;
+    this.message = { ...message, message_id: this.messageId, from };
+    Log.info("Handling callback query", { chatId: this.chatId, messageId: this.messageId, userId: this.userId, data: this.data });
   }
-  const { durableResourceId, rateLimitId } = config.load();
-  const { id: queryId, from, message, data } = callbackQuery;
-  const { chat, message_id: messageId, date, reply_to_message, reply_markup } = message;
-  Log.info("Handling callback query", { chatId: chat.id, messageId, userId: from.id, data });
-  const newMessage = { ...message, message_id: reply_to_message?.message_id || messageId, from };
-  switch (true) {
-    case data === "PLACEHOLDER": {
-      bot.answerCallbackQuery(queryId);
-      break;
+  async _handleMention() {
+    const [, , allowUserId] = this.data.split("_");
+    if (this.userId !== Number(allowUserId)) {
+      bot.answerCallbackQuery(this.queryId, { callbackText: "你没有权限进行此操作" });
+      return;
     }
-    case data.startsWith("mention_"): {
-      const [, , allowUserId] = data.split("_");
-      if (from.id !== Number(allowUserId)) {
-        bot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
-        return;
-      }
-      bot.answerCallbackQuery(queryId, { callbackText: "询问请求..." });
-      const newMessageText = "简单说明下你能做什么？";
-      newMessage.text = newMessageText;
-      delete newMessage.reply_to_message;
-      await handleMention(newMessage);
-      break;
+    bot.answerCallbackQuery(this.queryId, { callbackText: "询问请求..." });
+    const newMessageText = "简单说明下你能做什么？";
+    this.message.text = newMessageText;
+    delete this.message.reply_to_message;
+    await handleMention(this.message);
+  }
+  async _handleTool() {
+    const [, action, tool, allowUserId] = this.data.split("_");
+    if (this.userId !== Number(allowUserId)) {
+      bot.answerCallbackQuery(this.queryId, { callbackText: "你没有权限进行此操作" });
+      return;
     }
-    case data.startsWith("tool_"): {
-      const [, action, tool, allowUserId] = data.split("_");
-      if (from.id !== Number(allowUserId)) {
-        bot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
-        return;
-      }
-      if (action === "demo") {
-        bot.answerCallbackQuery(queryId, { callbackText: "开始演示工具..." });
-        const newMessageText = `请简单演示下 ${tool} 工具`;
-        newMessage.text = newMessageText;
-        delete newMessage.reply_to_message;
-        await handleMention(newMessage);
-      }
-      break;
+    if (action === "demo") {
+      bot.answerCallbackQuery(this.queryId, { callbackText: "开始演示工具..." });
+      const newMessageText = `请简单演示下 ${tool} 工具`;
+      this.message.text = newMessageText;
+      delete this.message.reply_to_message;
+      await handleMention(this.message);
     }
-    case data.startsWith("cmd_"): {
-      const [, command, allowUserId] = data.split("_");
-      if (from.id !== Number(allowUserId)) {
-        bot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
-        return;
-      }
-      bot.answerCallbackQuery(queryId, { callbackText: "开始执行..." });
-      const targetCommand = BotCommands.find((cmd) => cmd.name === command);
-      if (targetCommand) {
-        await targetCommand.action({
-          chatId: chat.id,
-          messageId,
-          userId: Number(allowUserId),
-          isCallback: true
-        });
-      }
-      break;
+  }
+  async _handleCommand() {
+    const [, command, allowUserId] = this.data.split("_");
+    if (this.userId !== Number(allowUserId)) {
+      bot.answerCallbackQuery(this.queryId, { callbackText: "你没有权限进行此操作" });
+      return;
     }
-    case data.startsWith("reaction_"): {
-      const reaction = data.split("_")[1];
-      const keyName = `reacted_${chat.id}_${messageId}`;
-      const readResult = await kv.read(rateLimitId, keyName, "json");
-      const reactedUsers = readResult.success ? [...readResult.data] : [];
-      if (reactedUsers.includes(from.id)) {
-        bot.answerCallbackQuery(queryId, {
-          callbackText: "你已做出过反应"
-        });
-        return;
-      }
-      bot.answerCallbackQuery(queryId, { callbackText: "反应成功" });
-      reactedUsers.push(from.id);
-      await kv.write(rateLimitId, keyName, JSON.stringify(reactedUsers), { expiration_ttl: 48 * 60 * 60 });
-      const newInlineKeyboard = JSON.parse(JSON.stringify(reply_markup?.inline_keyboard));
-      let keyboardUpdated = false;
-      for (const row of newInlineKeyboard) {
-        for (const button of row) {
-          if (button.callback_data === `reaction_${reaction}`) {
-            const currentText = button.text;
-            const parts = currentText.split(" ");
-            const emoji = parts[0];
-            const currentCount = parseInt(parts[1] || "0", 10);
-            if (!isNaN(currentCount)) {
-              const newCount = currentCount + 1;
-              button.text = `${emoji} ${newCount}`;
-              keyboardUpdated = true;
-              break;
-            }
+    bot.answerCallbackQuery(this.queryId, { callbackText: "开始执行..." });
+    const targetCommand = BotCommands.find((cmd) => cmd.name === command);
+    if (targetCommand) {
+      await targetCommand.action({
+        chatId: this.chatId,
+        messageId: this.messageId,
+        userId: Number(allowUserId),
+        isCallback: true
+      });
+    }
+  }
+  async _handleReaction() {
+    const { rateLimitId, durableResourceId } = config.load();
+    const reaction = this.data.split("_")[1];
+    const keyName = `reacted_${this.chatId}_${this.messageId}`;
+    const readResult = await kv.read(rateLimitId, keyName, "json");
+    const reactedUsers = readResult.success ? [...readResult.data] : [];
+    if (reactedUsers.includes(this.userId)) {
+      bot.answerCallbackQuery(this.queryId, {
+        callbackText: "你已做出过反应"
+      });
+      return;
+    }
+    bot.answerCallbackQuery(this.queryId, { callbackText: "反应成功" });
+    reactedUsers.push(this.userId);
+    await kv.write(rateLimitId, keyName, JSON.stringify(reactedUsers), { expiration_ttl: 48 * 60 * 60 });
+    const newInlineKeyboard = JSON.parse(JSON.stringify(this.replyMarkup));
+    let keyboardUpdated = false;
+    for (const row of newInlineKeyboard) {
+      for (const button of row) {
+        if (button.callback_data === `reaction_${reaction}`) {
+          const currentText = button.text;
+          const parts = currentText.split(" ");
+          const emoji = parts[0];
+          const currentCount = parseInt(parts[1] || "0", 10);
+          if (!isNaN(currentCount)) {
+            const newCount = currentCount + 1;
+            button.text = `${emoji} ${newCount}`;
+            keyboardUpdated = true;
+            break;
           }
-        }
-        if (keyboardUpdated) {
-          break;
         }
       }
       if (keyboardUpdated) {
-        await bot.editMessageReplyMarkup(chat.id, messageId, {
-          inline_keyboard: newInlineKeyboard
-        });
+        break;
       }
-      const totalReactionsKeyName = `total_reactions_${chat.id}`;
-      const oldTotalReactions = await kv.read(durableResourceId, totalReactionsKeyName, "json");
-      if (!oldTotalReactions.success) return;
-      const newTotalReactions = {
-        like: reaction === "like" ? oldTotalReactions.data.like + 1 : oldTotalReactions.data.like,
-        dislike: reaction === "dislike" ? oldTotalReactions.data.dislike + 1 : oldTotalReactions.data.dislike
-      };
-      await kv.write(durableResourceId, totalReactionsKeyName, JSON.stringify(newTotalReactions));
-      break;
     }
-    case data.startsWith("delete_"): {
-      const [, content, allowUserId] = data.split("_");
-      if (from.id !== Number(allowUserId)) {
-        bot.answerCallbackQuery(queryId, { callbackText: "你没有权限进行此操作" });
+    if (keyboardUpdated) {
+      await bot.editMessageReplyMarkup(this.chatId, this.messageId, {
+        inline_keyboard: newInlineKeyboard
+      });
+    }
+    const totalReactionsKeyName = `total_reactions_${this.chatId}`;
+    const oldTotalReactions = await kv.read(durableResourceId, totalReactionsKeyName, "json");
+    if (!oldTotalReactions.success) return;
+    const newTotalReactions = {
+      like: reaction === "like" ? oldTotalReactions.data.like + 1 : oldTotalReactions.data.like,
+      dislike: reaction === "dislike" ? oldTotalReactions.data.dislike + 1 : oldTotalReactions.data.dislike
+    };
+    await kv.write(durableResourceId, totalReactionsKeyName, JSON.stringify(newTotalReactions));
+  }
+  async _handleDelete() {
+    const [, content, allowUserId] = this.data.split("_");
+    if (this.userId !== Number(allowUserId)) {
+      bot.answerCallbackQuery(this.queryId, { callbackText: "你没有权限进行此操作" });
+      return;
+    }
+    if (content === "message") {
+      if (Date.now() - this.date * 1e3 <= 30 * 60 * 1e3) {
+        bot.answerCallbackQuery(this.queryId, { callbackText: "消息锁定中，无法删除" });
         return;
       }
-      if (content === "message") {
-        if (Date.now() - date * 1e3 <= 30 * 60 * 1e3) {
-          bot.answerCallbackQuery(queryId, { callbackText: "消息锁定中，无法删除" });
-          return;
-        }
-        bot.answerCallbackQuery(queryId, { callbackText: "删除成功" });
-        await bot.deleteMessage(chat.id, messageId);
-      }
-      break;
+      bot.answerCallbackQuery(this.queryId, { callbackText: "删除成功" });
+      await bot.deleteMessage(this.chatId, this.messageId);
     }
   }
-};
+  async process() {
+    switch (true) {
+      case this.data === "PLACEHOLDER": {
+        bot.answerCallbackQuery(this.queryId);
+        break;
+      }
+      case this.data.startsWith("mention_"): {
+        await this._handleMention();
+        break;
+      }
+      case this.data.startsWith("tool_"): {
+        await this._handleTool();
+        break;
+      }
+      case this.data.startsWith("cmd_"): {
+        await this._handleCommand();
+        break;
+      }
+      case this.data.startsWith("reaction_"): {
+        await this._handleReaction();
+        break;
+      }
+      case this.data.startsWith("delete_"): {
+        await this._handleDelete();
+        break;
+      }
+    }
+  }
+}
 const handleUpdate = async (update) => {
-  Log.info("Handling Telegram update", { update: simpleUpdateLog(update) });
+  Log.info("Handling Telegram update", { update: simplifyUpdateLog(update) });
   const { botName, allowGroups } = config.load();
   if (update.callback_query) {
     const { callback_query } = update;
@@ -4573,7 +4629,7 @@ const simplifyMessage = (message) => {
   }
   return simplified;
 };
-const simpleUpdateLog = (update) => {
+const simplifyUpdateLog = (update) => {
   const newUpdate = { ...update };
   if (newUpdate.message) {
     newUpdate.message = simplifyMessage(newUpdate.message);
@@ -4588,6 +4644,14 @@ const simpleUpdateLog = (update) => {
     };
   }
   return newUpdate;
+};
+const handleCallbackQuery = async (callbackQuery) => {
+  const callback = new CallbackQueryHandler(callbackQuery);
+  return await callback.process();
+};
+const handleFile = async (message) => {
+  const file = new FileHandler(message);
+  return await file.process();
 };
 const RequestHeadersSchema = {
   type: "object",

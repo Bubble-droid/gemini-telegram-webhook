@@ -47,10 +47,7 @@
       "type": "socks",
       "tag": "socks-in",
       "listen": "127.0.0.1",
-      "listen_port": 10080,
-      "tcp_fast_open": true,
-      "tcp_multi_path": true,
-      "udp_fragment": true
+      "listen_port": 10080
     }
   ],
   "outbounds": [

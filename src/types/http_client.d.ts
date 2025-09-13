@@ -123,3 +123,7 @@ declare interface Options {
   message: Message;
   utils: Utils;
 }
+
+declare const utils: Utils;
+
+declare const options: Options;

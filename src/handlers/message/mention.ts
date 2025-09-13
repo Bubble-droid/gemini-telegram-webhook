@@ -5,8 +5,56 @@ import type { Message, GenerateContentSuccessResponse, ReplyMarkup } from '@/typ
 import type { Content, Part } from '@google/genai'; // 确保 Part 类型导入
 import { rateLimiterCheck, scheduleDeletion, shortenString, sleep } from '@/utils';
 import { escaper } from '@/utils/formatting';
-import { handleFile } from '@/handlers/file';
+import { handleFile } from '@/handlers';
 import { sendFormattedMessage } from '@/utils/formatting';
+
+/**
+ * 检查消息是否包含文件（文档或照片）
+ * @param {Message | undefined} message - Telegram 消息对象，可能为 undefined
+ * @returns {boolean} - 如果消息包含文件，返回 true，否则返回 false
+ */
+const isContainsFile = (message: Message | undefined): boolean => {
+  return message ? (message.document || message.photo || message.video ? true : false) : false;
+};
+
+/**
+ * @description 从 Telegram 消息中提取适用于 Gemini API 的内容部分（文本和文件数据）。
+ *              同时处理移除 Bot 提及的逻辑。
+ * @param {Message} message - Telegram 原始 Telegram 消息对象。
+ * @returns {Promise<Part[]>} 包含文件数据和文本内容的 parts 数组。
+ */
+const extractMessageParts = async (message: Message, botName: string): Promise<Part[]> => {
+  const parts: Part[] = [];
+  let messageText = message.text || message.caption || '';
+  messageText = messageText.replace(`@${botName}`, '').replace(':ask', '').trim();
+
+  if (messageText.includes('🤖 模型：') || messageText.includes('✨ 本次任务')) {
+    messageText = messageText
+      .replace(/^🤖 模型：.*?\n+/g, '')
+      .replace(/✨ 本次任务[\s\S]*$/m, '')
+      .trim();
+  }
+
+  // 处理文件内容（文档、图片）
+  if (isContainsFile(message)) {
+    const fileData = await handleFile(message);
+
+    if (fileData) {
+      parts.push({ inlineData: fileData });
+    }
+
+    // 如果没有提供文本，设置默认提示
+    if (!messageText) {
+      if (message.document) messageText = '分析这个文件';
+      else if (message.photo) messageText = '分析这张图片';
+      else if (message.video) messageText = '分析这个视频';
+    }
+  }
+
+  parts.push({ text: messageText || '你好' });
+
+  return parts;
+};
 
 /**
  * @class MentionHandler
@@ -36,55 +84,6 @@ export class MentionHandler {
   }
 
   /**
-   * 检查消息是否包含文件（文档或照片）
-   * @param {Message | undefined} message - Telegram 消息对象，可能为 undefined
-   * @returns {boolean} - 如果消息包含文件，返回 true，否则返回 false
-   */
-  private isContainsFile(message: Message | undefined): boolean {
-    return message ? (message.document || message.photo || message.video ? true : false) : false;
-  }
-
-  /**
-   * @function extractMessageParts
-   * @description 从 Telegram 消息中提取适用于 Gemini API 的内容部分（文本和文件数据）。
-   *              同时处理移除 Bot 提及的逻辑。
-   * @param {Message} message - Telegram 原始 Telegram 消息对象。
-   * @returns {Promise<Part[]>} 包含文件数据和文本内容的 parts 数组。
-   */
-  private async extractMessageParts(message: Message): Promise<Part[]> {
-    const parts: Part[] = [];
-    let messageText = message.text || message.caption || '';
-    messageText = messageText.replace(`@${this.botName}`, '').replace(':ask', '').trim();
-
-    if (messageText.includes('🤖 模型：') || messageText.includes('✨ 本次任务')) {
-      messageText = messageText
-        .replace(/^🤖 模型：.*?\n+/g, '')
-        .replace(/✨ 本次任务[\s\S]*$/m, '')
-        .trim();
-    }
-
-    // 处理文件内容（文档、图片）
-    if (this.isContainsFile(message)) {
-      const fileData = await handleFile(message);
-
-      if (fileData) {
-        parts.push({ inlineData: fileData });
-      }
-
-      // 如果没有提供文本，设置默认提示
-      if (!messageText) {
-        if (message.document) messageText = '分析这个文件';
-        else if (message.photo) messageText = '分析这张图片';
-        else if (message.video) messageText = '分析这个视频';
-      }
-    }
-
-    parts.push({ text: messageText || '你好' });
-
-    return parts;
-  }
-
-  /**
    * 检查并处理速率限制。
    * @returns {Promise<boolean>} 如果被速率限制并已发送提示，返回 `true`，否则返回 `false`。
    */
@@ -109,7 +108,7 @@ export class MentionHandler {
    * @returns {Promise<number | null>} 文件上传提示消息的 ID，如果没有文件则为 null。
    */
   private async sendFileUploadMessage(): Promise<number | null> {
-    if (this.isContainsFile(this.message) || this.isContainsFile(this.replyToMessage)) {
+    if (isContainsFile(this.message) || isContainsFile(this.replyToMessage)) {
       const uploadingResult = await bot.sendMessage(this.chatId, '📄 File uploading...', {
         replyToMessageId: this.userMessageId,
       });
@@ -133,7 +132,7 @@ export class MentionHandler {
         const quotedContents = `Quoted: "${this.message.quote.text}"\n\n${this.message.text || this.message.caption}`;
         currentMessageCopy.text = quotedContents;
       }
-      const replyToParts = await this.extractMessageParts(this.replyToMessage);
+      const replyToParts = await extractMessageParts(this.replyToMessage, this.botName);
       if (replyToParts.length > 0) {
         // 判断被回复消息的角色：如果是 Bot，则是 'model'；否则是其他用户，是 'user'。
         const replyRole = this.replyToMessage.from?.username === this.botName ? 'model' : 'user';
@@ -145,7 +144,7 @@ export class MentionHandler {
     }
 
     // 处理当前消息，总是用户角色
-    const currentParts = await this.extractMessageParts(currentMessageCopy);
+    const currentParts = await extractMessageParts(currentMessageCopy, this.botName);
     if (currentParts.length > 0) {
       completeContents.push({
         role: 'user',
@@ -289,7 +288,7 @@ ${resTexts}
    * 处理提及 Bot 的消息或回复 Bot 消息的普通消息。
    * @returns {Promise<void>}
    */
-  public async handleMention(): Promise<void> {
+  public async process(): Promise<void> {
     Log.info('Handling mention message.', {
       chatId: this.chatId,
       messageId: this.userMessageId,

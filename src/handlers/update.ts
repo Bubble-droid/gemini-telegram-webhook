@@ -5,7 +5,7 @@ import { config, Log, REACTiON_ROW, bot } from '@/services';
 import { handleMention, handleCommand, handleNewMember, handleNormal } from '@/handlers/message';
 import { scheduleDeletion, sendErrorNotification, shortenString } from '@/utils';
 import { escaper } from '@/utils/formatting';
-import { handleCallbackQuery } from './callback_query';
+import { handleCallbackQuery } from '@/handlers';
 
 /**
  * @function handleUpdate
@@ -15,8 +15,8 @@ import { handleCallbackQuery } from './callback_query';
  * @param {Update} update - Telegram 更新对象，包含一个事件的所有信息。
  * @returns {Promise<void>} 此函数不返回任何值，但会触发其他处理逻辑。
  */
-const handleUpdate = async (update: Update): Promise<void> => {
-  Log.info('Handling Telegram update', { update: simpleUpdateLog(update) });
+export const handleUpdate = async (update: Update): Promise<void> => {
+  Log.info('Handling Telegram update', { update: simplifyUpdateLog(update) });
   const { botName, allowGroups } = config.load();
   if (update.callback_query) {
     const { callback_query } = update;
@@ -121,7 +121,7 @@ const simplifyMessage = (message: Message | undefined): Message | undefined => {
  * @param update - 原始的 Update 对象
  * @returns 简化后的 Update 对象
  */
-const simpleUpdateLog = (update: Update): Update => {
+const simplifyUpdateLog = (update: Update): Update => {
   // 创建 update 的浅拷贝
   const newUpdate: Update = { ...update };
 
@@ -143,5 +143,3 @@ const simpleUpdateLog = (update: Update): Update => {
 
   return newUpdate;
 };
-
-export { handleUpdate };

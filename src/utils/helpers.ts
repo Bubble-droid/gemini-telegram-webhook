@@ -5,7 +5,7 @@ import * as lame from '@breezystack/lamejs';
 import type { MarkdownMarkRegex } from '@/types';
 import { escaper } from './formatting';
 
-export const MARKDOWN_REGEX: MarkdownMarkRegex = {
+const MARKDOWN_REGEX: MarkdownMarkRegex = {
   // 1. 代码块：必须最先匹配，其内部内容不应被其他规则解析。
   CODE_BLOCK: /^\s*```(\w*)\n([\s\S]+?)\n\s*```\s*$/gm,
   // 2. 行内代码：优先级次之。

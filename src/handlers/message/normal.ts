@@ -13,7 +13,7 @@ import { handleMention } from '@/handlers/message';
  * @param {Message} message - Telegram 消息对象。
  * @returns {Promise<void>}
  */
-const handleNormal = async (message: Message): Promise<void> => {
+export const handleNormal = async (message: Message): Promise<void> => {
   const { botName } = config.load();
   const { message_id: messageId, from, chat, reply_to_message } = message;
   Log.info('Handling normal message.', { chatId: chat.id, messageId });
@@ -41,5 +41,3 @@ const handleNormal = async (message: Message): Promise<void> => {
   if (!reply_to_message.from || reply_to_message.from.username !== botName) return;
   return await handleMention(message);
 };
-
-export { handleNormal };

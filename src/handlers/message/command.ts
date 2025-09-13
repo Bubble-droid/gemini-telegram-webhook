@@ -11,7 +11,7 @@ import { BotCommands } from '@/configs';
  * @param {Message} message - Telegram Message 对象 (包含 bot_command entity)。
  * @returns {Promise<void>}
  */
-const handleCommand = async (message: Message): Promise<void> => {
+export const handleCommand = async (message: Message): Promise<void> => {
   const { message_id: messageId, from, chat } = message;
   Log.info('Handling commands message...', { chatId: chat.id, messageId });
   const messageText = (message.text || message.caption) as string;
@@ -32,5 +32,3 @@ const handleCommand = async (message: Message): Promise<void> => {
     });
   }
 };
-
-export { handleCommand };

@@ -17,7 +17,7 @@ WORKDIR /app
 
 # 安装 sing-box + proxychains-ng（和最小工具）
 RUN apt update && apt upgrade -y && apt install -y proxychains4 curl
-RUN curl -fsSL https://sing-box.app/install.sh | sh
+RUN curl -fsSOL "https://sing-box.app/install.sh" && chmod +x install.sh && bash install.sh
 
 COPY --from=build /app/dist /app/dist
 COPY --from=build /app/package-docker.json /app/package.json

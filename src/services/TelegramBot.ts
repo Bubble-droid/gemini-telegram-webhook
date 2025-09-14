@@ -543,14 +543,14 @@ export const REACTiON_ROW: Bot.InlineKeyboardButton[] = [
   },
 ];
 
-const DELETE_ROW: Bot.InlineKeyboardButton[] = [
-  {
-    text: '🗑 删除消息',
-    callback_data: 'delete_message_USER_ID',
-  },
-];
+// const DELETE_ROW: Bot.InlineKeyboardButton[] = [
+//   {
+//     text: '🗑 删除消息',
+//     callback_data: 'delete_message_USER_ID',
+//   },
+// ];
 
-export const BASE_INLINE_KEYBOARD: Bot.InlineKeyboardButton[][] = [REACTiON_ROW, DELETE_ROW];
+export const BASE_INLINE_KEYBOARD: Bot.InlineKeyboardButton[][] = [REACTiON_ROW];
 
 export const makeInlineKeyboard = (userId: number): Bot.InlineKeyboardButton[][] => {
   return BASE_INLINE_KEYBOARD.map((row) =>

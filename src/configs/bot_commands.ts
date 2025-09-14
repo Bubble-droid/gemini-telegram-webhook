@@ -19,7 +19,10 @@ const BaseCommands: BotCommandAction[] = [
       if (!startReply.success) {
         throw new KvNamespaceError(`Start 命令回复内容读取失败，${startReply.error}`, 'START_REPLY_NOT_FOUND');
       }
-      const replaceText = startReply.data.replace('${MODEL_NAME}', modelName).replace('${BOT_NAME}', botName).trim();
+      const replaceText = startReply.data
+        .replace('${MODEL_NAME}', modelName)
+        .replace(/\${BOT_NAME}/g, botName)
+        .trim();
       const totalReactionsKeyName = `total_reactions_${chatId}`;
       const totalReactions = await kv.read<{ like: number; dislike: number }>(durableResourceId, totalReactionsKeyName, 'json');
       const replyMarkup: ReplyMarkup = {

@@ -1,6 +1,6 @@
 {
   "log": {
-    "level": "info",
+    "level": "error",
     "timestamp": true
   },
   "dns": {
@@ -11,7 +11,6 @@
         "server": "one.one.one.one",
         "server_port": 443,
         "path": "/dns-query",
-        "detour": "warp",
         "domain_resolver": "dns-hosts"
       },
       {
@@ -44,8 +43,8 @@
   ],
   "inbounds": [
     {
-      "type": "socks",
-      "tag": "socks-in",
+      "type": "mixed",
+      "tag": "mixed-in",
       "listen": "127.0.0.1",
       "listen_port": 10080
     }
@@ -73,7 +72,8 @@
   "experimental": {
     "cache_file": {
       "enabled": true,
-      "path": "cache.db"
+      "path": "cache.db",
+      "store_rdrc": true
     }
   }
 }

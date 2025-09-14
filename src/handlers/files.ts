@@ -191,21 +191,30 @@ const isBinaryApplicationMime = (
 };
 
 export class FileHandler {
-  private message: Message;
-  private botToken: string;
+  private readonly message: Message;
+  private readonly botToken: string;
+  private readonly document?: Document;
+  private readonly photo?: PhotoSize;
+  private readonly video?: Video;
 
   constructor(message: Message) {
+    const { document, photo, video } = message;
+    this.document = document;
+    this.photo = photo?.[photo.length - 1];
+    this.video = video;
     this.message = message;
     this.botToken = config.load().botToken;
+
+    Log.info('Handling file', { chatId: this.message.chat.id, messageId: this.message.message_id });
   }
 
   /**
    * 处理图片文件
-   * @param {PhotoSize[]} photo - Telegram PhotoSize 数组
+   * @param {PhotoSize} photo - Telegram PhotoSize 数组
    * @returns {Promise<BlobImageUnion | void>}
    */
-  private async handleImage(photo: PhotoSize[]): Promise<BlobImageUnion | void> {
-    const { file_id } = photo[photo.length - 1];
+  private async handleImage(photo: PhotoSize): Promise<BlobImageUnion | void> {
+    const { file_id } = photo;
     return downloadAndEncodeFile(file_id, this.botToken, 'image/jpeg');
   }
 
@@ -260,13 +269,12 @@ export class FileHandler {
    * @returns {Promise<Blob|void>} 处理后得到的数据，如果没有文件或处理失败则返回 null
    */
   public async process(): Promise<Blob | void> {
-    const { document, photo, video } = this.message;
-    if (photo) {
-      return this.handleImage(photo);
-    } else if (document) {
-      return this.handleDocument(document);
-    } else if (video) {
-      return this.handleVideo(video);
+    if (this.photo) {
+      return this.handleImage(this.photo);
+    } else if (this.document) {
+      return this.handleDocument(this.document);
+    } else if (this.video) {
+      return this.handleVideo(this.video);
     }
     return;
   }

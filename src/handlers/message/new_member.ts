@@ -144,7 +144,7 @@ export const handleNewMember = async (message: Message): Promise<void> => {
       });
 
       if (welcomeResult.ok) {
-        scheduleDeletion({ chat_id: chat.id, message_id: welcomeResult.messageId }, 3 * 60_000);
+        scheduleDeletion(chat.id, welcomeResult.messageId, 3 * 60_000);
       }
     } else {
       Log.warn(`新成员 ${newMember.first_name}(${newMember.id}) 未通过验证或超时，不发送欢迎消息。`, { chatId: chat.id, newMemberId: newMember.id });

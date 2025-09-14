@@ -18,41 +18,42 @@ import { handleCallbackQuery } from '@/handlers';
 export const handleUpdate = async (update: Update): Promise<void> => {
   Log.info('Handling Telegram update', { update: simplifyUpdateLog(update) });
   const { botName, allowGroups } = config.load();
-  if (update.callback_query) {
-    const { callback_query } = update;
+  const { update_id, message, callback_query } = update;
+  if (callback_query) {
     if (callback_query && callback_query.message && callback_query.data) return await handleCallbackQuery(callback_query);
   }
-  if (!update.message) return;
-  const { update_id, message } = update;
+  if (!message) return;
   if (message.sticker) return;
   const { message_id, chat } = message;
   if (!allowGroups.includes(chat.id) || chat.type === 'private') return;
   if (message.new_chat_members && message.new_chat_members.length > 0) return await handleNewMember(message);
 
-  const messageText = message.text || message.caption || null;
-  const messageEntities = message.entities || message.caption_entities || null;
-  if (!messageEntities || !messageText) return await handleNormal(message);
+  const messageText = message.text || message.caption || '';
+  const messageEntities = message.entities || message.caption_entities || [];
   try {
-    for (const entity of messageEntities) {
-      if (entity.type === 'mention' || entity.type === 'text_mention') {
-        const mentionedText = messageText.substring(entity.offset, entity.offset + entity.length);
-        if (mentionedText === `@${botName}`) {
-          return await handleMention(message);
+    if (messageEntities.length > 0) {
+      for (const entity of messageEntities) {
+        if (entity.type === 'mention' || entity.type === 'text_mention') {
+          const mentionedText = messageText.substring(entity.offset, entity.offset + entity.length);
+          if (mentionedText === `@${botName}`) {
+            return await handleMention(message);
+          }
         }
       }
-    }
-    for (const entity of messageEntities) {
-      if (entity.type === 'bot_command') {
-        const commandText = messageText.substring(entity.offset, entity.offset + entity.length);
-        const atIndex = commandText.indexOf('@');
-        if (atIndex !== -1) {
-          const mentionedTarget = commandText.slice(atIndex + 1);
-          if (mentionedTarget === botName) {
-            return await handleCommand(message);
+      for (const entity of messageEntities) {
+        if (entity.type === 'bot_command') {
+          const commandText = messageText.substring(entity.offset, entity.offset + entity.length);
+          const atIndex = commandText.indexOf('@');
+          if (atIndex !== -1) {
+            const mentionedTarget = commandText.slice(atIndex + 1);
+            if (mentionedTarget === botName) {
+              return await handleCommand(message);
+            }
           }
         }
       }
     }
+    return await handleNormal(message);
   } catch (error: unknown) {
     const err = error as Error;
     Log.error('Error while handling update', { err, updateId: update_id });
@@ -64,7 +65,7 @@ export const handleUpdate = async (update: Update): Promise<void> => {
     };
     const errorResult = await bot.sendMessage(chat.id, shorten, { replyToMessageId: message_id, parseMode: 'HTML', replyMarkup });
     if (errorResult.ok) {
-      scheduleDeletion({ chat_id: chat.id, message_id: errorResult.messageId }, 3 * 60_000);
+      scheduleDeletion(chat.id, errorResult.messageId, 3 * 60_000);
     }
   }
 };

@@ -113,7 +113,7 @@ export const sendFormattedMessage = async (
         if (sendResult.ok) {
           Log.info(`消息块 ${i + 1}/${chunks.length} 发送成功.`);
           sentMessageIdsInCurrentAttempt.push(sendResult.messageId);
-          scheduleDeletion({ chat_id: chatId, message_id: sendResult.messageId }, 24 * 60 * 60_000);
+          scheduleDeletion(chatId, sendResult.messageId, 24 * 60 * 60_000);
           lastMessageId = sendResult.messageId;
           currentReplyTo = sendResult.messageId;
         } else {

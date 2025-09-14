@@ -51,7 +51,9 @@ const extractMessageParts = async (message: Message, botName: string): Promise<P
     }
   }
 
-  parts.push({ text: messageText || '你好' });
+  if (messageText) {
+    parts.push({ text: messageText });
+  }
 
   return parts;
 };
@@ -81,6 +83,11 @@ export class MentionHandler {
     this.userId = from?.id as number;
     this.userMessageId = message_id;
     this.replyToMessage = reply_to_message;
+
+    Log.info('Handling mention message.', {
+      chatId: this.chatId,
+      messageId: this.userMessageId,
+    });
   }
 
   /**
@@ -96,7 +103,7 @@ export class MentionHandler {
         replyToMessageId: this.userMessageId,
       });
       if (rateLimitResult.ok) {
-        scheduleDeletion({ chat_id: this.chatId, message_id: rateLimitResult.messageId }, checkResult.retryAfterSeconds * 1_000);
+        scheduleDeletion(this.chatId, rateLimitResult.messageId, checkResult.retryAfterSeconds * 1_000);
       }
       return true; // 表示已处理速率限制
     }
@@ -150,11 +157,6 @@ export class MentionHandler {
         role: 'user',
         parts: currentParts,
       });
-    }
-
-    // 检查 completeContents 是否为空，如果为空则抛出错误
-    if (completeContents.length === 0) {
-      throw new TelegramError('未能从消息中提取到有效内容，请检查消息格式。');
     }
 
     return completeContents;
@@ -226,7 +228,7 @@ export class MentionHandler {
     if (!hasToolThoughts && !hasDisplayedThoughts) {
       await bot.deleteMessage(this.chatId, thinkMessageId);
     } else {
-      scheduleDeletion({ chat_id: this.chatId, message_id: thinkMessageId }, 60 * 60_000);
+      scheduleDeletion(this.chatId, thinkMessageId, 60 * 60_000);
     }
 
     // 提取最终的回复文本（非思考内容）：从 `response.parts` 中过滤掉带有 `thought` 属性的 Part
@@ -247,7 +249,7 @@ export class MentionHandler {
         replyMarkup,
       });
       if (replyResult.ok) {
-        scheduleDeletion({ chat_id: this.chatId, message_id: replyResult.messageId }, 3 * 60 * 1000);
+        scheduleDeletion(this.chatId, replyResult.messageId, 3 * 60 * 1000);
       }
       return;
     }
@@ -289,11 +291,6 @@ ${resTexts}
    * @returns {Promise<void>}
    */
   public async process(): Promise<void> {
-    Log.info('Handling mention message.', {
-      chatId: this.chatId,
-      messageId: this.userMessageId,
-    });
-
     // 1. 检查并处理速率限制
     if (await this.handleRateLimiting()) {
       return; // 被速率限制，直接返回
@@ -309,6 +306,18 @@ ${resTexts}
 
       // 3. 构建发送给 Gemini API 的完整内容历史
       completeContents = await this.buildCompleteContents();
+
+      // 检查 completeContents 是否为空
+      if (completeContents.length === 0) {
+        const replyText = '未能从消息中提取到有效内容，请检查消息格式。';
+        const sentResult = await bot.sendMessage(this.chatId, replyText, {
+          replyToMessageId: this.userMessageId,
+        });
+        if (sentResult.ok) {
+          scheduleDeletion(this.chatId, sentResult.messageId, 3 * 60 * 1000);
+        }
+        return;
+      }
 
       // 4. 删除文件上传提示消息（如果存在）
       if (fileUploadMessageId) {
@@ -350,7 +359,7 @@ ${resTexts}
         if (!err?.hasToolThoughts) {
           await bot.deleteMessage(this.chatId, thinkMessageId);
         } else {
-          scheduleDeletion({ chat_id: this.chatId, message_id: thinkMessageId }, 60 * 60_000);
+          scheduleDeletion(this.chatId, thinkMessageId, 60 * 60_000);
         }
       }
       throw apiError; // 重新抛出错误以便上层捕获

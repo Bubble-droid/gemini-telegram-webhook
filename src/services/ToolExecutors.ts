@@ -490,7 +490,7 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
       if (!result.ok) {
         return { success: false, error: `Error replying image message, ${result.error}` };
       }
-      scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1000);
+      scheduleDeletion(chatId, result.messageId, 24 * 60 * 60 * 1000);
       return { success: true, data: 'Image generate and reply message successfully.' };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -527,7 +527,7 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
       if (!result.ok) {
         return { success: false, error: `Error replying speech message, ${result.error}` };
       }
-      scheduleDeletion({ chat_id: chatId, message_id: result.messageId }, 24 * 60 * 60 * 1000);
+      scheduleDeletion(chatId, result.messageId, 24 * 60 * 60 * 1000);
       return { success: true, data: 'Speech generate and reply message successfully.' };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);

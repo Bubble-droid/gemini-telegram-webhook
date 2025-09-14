@@ -23,12 +23,6 @@ export const handleCommand = async (message: Message): Promise<void> => {
   const cleanText = messageText.replace(fullCommandText, '').trim();
   const targetCommand = BotCommands.find((cmd) => cmd.name === commandName);
   if (targetCommand) {
-    await targetCommand.action({
-      chatId: chat.id,
-      userId: from?.id as number,
-      messageId,
-      cleanText,
-      message,
-    });
+    await targetCommand.action(chat.id, from?.id as number, messageId, { cleanText, message });
   }
 };

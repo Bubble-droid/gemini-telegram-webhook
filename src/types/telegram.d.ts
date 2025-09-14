@@ -301,13 +301,10 @@ export interface ChatInviteLink {
 export interface BotCommandAction {
   name: string;
   description: string;
-  action: (params: CommandActionParams) => Promise<void>;
+  action: (chatId: number, userId: number, messageId: number, options?: CommandActionOptionsParams) => Promise<void>;
 }
 
-export interface CommandActionParams {
-  chatId: number;
-  userId: number;
-  messageId: number;
+export interface CommandActionOptionsParams {
   isCallback?: boolean;
   cleanText?: string;
   message?: Message;

@@ -10,6 +10,12 @@ import { escaper } from '@/utils/formatting';
  * @description 封装与 Telegram Bot API 的交互逻辑。
  */
 export class TelegramBot {
+  private readonly botApiUrl: string;
+
+  constructor() {
+    this.botApiUrl = config.load().botApiUrl;
+  }
+
   /**
    * 发送 API 请求的通用方法。
    * @private
@@ -19,8 +25,7 @@ export class TelegramBot {
    * @returns {Promise<T>} API 响应对象
    */
   private async sendRequest<P, T>(httpMethod: HttpMethod, apiMethod: Bot.ApiMethod, body: P, isFormData: boolean = false): Promise<T> {
-    const { botApiUrl } = config.load();
-    const url = `${botApiUrl}/${apiMethod}`;
+    const url = `${this.botApiUrl}/${apiMethod}`;
     try {
       const response = await fetch(url, {
         method: String(httpMethod).toUpperCase(),

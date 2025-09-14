@@ -1,5 +1,5 @@
 /**
- * @typedef {import("../src/types/http_client").Options} Options
+ * @typedef {import("./http_client").Options} Options
  */
 
 /**

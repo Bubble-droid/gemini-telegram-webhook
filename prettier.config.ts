@@ -1,6 +1,8 @@
-// .prettierrc.js
-/** @type {import("prettier").Config} */
-const config = {
+// prettier.config.ts
+
+import type { Config } from 'prettier';
+
+const config: Config = {
   printWidth: 150,
   singleQuote: true,
   trailingComma: 'all',

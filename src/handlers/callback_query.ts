@@ -23,17 +23,17 @@ export class CallbackQueryHandler {
     }
 
     const { id: queryId, from, message, data } = callbackQuery;
-    const { chat, message_id: messageId, date, reply_to_message, reply_markup } = message;
+    const { chat, message_id, date, reply_to_message, reply_markup } = message;
 
     this.queryId = queryId;
     this.userId = from.id;
     this.chatId = chat.id;
-    this.messageId = reply_to_message?.message_id || messageId;
+    this.messageId = message_id;
     this.date = date;
     this.data = data;
     this.replyMarkup = reply_markup?.inline_keyboard;
 
-    this.message = { ...message, message_id: this.messageId, from };
+    this.message = { ...message, message_id: reply_to_message?.message_id || this.messageId, from };
 
     Log.info('Handling callback query', { chatId: this.chatId, messageId: this.messageId, userId: this.userId, data: this.data });
   }
@@ -75,10 +75,7 @@ export class CallbackQueryHandler {
     bot.answerCallbackQuery(this.queryId, { callbackText: '开始执行...' });
     const targetCommand = BotCommands.find((cmd) => cmd.name === command);
     if (targetCommand) {
-      await targetCommand.action({
-        chatId: this.chatId,
-        messageId: this.messageId,
-        userId: Number(allowUserId),
+      await targetCommand.action(this.chatId, Number(allowUserId), this.messageId, {
         isCallback: true,
       });
     }

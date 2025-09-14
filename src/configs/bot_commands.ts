@@ -11,15 +11,15 @@ const BaseCommands: BotCommandAction[] = [
   {
     name: 'start',
     description: '开始使用',
-    action: async (params) => {
+    action: async (chatId, userId, messageId, options = {}) => {
       Log.info('Executing start command.');
-      const { chatId, userId, messageId, isCallback = false } = params;
-      const { modelName, durableResourceId, startReplyTextKeyName } = config.load();
+      const { isCallback = false } = options;
+      const { modelName, durableResourceId, startReplyTextKeyName, botName } = config.load();
       const startReply = await kv.read<string>(durableResourceId, startReplyTextKeyName, 'text');
       if (!startReply.success) {
         throw new KvNamespaceError(`Start 命令回复内容读取失败，${startReply.error}`, 'START_REPLY_NOT_FOUND');
       }
-      const replaceText = startReply.data.replace('${MODEL_NAME}', modelName).trim();
+      const replaceText = startReply.data.replace('${MODEL_NAME}', modelName).replace('${BOT_NAME}', botName).trim();
       const totalReactionsKeyName = `total_reactions_${chatId}`;
       const totalReactions = await kv.read<{ like: number; dislike: number }>(durableResourceId, totalReactionsKeyName, 'json');
       const replyMarkup: ReplyMarkup = {
@@ -88,16 +88,16 @@ const BaseCommands: BotCommandAction[] = [
         });
       }
       if (startResult.ok) {
-        scheduleDeletion({ chat_id: chatId, message_id: startResult.messageId }, 3 * 60_000);
+        scheduleDeletion(chatId, startResult.messageId, 3 * 60_000);
       }
     },
   },
   {
     name: 'faq',
     description: '常见问题',
-    action: async (params) => {
+    action: async (chatId, userId, messageId, options = {}) => {
       Log.info('Executing faq command.');
-      const { chatId, userId, messageId, isCallback = false } = params;
+      const { isCallback = false } = options;
       const { durableResourceId } = config.load();
       const faqReply = await kv.read<string>(durableResourceId, 'cmd_faq_reply', 'text');
       if (!faqReply.success) {
@@ -123,16 +123,16 @@ const BaseCommands: BotCommandAction[] = [
         faqResult = await bot.sendMessage(chatId, toHtml(faqReply.data.trim()), { replyToMessageId: messageId, parseMode: 'HTML' });
       }
       if (faqResult.ok) {
-        scheduleDeletion({ chat_id: chatId, message_id: faqResult.messageId }, 5 * 60_000);
+        scheduleDeletion(chatId, faqResult.messageId, 5 * 60_000);
       }
     },
   },
   {
     name: 'clear',
     description: '清理对话历史',
-    action: async (params) => {
+    action: async (chatId, userId, messageId, options = {}) => {
       Log.info('Executing clear command.');
-      const { chatId, userId, messageId, isCallback = false } = params;
+      const { isCallback = false } = options;
       const clearingText = '🗑 Clearing...';
       const backReplyMarkup: ReplyMarkup = {
         inline_keyboard: [
@@ -158,7 +158,7 @@ const BaseCommands: BotCommandAction[] = [
           replyMarkup: isCallback ? backReplyMarkup : undefined,
         });
         if (clearedResult.ok) {
-          scheduleDeletion({ chat_id: chatId, message_id: clearedResult.messageId }, 3 * 60_000);
+          scheduleDeletion(chatId, clearedResult.messageId, 3 * 60_000);
         }
       }
     },
@@ -166,9 +166,9 @@ const BaseCommands: BotCommandAction[] = [
   {
     name: 'tools',
     description: '模型可用工具',
-    action: async (params) => {
+    action: async (chatId, userId, messageId, options = {}) => {
       Log.info('Executing tools command.');
-      const { chatId, userId, messageId, isCallback = false } = params;
+      const { isCallback = false } = options;
       const toolFunctions = geminiTools[0]?.functionDeclarations || [];
       const toolList =
         toolFunctions
@@ -229,7 +229,7 @@ const BaseCommands: BotCommandAction[] = [
         });
       }
       if (toolsResult.ok) {
-        scheduleDeletion({ chat_id: chatId, message_id: toolsResult.messageId }, 5 * 60_000);
+        scheduleDeletion(chatId, toolsResult.messageId, 5 * 60_000);
       }
     },
   },
@@ -239,13 +239,13 @@ const GenerateCommands: BotCommandAction[] = [
   {
     name: 'gen_img',
     description: '生成图片',
-    action: async (params) => {
+    action: async (chatId, userId, messageId, options = {}) => {
       Log.info('Executing gen_img command.');
-      const { chatId, userId, messageId, cleanText } = params;
+      const { cleanText } = options;
       if (!cleanText) {
         const notText = await bot.sendMessage(chatId, `:img [图片生成提示]`, { replyToMessageId: messageId });
         if (notText.ok) {
-          scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1000);
+          scheduleDeletion(chatId, notText.messageId, 3 * 60 * 1000);
         }
         return;
       }
@@ -273,13 +273,13 @@ const GenerateCommands: BotCommandAction[] = [
   {
     name: 'gen_tts',
     description: '生成语音',
-    action: async (params) => {
+    action: async (chatId, userId, messageId, options = {}) => {
       Log.info('Executing gen_tts command.');
-      const { chatId, userId, messageId, cleanText } = params;
+      const { cleanText } = options;
       if (!cleanText) {
         const notText = await bot.sendMessage(chatId, `:tts [语音生成提示]`, { replyToMessageId: messageId });
         if (notText.ok) {
-          scheduleDeletion({ chat_id: chatId, message_id: notText.messageId }, 3 * 60 * 1000);
+          scheduleDeletion(chatId, notText.messageId, 3 * 60 * 1000);
         }
         return;
       }
@@ -310,9 +310,9 @@ const ScriptCommands: BotCommandAction[] = [
   {
     name: 'script_add',
     description: '添加脚本',
-    action: async (params) => {
+    action: async (chatId, userId, messageId, options = {}) => {
       Log.info('Executing script_add command.');
-      const { chatId, userId, messageId, cleanText, message } = params;
+      const { cleanText, message } = options;
       const { botToken } = config.load();
       const { document, reply_to_message } = message as Message;
       const targetDocument = document ?? reply_to_message?.document;
@@ -330,7 +330,7 @@ const ScriptCommands: BotCommandAction[] = [
           replyToMessageId: messageId,
         });
         if (sentMsg.ok) {
-          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 60_000);
+          scheduleDeletion(chatId, sentMsg.messageId, 3 * 60_000);
         }
         return;
       }
@@ -355,7 +355,7 @@ const ScriptCommands: BotCommandAction[] = [
           parseMode: 'HTML',
         });
         if (sentMsg.ok) {
-          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 60_000);
+          scheduleDeletion(chatId, sentMsg.messageId, 3 * 60_000);
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : '未知错误';
@@ -366,16 +366,16 @@ const ScriptCommands: BotCommandAction[] = [
   {
     name: 'script_remove',
     description: '删除脚本',
-    action: async (params) => {
+    action: async (chatId, userId, messageId, options = {}) => {
       Log.info('Executing script_remove command.');
-      const { chatId, userId, messageId, cleanText } = params;
+      const { cleanText } = options;
       if (!cleanText) {
         const errorMessage = ':remove [脚本标签]';
         const sentMsg = await bot.sendMessage(chatId, errorMessage, {
           replyToMessageId: messageId,
         });
         if (sentMsg.ok) {
-          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 60_000);
+          scheduleDeletion(chatId, sentMsg.messageId, 3 * 60_000);
         }
         return;
       }
@@ -390,7 +390,7 @@ const ScriptCommands: BotCommandAction[] = [
           parseMode: 'HTML',
         });
         if (sentMsg.ok) {
-          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 60_000);
+          scheduleDeletion(chatId, sentMsg.messageId, 3 * 60_000);
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : '未知错误';
@@ -399,7 +399,7 @@ const ScriptCommands: BotCommandAction[] = [
           replyToMessageId: messageId,
         });
         if (sentMsg.ok) {
-          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 60_000);
+          scheduleDeletion(chatId, sentMsg.messageId, 3 * 60_000);
         }
       }
     },
@@ -407,9 +407,8 @@ const ScriptCommands: BotCommandAction[] = [
   {
     name: 'script_list',
     description: '列出已安装的所有脚本',
-    action: async (params) => {
+    action: async (chatId, userId, messageId) => {
       Log.info('Executing script_list command.');
-      const { chatId, userId, messageId } = params;
       try {
         const scripts = await scriptManager.listForUser(userId);
         let replyText: string;
@@ -427,7 +426,7 @@ const ScriptCommands: BotCommandAction[] = [
           parseMode: 'HTML',
         });
         if (sentMsg.ok) {
-          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 60_000);
+          scheduleDeletion(chatId, sentMsg.messageId, 3 * 60_000);
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : '未知错误';
@@ -438,9 +437,9 @@ const ScriptCommands: BotCommandAction[] = [
   {
     name: 'script_run',
     description: '运行脚本',
-    action: async (params) => {
+    action: async (chatId, userId, messageId, options = {}) => {
       Log.info('Executing script_run command.');
-      const { chatId, userId, messageId, cleanText, message } = params;
+      const { cleanText, message } = options;
 
       if (!cleanText) {
         const errorMessage = ':run [脚本标签] [参数]';
@@ -448,7 +447,7 @@ const ScriptCommands: BotCommandAction[] = [
           replyToMessageId: messageId,
         });
         if (sentMsg.ok) {
-          scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 3 * 60_000);
+          scheduleDeletion(chatId, sentMsg.messageId, 3 * 60_000);
         }
         return;
       }
@@ -479,7 +478,7 @@ ${result.error}
         parseMode: 'HTML',
       });
       if (sentMsg.ok) {
-        scheduleDeletion({ chat_id: chatId, message_id: sentMsg.messageId }, 30 * 60_000);
+        scheduleDeletion(chatId, sentMsg.messageId, 30 * 60_000);
       }
     },
   },

@@ -1,6 +1,4 @@
-// src/types/http_client.d.ts
-
-import type { Message } from './telegram';
+import type { Message } from '../src/types/telegram';
 
 /**
  * @file httpClient.d.ts

@@ -1,4 +1,4 @@
-// src/utils/formatting/generator.ts
+// src/utils/formatters/generator.ts
 
 import type { AstNode, NodeType } from './parser';
 import { escaper } from './escaper';

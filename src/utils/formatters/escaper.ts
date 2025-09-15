@@ -1,4 +1,4 @@
-// src/utils/formatting/escaper.ts
+// src/utils/formatters/escaper.ts
 
 /**
  * 封装了针对 Telegram 不同解析模式的文本转义方法。

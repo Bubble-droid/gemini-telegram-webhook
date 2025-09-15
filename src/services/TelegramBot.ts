@@ -3,7 +3,7 @@ import { BotCommands } from '@/configs';
 import type { HttpMethod } from '@/types';
 import type * as Bot from '@/types/telegram';
 import { shortenString } from '@/utils';
-import { escaper } from '@/utils/formatting';
+import { escaper } from '@/utils/formatters';
 
 /**
  * @class TelegramBot

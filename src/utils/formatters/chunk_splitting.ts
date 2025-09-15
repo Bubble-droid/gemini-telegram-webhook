@@ -1,4 +1,4 @@
-// src/utils/formatting/chunk_splitting.ts
+// src/utils/formatters/chunk_splitting.ts
 
 import type { AstNode } from './parser';
 import type { Generator } from './generator';

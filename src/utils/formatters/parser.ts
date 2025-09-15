@@ -1,4 +1,4 @@
-// src/utils/formatting/parser.ts
+// src/utils/formatters/parser.ts
 
 // --- AST 节点类型定义 ---
 export type NodeType =

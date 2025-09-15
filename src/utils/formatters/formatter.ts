@@ -1,4 +1,4 @@
-// src/utils/formatting/formatter.ts
+// src/utils/formatters/formatter.ts
 
 import type { ParseMode } from '@/types';
 import { Parser, type AstNode } from './parser';

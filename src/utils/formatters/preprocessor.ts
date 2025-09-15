@@ -1,4 +1,4 @@
-// src/utils/formatting/preprocessor.ts
+// src/utils/formatters/preprocessor.ts
 
 /**
  * @class MarkdownUtils

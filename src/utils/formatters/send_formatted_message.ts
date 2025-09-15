@@ -1,4 +1,4 @@
-// src/utils/formatting/send_formatted_message.ts
+// src/utils/formatters/send_formatted_message.ts
 
 import { formatter } from './formatter';
 import { splitAstAndGenerateChunks } from './chunk_splitting';

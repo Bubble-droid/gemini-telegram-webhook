@@ -3,7 +3,7 @@
 import { randomBytes } from 'node:crypto';
 import * as lame from '@breezystack/lamejs';
 import type { MarkdownMarkRegex } from '@/types';
-import { escaper } from './formatting';
+import { escaper } from '@/utils/formatters';
 
 const MARKDOWN_REGEX: MarkdownMarkRegex = {
   // 1. 代码块：必须最先匹配，其内部内容不应被其他规则解析。

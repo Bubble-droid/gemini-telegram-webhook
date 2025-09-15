@@ -5,7 +5,7 @@ import type { Content, GenerateContentConfig, GenerateContentResponse, Part, Saf
 import { config, GeminiError, KvNamespaceError, Log, bot, ToolExecutors } from '@/services';
 import { geminiTools } from '@/configs';
 import { kv, rotateArray, shortenString, sleep } from '@/utils';
-import { escaper } from '@/utils/formatting';
+import { escaper } from '@/utils/formatters';
 import type { ChatParams, GenerateContentSuccessResponse, ApiCallContext, ToolExecArgs, ToolName } from '@/types';
 
 export const GEMINI_SAFETY_SETTINGS: SafetySetting[] = [
@@ -114,25 +114,7 @@ export class GeminiApi {
     );
     Log.info('当前发送的 contents:', {
       // 为了日志输出，复制并修改 contents，避免影响原始数据
-      contents: context.contents.map((content) => ({
-        ...content,
-        parts: content.parts?.map((part) => {
-          if (part.inlineData && part.inlineData.data) {
-            // 对于包含 inlineData 的部分，替换 data 为占位符
-            return { ...part, inlineData: { ...part.inlineData, data: 'BASE64_ENCODED_DATA' } };
-          } else if (part.thoughtSignature) {
-            return { ...part, thoughtSignature: 'THOUGHT_SIGNATURE' };
-          } else if (part.thought) {
-            return { ...part, text: 'THOUGHT_TEXT' };
-          } else if (part.functionResponse && part.functionResponse.response?.success) {
-            return {
-              ...part,
-              functionResponse: { ...part.functionResponse, response: { ...part.functionResponse.response, data: 'FUNCTION_RESPONSE_DATA' } },
-            };
-          }
-          return part; // 否则返回原始部分
-        }),
-      })),
+      contents: simplifyGeminiApiContents(context.contents),
     });
 
     // 轮换 API 密钥并获取当前使用的密钥
@@ -498,27 +480,105 @@ export const rotateGeminiApiKey = async (): Promise<string> => {
   return currentApiKey;
 };
 
+export const simplifyGeminiApiContents = (contents: readonly Content[]): Content[] => {
+  // 使用 .map 直接返回新数组，无需预先创建副本
+  return contents.map((content) => ({
+    // 1. 创建 content 对象的浅副本
+    ...content,
+    // 2. 使用 .map 处理 parts 数组，它会返回一个包含新 part 对象的新数组
+    parts: content.parts?.map((part) => {
+      // 创建 part 对象的浅副本
+      const newPart = { ...part };
+
+      // 检查并处理 inlineData
+      if (newPart.inlineData?.data) {
+        // 关键修正点：创建一个新的 inlineData 对象，而不是修改原始的。
+        newPart.inlineData = {
+          ...newPart.inlineData, // 复制 mimeType 等其他属性
+          data: 'BASE64_ENCODED_DATA', // 覆盖 data 属性
+        };
+        return newPart;
+      }
+
+      // 检查并处理 thoughtSignature (这个属性是顶层，可以直接修改副本)
+      if (newPart.thoughtSignature) {
+        newPart.thoughtSignature = 'THOUGHT_SIGNATURE';
+        return newPart;
+      }
+
+      // 检查并处理 thought (这个属性是顶层，可以直接修改副本)
+      if (newPart.thought) {
+        // 假设 thought 是一个对象，我们创建一个新的 text 属性
+        newPart.text = 'THOUGHT_TEXT';
+        // 可以选择性地删除 thought 对象以简化结构
+        // delete newPart.thought;
+        return newPart;
+      }
+
+      // 检查并处理 functionResponse
+      if (newPart.functionResponse?.response?.success) {
+        // 关键修正点：逐层创建新的 response 和 functionResponse 对象
+        newPart.functionResponse = {
+          ...newPart.functionResponse, // 复制 name 等其他属性
+          response: {
+            ...newPart.functionResponse.response, // 复制 success 等其他属性
+            data: 'FUNCTION_RESPONSE_DATA', // 覆盖 data 属性
+          },
+        };
+        return newPart;
+      }
+
+      // 如果没有任何需要修改的，返回原始 part 的副本
+      return newPart;
+    }),
+  }));
+};
+
+/**
+ * 创建一个 Gemini API 响应对象的深度简化副本，用于日志记录或调试。
+ * 此函数确保完全的不可变性，返回一个与原始对象完全解耦的新对象。
+ *
+ * @param response - 原始的 GenerateContentResponse 对象。
+ * @returns 一个新的、内容被简化的 GenerateContentResponse 对象。
+ */
 export const simplifyGeminiApiResponse = (response: GenerateContentResponse): GenerateContentResponse => {
-  const simplifyResponse = {
+  const simplifiedResponse = {
+    // 1. 使用展开运算符浅拷贝 response 对象的所有顶级属性
     ...response,
+    // 2. 深入并安全地修改 candidates 数组，返回一个全新的数组
     candidates: response.candidates?.map((candidate) => ({
+      // 3. 浅拷贝 candidate 的所有属性
       ...candidate,
+      // 4. 浅拷贝 content 的所有属性
       content: {
         ...candidate.content,
-        parts: candidate.content?.parts?.map((part) => {
-          if (part.thought) {
-            return { ...part, text: 'THOUGHT_TEXT' };
-          } else if (part.thoughtSignature) {
-            return { ...part, thoughtSignature: 'THOUGHT_SIGNATURE' };
-          } else if (part.inlineData && part.inlineData.data) {
-            return { ...part, inlineData: { ...part.inlineData, data: 'BASE64_ENCODED_DATA' } };
-          } else if (part.text) {
-            return { ...part, text: 'TEXT_CONTENT' };
+        // 5. 映射 parts 数组，确保返回的每个 part 都是一个全新的、解耦的对象
+        parts: candidate.content?.parts?.map((part): Part => {
+          // 始终先创建一个基础副本，确保与原始 part 解耦
+          const newPart: Part = { ...part };
+
+          // 使用独立的 if 语句处理各种简化场景
+          if (newPart.thought) {
+            newPart.text = 'THOUGHT_TEXT';
           }
-          return part;
+          if (newPart.thoughtSignature) {
+            newPart.thoughtSignature = 'THOUGHT_SIGNATURE';
+          }
+          if (newPart.inlineData?.data) {
+            newPart.inlineData = {
+              ...newPart.inlineData,
+              data: 'BASE64_ENCODED_DATA',
+            };
+          }
+          if (newPart.text) {
+            newPart.text = 'TEXT_CONTENT';
+          }
+
+          // 无论是否修改，都返回新创建的 newPart 对象
+          return newPart;
         }),
       },
     })),
   };
-  return simplifyResponse as GenerateContentResponse;
+  return simplifiedResponse as GenerateContentResponse;
 };

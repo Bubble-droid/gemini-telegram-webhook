@@ -1,10 +1,10 @@
 // src/handlers/update.ts
 
-import type { Message, MessageEntity, ReplyMarkup, Update } from '@/types';
-import { config, Log, REACTiON_ROW, bot } from '@/services';
+import type { InlineKeyboardMarkup, Message, MessageEntity, ReplyMarkup, Update } from '@/types';
+import { config, Log, REACTiON_ROW, bot, AppError } from '@/services';
 import { handleMention, handleCommand, handleNewMember, handleNormal } from '@/handlers/message';
 import { scheduleDeletion, sendErrorNotification, shortenString } from '@/utils';
-import { escaper } from '@/utils/formatting';
+import { escaper } from '@/utils/formatters';
 import { handleCallbackQuery } from '@/handlers';
 
 /**
@@ -19,18 +19,18 @@ export const handleUpdate = async (update: Update): Promise<void> => {
   Log.info('Handling Telegram update', { update: simplifyUpdateLog(update) });
   const { botName, allowGroups } = config.load();
   const { update_id, message, callback_query } = update;
-  if (callback_query) {
-    if (callback_query && callback_query.message && callback_query.data) return await handleCallbackQuery(callback_query);
-  }
-  if (!message) return;
-  if (message.sticker) return;
+  if (!message || message.sticker) return;
   const { message_id, chat } = message;
   if (!allowGroups.includes(chat.id) || chat.type === 'private') return;
-  if (message.new_chat_members && message.new_chat_members.length > 0) return await handleNewMember(message);
-
   const messageText = message.text || message.caption || '';
   const messageEntities = message.entities || message.caption_entities || [];
   try {
+    if (message.new_chat_members) {
+      return await handleNewMember(message);
+    }
+    if (callback_query?.data) {
+      return await handleCallbackQuery(callback_query);
+    }
     if (messageEntities.length > 0) {
       for (const entity of messageEntities) {
         if (entity.type === 'mention' || entity.type === 'text_mention') {
@@ -54,11 +54,10 @@ export const handleUpdate = async (update: Update): Promise<void> => {
       }
     }
     return await handleNormal(message);
-  } catch (error: unknown) {
-    const err = error as Error;
+  } catch (err: unknown) {
+    const errorMessage: string = err instanceof AppError ? err.message : String(err);
     Log.error('Error while handling update', { err, updateId: update_id });
-    await sendErrorNotification(err, `Error while handling update ${JSON.stringify({ chatId: chat.id, messageId: message_id })}`);
-    const errorMessage: string = err instanceof Error ? err.message : String(err);
+    sendErrorNotification(err as AppError, `Error while handling update ${JSON.stringify({ chatId: chat.id, messageId: message_id })}`);
     const shorten = `<blockquote expandable>${escaper.html(shortenString(`❌ ${errorMessage}`))}</blockquote>`;
     const replyMarkup: ReplyMarkup = {
       inline_keyboard: [REACTiON_ROW],
@@ -71,62 +70,65 @@ export const handleUpdate = async (update: Update): Promise<void> => {
 };
 
 /**
- * 辅助函数：简化单个 Message 对象
+ * 辅助函数：安全地创建一个简化的 Message 对象副本。
+ * 此函数是纯函数，保证不会修改原始 message 对象。
  * @param message - 原始的 Message 对象
- * @returns 简化后的 Message 对象或 undefined
+ * @returns 一个全新的、简化后的 Message 对象，或 undefined
  */
 const simplifyMessage = (message: Message | undefined): Message | undefined => {
   if (!message) {
     return undefined;
   }
 
-  // 辅助函数：用于截断文本
+  // 辅助函数：用于截断文本（保持不变，它是纯函数）
   const truncate = (text?: string): string | undefined => (text ? (text.length > 20 ? `${text.slice(0, 20)}...` : text) : undefined);
 
+  // 辅助函数：用于过滤实体（保持不变，.filter 返回新数组，是纯函数）
   const filterEntity = (entities: MessageEntity[] | undefined): MessageEntity[] | undefined =>
-    entities ? entities?.filter((e) => ['text_mention', 'mention', 'bot_command'].includes(e.type)) : undefined;
+    entities?.filter((e) => ['text_mention', 'mention', 'bot_command'].includes(e.type));
 
-  // 创建 message 的一个副本并进行修改
-  const simplified: Message = { ...message };
+  // 直接构建并返回一个全新的 Message 对象
+  return {
+    ...message, // 1. 基础：浅拷贝所有原始属性
 
-  if (simplified.text) {
-    simplified.text = truncate(simplified.text);
-  } else if (simplified.caption) {
-    simplified.caption = truncate(simplified.caption);
-  }
+    // 2. 覆盖需要修改的属性
+    text: truncate(message.text),
+    caption: truncate(message.caption),
+    entities: filterEntity(message.entities),
+    caption_entities: filterEntity(message.caption_entities),
 
-  if (simplified.entities) {
-    simplified.entities = filterEntity(simplified.entities);
-  } else if (simplified.caption_entities) {
-    simplified.caption_entities = filterEntity(simplified.caption_entities);
-  }
+    photo: message.photo && message.photo.length > 0 ? [{ ...message.photo[message.photo.length - 1] }] : message.photo,
 
-  if (simplified.reply_to_message) {
-    simplified.reply_to_message = simplifyMessage(simplified.reply_to_message);
-  }
+    // 3. 递归调用，用返回的新对象覆盖 reply_to_message
+    reply_to_message: simplifyMessage(message.reply_to_message),
 
-  // 单独处理 reply_markup 以避免复杂嵌套
-  if (simplified.reply_markup?.inline_keyboard) {
-    simplified.reply_markup = {
-      ...simplified.reply_markup,
-      // 只保留第一行按钮
-      inline_keyboard: [simplified.reply_markup.inline_keyboard[0]],
-    };
-  }
-
-  return simplified;
+    // 4. 安全地处理 reply_markup
+    reply_markup: message.reply_markup?.inline_keyboard?.[0]
+      ? {
+          // 如果需要修改，则创建一个全新的 reply_markup 对象
+          ...(message.reply_markup as InlineKeyboardMarkup), // 复制其他可能的顶层属性
+          inline_keyboard: [
+            // 创建一个只包含第一行的新数组。
+            // 并且，使用 .map 对第一行的所有按钮进行浅拷贝，
+            // 彻底断开与原始按钮对象的引用关系。
+            message.reply_markup.inline_keyboard[0].map((button) => ({ ...button })),
+          ],
+        }
+      : message.reply_markup, // 如果无需修改，则保持原始引用
+  };
 };
 
 /**
- * 主函数：简化整个 Update 对象用于日志记录
+ * 主函数：创建一个简化的 Update 对象副本用于日志记录。
+ * 此函数现在是完全安全的，因为它依赖于纯函数 simplifyMessage。
  * @param update - 原始的 Update 对象
- * @returns 简化后的 Update 对象
+ * @returns 一个全新的、与原始数据完全解耦的简化版 Update 对象
  */
-const simplifyUpdateLog = (update: Update): Update => {
-  // 创建 update 的浅拷贝
+export const simplifyUpdateLog = (update: Update): Update => {
+  // 1. 创建 update 的浅拷贝，这是正确的起点
   const newUpdate: Update = { ...update };
 
-  // 使用辅助函数简化各种消息
+  // 2. 对可能存在的 message 对象应用纯函数进行简化
   if (newUpdate.message) {
     newUpdate.message = simplifyMessage(newUpdate.message);
   }
@@ -135,7 +137,9 @@ const simplifyUpdateLog = (update: Update): Update => {
     newUpdate.edited_message = simplifyMessage(newUpdate.edited_message);
   }
 
+  // 3. 对 callback_query 的处理方式是正确的不可变模式
   if (newUpdate.callback_query?.message) {
+    // 创建一个全新的 callback_query 对象，只替换其中的 message 属性
     newUpdate.callback_query = {
       ...newUpdate.callback_query,
       message: simplifyMessage(newUpdate.callback_query.message),

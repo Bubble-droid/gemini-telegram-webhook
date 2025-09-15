@@ -1,12 +1,11 @@
 // src/handlers/message/mention.ts
 
 import { config, bot, contexts, Log, GeminiError, TelegramError, makeInlineKeyboard, GeminiApi } from '@/services';
-import type { Message, GenerateContentSuccessResponse, ReplyMarkup } from '@/types';
+import type { Message, GenerateContentSuccessResponse, ReplyMarkup, TextQuote } from '@/types';
 import type { Content, Part } from '@google/genai'; // 确保 Part 类型导入
 import { rateLimiterCheck, scheduleDeletion, shortenString, sleep } from '@/utils';
-import { escaper } from '@/utils/formatting';
+import { escaper, sendFormattedMessage } from '@/utils/formatters';
 import { handleFile } from '@/handlers';
-import { sendFormattedMessage } from '@/utils/formatting';
 
 /**
  * 检查消息是否包含文件（文档或照片）
@@ -71,10 +70,11 @@ export class MentionHandler {
   private readonly userId: number;
   private readonly userMessageId: number;
   private readonly replyToMessage: Message | undefined;
+  private readonly quote: TextQuote | undefined;
 
   constructor(message: Message) {
     const { modelName, botName, adminId } = config.load();
-    const { message_id, chat, from, reply_to_message } = message;
+    const { message_id, chat, from, reply_to_message, quote } = message;
     this.modelName = modelName;
     this.botName = botName;
     this.adminId = adminId;
@@ -83,6 +83,7 @@ export class MentionHandler {
     this.userId = from?.id as number;
     this.userMessageId = message_id;
     this.replyToMessage = reply_to_message;
+    this.quote = quote;
 
     Log.info('Handling mention message.', {
       chatId: this.chatId,
@@ -135,10 +136,6 @@ export class MentionHandler {
     const currentMessageCopy: Message = { ...this.message };
     // 处理被回复的消息（如果存在）
     if (this.replyToMessage) {
-      if (this.message.quote?.text) {
-        const quotedContents = `Quoted: "${this.message.quote.text}"\n\n${this.message.text || this.message.caption}`;
-        currentMessageCopy.text = quotedContents;
-      }
       const replyToParts = await extractMessageParts(this.replyToMessage, this.botName);
       if (replyToParts.length > 0) {
         // 判断被回复消息的角色：如果是 Bot，则是 'model'；否则是其他用户，是 'user'。
@@ -148,6 +145,11 @@ export class MentionHandler {
           parts: replyToParts,
         });
       }
+    }
+
+    if (this.quote?.text) {
+      const quotedContents = `> ${this.quote.text}\n\n${this.message.text || this.message.caption}`;
+      currentMessageCopy.text = quotedContents;
     }
 
     // 处理当前消息，总是用户角色

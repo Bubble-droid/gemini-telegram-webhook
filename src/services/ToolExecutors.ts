@@ -1,6 +1,15 @@
 // src/configs/tool_executors.ts
 
-import { GeminiError, Log, makeInlineKeyboard, simplifyGeminiApiResponse, bot, GEMINI_SAFETY_SETTINGS, rotateGeminiApiKey } from '@/services';
+import {
+  GeminiError,
+  Log,
+  makeInlineKeyboard,
+  simplifyGeminiApiResponse,
+  bot,
+  GEMINI_SAFETY_SETTINGS,
+  rotateGeminiApiKey,
+  simplifyGeminiApiContents,
+} from '@/services';
 import type { ReplyMarkup } from '@/types';
 import type * as Github from '@/types/github';
 import type * as Tool from '@/types/tool_executors';
@@ -478,7 +487,7 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
       },
     ];
     try {
-      const response = await callMultiModalModels(modelName, modelConfig, contents);
+      const response = await callCustomModels(modelName, modelConfig, contents);
       const resTexts = response.parts?.map((part) => part.text).join('') || '';
       const imageData = response.parts?.find((part) => part.inlineData && part.inlineData.data);
       const base64Data = imageData?.inlineData?.data as string;
@@ -493,7 +502,7 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
       scheduleDeletion(chatId, result.messageId, 24 * 60 * 60 * 1000);
       return { success: true, data: 'Image generate and reply message successfully.' };
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof GeminiError ? error.message : String(error);
       return { success: false, error: errorMessage };
     }
   },
@@ -513,7 +522,7 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
       },
     ];
     try {
-      const response = await callMultiModalModels(modelName, modelConfig, contents);
+      const response = await callCustomModels(modelName, modelConfig, contents);
       const audioData = response.parts?.find((part) => part.inlineData && part.inlineData.data);
       const base64Data = audioData?.inlineData?.data as string;
       const pcmAudioBuffer = Buffer.from(base64Data, 'base64');
@@ -530,13 +539,13 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
       scheduleDeletion(chatId, result.messageId, 24 * 60 * 60 * 1000);
       return { success: true, data: 'Speech generate and reply message successfully.' };
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof GeminiError ? error.message : String(error);
       return { success: false, error: errorMessage };
     }
   },
 };
 
-const callMultiModalModels = async (model: string, modelConfig: GenerateContentConfig, contents: Content[]): Promise<Content> => {
+export const callCustomModels = async (model: string, modelConfig: GenerateContentConfig, contents: Content[]): Promise<Content> => {
   const newApiKey = await rotateGeminiApiKey();
   const ai = new GoogleGenAI({ apiKey: newApiKey });
   const config: GenerateContentConfig = {
@@ -544,7 +553,7 @@ const callMultiModalModels = async (model: string, modelConfig: GenerateContentC
     safetySettings: GEMINI_SAFETY_SETTINGS,
   };
   Log.info('发送 Gemini API 请求...');
-  Log.info('当前发送的 contents:', { contents });
+  Log.info('当前发送的 contents:', { contents: simplifyGeminiApiContents(contents) });
   const response = await ai.models.generateContent({ model, contents, config });
   Log.info(`Gemini API 响应: `, {
     response: simplifyGeminiApiResponse(response),

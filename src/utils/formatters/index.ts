@@ -1,4 +1,4 @@
-// src/utils/formatting/index.ts
+// src/utils/formatters/index.ts
 
 export * from './formatter';
 export * from './send_formatted_message';

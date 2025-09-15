@@ -25,7 +25,10 @@ const isContainsFile = (message: Message | undefined): boolean => {
 const extractMessageParts = async (message: Message, botName: string): Promise<Part[]> => {
   const parts: Part[] = [];
   let messageText = message.text || message.caption || '';
-  messageText = messageText.replace(`@${botName}`, '').replace(':ask', '').trim();
+  messageText = messageText
+    .replace(new RegExp(`(@${botName})`, 'gi'), '')
+    .replace(/(:ask)/gi, '')
+    .trim();
 
   if (messageText.includes('🤖 模型：') || messageText.includes('✨ 本次任务')) {
     messageText = messageText
@@ -134,22 +137,23 @@ export class MentionHandler {
     const completeContents: Content[] = [...historyChatContents];
 
     const currentMessageCopy: Message = { ...this.message };
-    // 处理被回复的消息（如果存在）
-    if (this.replyToMessage) {
-      const replyToParts = await extractMessageParts(this.replyToMessage, this.botName);
-      if (replyToParts.length > 0) {
-        // 判断被回复消息的角色：如果是 Bot，则是 'model'；否则是其他用户，是 'user'。
-        const replyRole = this.replyToMessage.from?.username === this.botName ? 'model' : 'user';
-        completeContents.push({
-          role: replyRole,
-          parts: replyToParts,
-        });
-      }
-    }
 
     if (this.quote?.text) {
-      const quotedContents = `> ${this.quote.text}\n\n${this.message.text || this.message.caption}`;
+      const quotedContents = `> ${this.quote.text}\n\n${this.message.text || this.message.caption || ''}`;
       currentMessageCopy.text = quotedContents;
+    } else {
+      // 处理被回复的消息（如果存在）
+      if (this.replyToMessage) {
+        const replyToParts = await extractMessageParts(this.replyToMessage, this.botName);
+        if (replyToParts.length > 0) {
+          // 判断被回复消息的角色：如果是 Bot，则是 'model'；否则是其他用户，是 'user'。
+          const replyRole = this.replyToMessage.from?.username === this.botName ? 'model' : 'user';
+          completeContents.push({
+            role: replyRole,
+            parts: replyToParts,
+          });
+        }
+      }
     }
 
     // 处理当前消息，总是用户角色

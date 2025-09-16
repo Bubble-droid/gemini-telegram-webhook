@@ -22,8 +22,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set lower case owner name
-        run: echo "OWNER_LC=${{ github.repository_owner,,}}" >> $GITHUB_ENV
+      - name: set lower case owner name
+        run: |
+          echo "OWNER_LC=${OWNER,,}" >>${GITHUB_ENV}
+        env:
+          OWNER: '${{ github.repository_owner }}'
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v3

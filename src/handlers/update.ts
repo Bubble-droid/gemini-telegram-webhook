@@ -16,27 +16,33 @@ import { handleCallbackQuery } from '@/handlers';
  * @returns {Promise<void>} 此函数不返回任何值，但会触发其他处理逻辑。
  */
 export const handleUpdate = async (update: Update): Promise<void> => {
-  Log.info('Handling Telegram update', { update: simplifyUpdateLog(update) });
   const { botName, allowGroups } = config.load();
   const { update_id, message, callback_query } = update;
-  if (!message || message.sticker) return;
-  const { message_id, chat } = message;
+  if (message?.sticker) return;
+  Log.info('Handling Telegram update', { update: simplifyUpdateLog(update) });
+  if (!message && !callback_query) return;
+  const msg = message || callback_query?.message;
+  if (!msg) {
+    Log.warn('No message or callback_query message found in update to process chat info', { updateId: update_id });
+    return;
+  }
+  const { message_id, chat } = msg;
   if (!allowGroups.includes(chat.id) || chat.type === 'private') return;
-  const messageText = message.text || message.caption || '';
-  const messageEntities = message.entities || message.caption_entities || [];
+  const messageText = msg.text || msg.caption || '';
+  const messageEntities = msg.entities || msg.caption_entities || [];
   try {
-    if (message.new_chat_members) {
-      return await handleNewMember(message);
-    }
     if (callback_query?.data) {
       return await handleCallbackQuery(callback_query);
+    }
+    if (msg.new_chat_members) {
+      return await handleNewMember(msg);
     }
     if (messageEntities.length > 0) {
       for (const entity of messageEntities) {
         if (entity.type === 'mention' || entity.type === 'text_mention') {
           const mentionedText = messageText.substring(entity.offset, entity.offset + entity.length);
           if (mentionedText === `@${botName}`) {
-            return await handleMention(message);
+            return await handleMention(msg);
           }
         }
       }
@@ -47,13 +53,13 @@ export const handleUpdate = async (update: Update): Promise<void> => {
           if (atIndex !== -1) {
             const mentionedTarget = commandText.slice(atIndex + 1);
             if (mentionedTarget === botName) {
-              return await handleCommand(message);
+              return await handleCommand(msg);
             }
           }
         }
       }
     }
-    return await handleNormal(message);
+    return await handleNormal(msg);
   } catch (err: unknown) {
     const errorMessage: string = err instanceof AppError ? err.message : String(err);
     Log.error('Error while handling update', { err, updateId: update_id });

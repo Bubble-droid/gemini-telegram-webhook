@@ -26,6 +26,7 @@ export const faqData: FaqItem[] = [
     keywordGroups: [
       ['(开机)?自启(动)?', '([不没无]法?|不能)生效|(启动)?失败|没用|不行|搞不定|起不来|没效果'],
       ['autostart|boot start', 'fail|not working|doesn.?t work|no effect'],
+      ['(launch|start) on (startup|boot)', 'fail|not working|issue|problem'],
     ],
     answer: `**Q: 自启动不生效？**
 
@@ -35,9 +36,14 @@ A: 请按以下顺序排查：
 3. **管理员权限 (Windows)**：前往 **设置 -> 通用**，启用 **以管理员身份运行** 并重启客户端。`,
   },
   {
-    keywordGroups: [['滚动(发行)?', '(更新|升级|update|upgrade)', '([不没无]法?|不能)了?|失败|不动|卡住|报错|出问题']],
+    keywordGroups: [
+      ['滚动(发行)?', '(更新|升级|update|upgrade)', '([不没无]法?|不能)了?|失败|不动|卡住|报错|出问题'],
+      // --- 新增英文关键词 ---
+      ['rolling(-?release)?', '(update|upgrade)', 'fail|stuck|error|issue|problem'],
+    ],
     excludeKeywords: [
       ['内核', '(启|运)动|打不开|崩了|挂了'], // 排除描述更新后内核问题的场景
+      ['core', 'start|launch|run', 'fail|crash'],
     ],
     answer: `**Q: 滚动发行无法更新？**
 
@@ -57,7 +63,7 @@ A: 滚动发行插件仅在当前最新的大版本内工作。当发布新的�
   {
     keywordGroups: [
       ['(首页|主页|面板)', '只(有)?(显示)?(4|四)个|太少|空|没了|不见了'],
-      ['dashboard|home page', 'only (shows? )?4|empty|gone'],
+      ['dashboard|home page', 'only (shows? )?4|empty|gone|missing'],
     ],
     answer: `**Q: 首页只显示 4 个配置项？**
 
@@ -97,8 +103,10 @@ A:
     keywordGroups: [
       ['订阅', '[没无](有)?(流量|速度|信息)|用不了|连不上|没速度'],
       ['subscription', 'no traffic (info)?|not a valid'],
+      // --- 新增英文关键词 ---
+      ['subscription', '(doesn.?t|not) work|fail(ed)? to update|can.?t update'],
     ],
-    excludeKeywords: [['tun']], // 排除更具体的 TUN 问题
+    excludeKeywords: [['tun']],
     answer: `**Q: 订阅无流量信息或更新失败？**
 
 A:
@@ -111,6 +119,8 @@ A:
       ['多(个)?网卡', '网络.*(异常|问题|用不了)|(连|上)不了网|断流'],
       ['(wifi|无线|有线|网线)', '(一起|同时)用', '([不没无]法?|不能)上网'],
       ['multiple network cards?', 'issue|problem'],
+      // --- 新增英文关键词 ---
+      ['multiple network (interfaces?|cards?)', '(internet|network) issue|problem|connection lost'],
     ],
     answer: `**Q: 多网卡设备网络异常？**
 
@@ -125,6 +135,8 @@ A:
     keywordGroups: [
       ['(怎么|如何|咋)', '(导入|添加|载入|放进去|用|应用|加载)', '(自定义|自己.*|完整.*|写好)?.*配置(文件)?.*(运行|启动)?.*'],
       ['import', 'custom config|full config|apply|load'],
+      // --- 新增英文关键词 ---
+      ['how to', '(import|load|use|apply)', '(my|a) (custom|full|own) config(uration)?'],
     ],
     answer: `**Q: 如何导入自定义配置文件？**
 
@@ -136,6 +148,8 @@ A: GUI.for.Cores 本身不直接支持导入完整的配置文件，但可通过
     keywordGroups: [
       ['(怎么|如何|咋)', '(导入|添加|加入|粘贴|使用)', '(单个)?节点|vmess|ss|vless|trojan'],
       ['import', 'single node|vmess|paste'],
+      // --- 新增英文关键词 ---
+      ['how to', '(import|add|paste)', 'single node|share link'],
     ],
     answer: `**Q: 如何导入单个节点链接 (如 vmess://)？**
 
@@ -181,8 +195,10 @@ A:
       ['tun(模式)?', '([没无]|缺少)权限|permission denied'],
       ['tun(模式)?', '(启动|开启|打开)失败', '(权限|permission)'],
       ['(linux|内核)', '(怎么|如何|咋)', '(给|授(予)?)?(特)?权|提权|管理员'],
+      // --- 新增英文关键词 ---
+      ['tun( mode)?', 'permission|privilege|admin rights|sudo|root'],
     ],
-    excludeKeywords: [['file not found']], // 排除更具体的 "文件找不到" 错误
+    excludeKeywords: [['file not found']],
     answer: `**Q: TUN 模式无权限导致启动失败？**
 
 A:
@@ -194,6 +210,8 @@ A:
       ['linux', '授权', '[没无]反应|点不了|点了没用|按了没反应'],
       ['linux', 'pkexec'],
       ['(授(予)?|给)(特)?权', '没(有)?(效果|反应)|点(了)?没用'],
+      // --- 新增英文关键词 ---
+      ['linux', 'authorize button', 'doesn.?t work|no response|nothing happens'],
     ],
     answer: `**Q: Linux 点击授权按钮没反应？**
 
@@ -215,13 +233,15 @@ A:
       ['tun(模式)?', '系统代理', '(才|必须|要开|依赖|同时)'],
       ['tun(模式)?', '(断网|网络(异常|问题|断了))'],
       ['tun', '(一开|打开|启用).*(就)?', '(没网|断网|上不了网)'],
+      ['tun(模式)?', '(打不开|无法访问)', '(网站|网页|github|google)'],
+      ['(启动|运行|开)了?.*(内核|tun)', '(就)?(没网|断网|上不了网)'],
+      ['tun(模式)?', '(只|仅)能.*(tg|电报|telegram)', '(网页|网站|浏览器).*(打不开|没反应|用不了)'],
+      // --- 新增英文关键词 ---
+      ['tun( mode)?', '(no|lost) (internet|connection)|can.?t connect|not working'],
+      ['enable tun', 'lose internet|no network'],
+      ['tun( mode)?', '(only|just) (tg|telegram) works', '(browser|website)s? (doesn.?t|not) work'],
     ],
-    excludeKeywords: [
-      ['(mac|macos)'], // 已有更具体的 macOS 规则
-      ['permission denied'], // 排除权限问题
-      ['file not found'], // 排除文件找不到问题
-      ['(ssl|证书).*(错误|error)'], // 排除 SSL 证书问题
-    ],
+    excludeKeywords: [['(mac|macos)'], ['permission denied'], ['file not found'], ['(ssl|证书).*(错误|error)']],
     answer: `**Q: TUN 模式启动后无法上网？**
 
 A: 请按以下顺序排查：
@@ -236,12 +256,12 @@ A: 请按以下顺序排查：
     keywordGroups: [
       ['(mac|macos)', 'tun(模式)?', '([没无]反应)|(([没无不]法?|不能|连不上|上不了|没).*网(络)?|断网)'],
       ['(mac|macos)', 'tun(模式)?', '系统代理', '(才|必须|要开|依赖|同时)'],
+      ['(mac|macos)', 'tun(模式)?', '(打不开|无法访问)', '(网站|网页|github|google)'],
+      ['(mac|macos)', 'tun(模式)?', '(只|仅)能.*(tg|电报|telegram)', '(网页|网站|浏览器).*(打不开|没反应|用不了)'],
+      // --- 新增英文关键词 ---
+      ['(mac|macos)', 'tun( mode)?', '(no|lost) (internet|connection)|can.?t connect|not working'],
     ],
-    excludeKeywords: [
-      ['permission denied'], // 排除权限问题
-      ['file not found'], // 排除文件找不到问题
-      ['(ssl|证书).*(错误|error)'], // 排除 SSL 证书问题
-    ],
+    excludeKeywords: [['permission denied'], ['file not found'], ['(ssl|证书).*(错误|error)']],
     answer: `**Q: macOS 启用 TUN 后无法上网？**
 
 A:
@@ -249,7 +269,11 @@ A:
 *   **解决方案**: 将您 Mac 的系统 DNS 修改为任意公共 DNS 服务器（如 \`8.8.8.8\`）。`,
   },
   {
-    keywordGroups: [['tun(模式)?', '(ssl|证书).*(错误|error)']],
+    keywordGroups: [
+      ['tun(模式)?', '(ssl|证书).*(错误|error)'],
+      // --- 新增英文关键词 ---
+      ['tun( mode)?', 'ssl|certificate', 'error|issue|problem'],
+    ],
     answer: `**Q: TUN 模式下出现 SSL 证书错误？**
 
 A: 尝试将您操作系统的 DNS 服务器地址修改为公共 DNS，例如 \`8.8.8.8\` 或 \`1.1.1.1\`。`,
@@ -285,33 +309,42 @@ A:
         '(更新|升级|重启|安装|设置|操作|搞了半天).*(之后|以后|完了)?',
         '(就|突然)?(启动|运行|用)不(起来)?了|打不开|挂了|崩了|没反应|失败|出问题|报错|寄了|坏了',
       ],
-      // 模式二：[主体] -> [负面结果] -> [求助] (三段式)
-      [
-        '(内核|程序|软件|客户端)',
-        '(启动|运行|用)不(起来)?了|打不开|挂了|崩了|没反应|失败|出问题|报错|寄了|坏了',
-        '(怎么办|怎么解决|咋回事|咋整|求助)',
-      ],
-      // 模式三：完全模糊的描述
-      ['(不知道|搞不懂)怎么回事', '(突然|一下)就(用不了|坏了|启动不(起来)?了)'],
-      // 模式四：[主体] -> [负面结果] (新增的两段式，解决核心问题)
+      // 模式二：[主体] -> [负面结果]
       ['(内核|程序|软件|客户端)', '(无法|不能|没法)?.*(启动|运行)|(启动|运行).*(不了|不起来|失败|没反应)|启动失败'],
+      ['(内核|程序|软件|客户端)', '(启动|运行|开)了?(之后|以后)?', '(就)?(没网|断网|上不了网)'],
+
+      // 模式三：模糊的网络问题
+      ['(为啥|怎么回事|咋回事)', '(突然)?', '(上|连)不了网|没网了|断网了'],
+
+      // 模式四：【新增】超模糊的“突然不能用”问题
+      ['(突然|忽然|一下|怎么就)', '(用|连|启)不(了|动)|坏了|不行了|没反应了'],
+      ['(昨天|之前)还(好好的|能用|正常)', '(今天|现在)就?(不行了|用不了|坏了)'],
+      ['(啥也没干|没动过)', '就?(用不了|坏了|不行了)'],
+
+      // --- 对应的英文模式 ---
+      ['(app|client|core|program)', '(won.?t|doesn.?t|can.?t) (start|launch|run)|failed to (start|launch|run)'],
+      ['(after|when) i (start|launch|run|update)', '(no|lost) internet|connection lost'],
+      ['(why)? it suddenly stopped working', '(help)?'],
+      ['it was working (fine|yesterday)', '(but )?now it doesn.?t'],
+      ['it just broke|doesn.?t work anymore'],
     ],
     excludeKeywords: [
-      // --- 单一高确定性证据 ---
-      ['(截图|图片|视频|screenshot|image)'], // 直接提及截图/视频
-      ['(代码|堆栈|code|stack ?trace)'], // 直接提及代码/堆栈
-      ['[a-zA-Z]:\\\\[^\\s]*|[a-zA-Z/]+/[^\\s]*\\.[a-zA-Z]{2,}:\\d+'], // 匹配代码路径和行号
+      // --- 排除更具体的规则，确保兜底规则是最后选择 ---
+      ['tun'], // 排除所有提及 tun 的问题
+      ['订阅|subscription'], // 排除订阅问题
+      ['节点|node'], // 排除节点问题
 
-      // --- 常见的错误/日志关键词 ---
-      ['\\b(fail(ed)?|exception|panic|fatal|timeout|denied|invalid|refused|unauthorized|missing|unexpected)\\b'], // 英文关键词
-      ['(异常|超时|拒绝|权限|找不到|无效|无法|错误码|未授权|缺少|意外的)'], // 中文关键词
-
-      // --- 带有上下文的、更精确的排除规则 (利用 AND 逻辑) ---
-      ['(日志|log)', '(错误|error|报错|提示|显示|说)'], // "日志"与"错误"等词同时出现
-      ['(这是|下面是|附上)', '(日志|log|错误|error|截图|报错)'], // "这是"与证据类型词同时出现
-      ['(错误|error|报错)', '(是|如下)'], // "错误是" / "报错如下"
-      ['(帮|请帮|大佬)', '(看看|看一看|康康)', '(日志|截图|报错|错误)'], // 请求查看具体的证据
-      ['(status: ?\\d+|exit code ?\\d+|line ?\\d+|错误代码 ?\\d+)'], // 结构化的错误信息
+      // --- 排除提供了明确错误信息的场景 ---
+      ['(截图|图片|视频|screenshot|image)'],
+      ['(代码|堆栈|code|stack ?trace)'],
+      ['[a-zA-Z]:\\\\[^\\s]*|[a-zA-Z/]+/[^\\s]*\\.[a-zA-Z]{2,}:\\d+'],
+      ['\\b(fail(ed)?|exception|panic|fatal|timeout|denied|invalid|refused|unauthorized|missing|unexpected|error)\\b'],
+      ['(异常|超时|拒绝|权限|找不到|无效|无法|错误码|未授权|缺少|意外的|报错)'],
+      ['(日志|log)', '(错误|error|提示|显示|说)'],
+      ['(这是|下面是|附上)', '(日志|log|错误|error|截图)'],
+      ['(错误|error)', '(是|如下)'],
+      ['(帮|请帮|大佬)', '(看看|看一看|康康)', '(日志|截图|错误)'],
+      ['(status: ?\\d+|exit code ?\\d+|line ?\\d+|错误代码 ?\\d+)'],
     ],
     answer: `**Q: 程序无法启动或运行异常的通用排查指南**
 
@@ -323,7 +356,7 @@ A:
 
 1.  **更新主程序**: 前往 **软件设置 -> 关于** 页面，检测并更新 GUI 客户端至最新版本。
 2.  **启用滚动发行**: 前往 **软件设置 -> 通用** 页面，确保 **启用滚动发行** 选项已启用。
-3.  **更新滚动发行插件**: 前往 **插件中心**，安装或更新 **滚动发行** 插件至最新版本，并运行。
+3.  **更新滚动发行**: 前往 **插件中心**，安装或更新 **滚动发行** 插件至最新版本，并运行。
 4.  **更新内核**: 前往 **软件设置 -> 内核** 页面，检测并更新内核至最新版本。
 
 完成以上所有步骤后，请**重启内核**并检查问题是否解决。

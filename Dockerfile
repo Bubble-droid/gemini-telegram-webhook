@@ -16,7 +16,7 @@ FROM node:current-bookworm-slim AS prod
 WORKDIR /app
 
 # 安装 sing-box + proxychains-ng（和最小工具）
-RUN apt update && apt upgrade -y && apt install -y proxychains4 curl
+RUN apt update && apt upgrade -y && apt install -y proxychains4 curl git tini netcat-traditional && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSOL "https://sing-box.app/install.sh" && chmod +x ./install.sh && bash ./install.sh --beta
 
 COPY --from=build /app/dist /app/dist
@@ -28,12 +28,12 @@ COPY ./proxy/sing-box-config.json /etc/sing-box/config.json
 # 覆盖 proxychains 配置
 COPY ./proxy/proxychains.conf /etc/proxychains/proxychains.conf
 
-# 启动脚本（先后台启动 sing-box，再用 proxychains4 exec node）
 COPY ./proxy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-RUN npm install
+RUN corepack disable && npm install -g pnpm@latest
+RUN pnpm install
 
 EXPOSE 39001
 
-CMD ["/usr/local/bin/docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]

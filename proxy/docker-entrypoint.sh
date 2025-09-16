@@ -1,13 +1,23 @@
 #!/bin/sh
 set -e
 
-# 启动 sing-box（配置位于 /etc/sing-box/config.json）
 # 使用 & 后台运行
-sing-box -D /var/lib/sing-box -C /etc/sing-box run &
+sing-box run -D /var/lib/sing-box -C /etc/sing-box &
 
-# 等待本地 socks 端口就绪（简单等待 + 可替换为循环检测端口）
-sleep 1
+# 检查 sing-box 代理端口是否就绪
+count=0
+while ! nc -z localhost 10080 && [ $count -lt 30 ]; do
+    echo "Waiting for sing-box to start..."
+    sleep 1
+    count=$((count+1))
+done
+
+if [ $count -ge 30 ]; then
+    echo "Error: sing-box failed to start in time. Exiting."
+    exit 1
+fi
+
+echo "sing-box is up!"
 
 # 将 PID1 换成 proxychains4 node（proxychains4 位于 PATH）
-# proxychains4 会读取 /etc/proxychains.conf
 exec proxychains4 node --enable-source-maps /app/dist/index.js

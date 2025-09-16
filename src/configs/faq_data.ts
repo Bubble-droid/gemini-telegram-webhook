@@ -229,6 +229,7 @@ A:
   },
   {
     keywordGroups: [
+      // 通用关键词
       ['tun(模式)?', '([没无]反应)|(([没无不]法?|不能|连不上|上不了|没).*网(络)?)'],
       ['tun(模式)?', '系统代理', '(才|必须|要开|依赖|同时)'],
       ['tun(模式)?', '(断网|网络(异常|问题|断了))'],
@@ -236,37 +237,40 @@ A:
       ['tun(模式)?', '(打不开|无法访问)', '(网站|网页|github|google)'],
       ['(启动|运行|开)了?.*(内核|tun)', '(就)?(没网|断网|上不了网)'],
       ['tun(模式)?', '(只|仅)能.*(tg|电报|telegram)', '(网页|网站|浏览器).*(打不开|没反应|用不了)'],
-      // --- 新增英文关键词 ---
+      // macOS 特定关键词
+      ['(mac|macos)', 'tun(模式)?', '([没无]反应)|(([没无不]法?|不能|连不上|上不了|没).*网(络)?|断网)'],
+      // 英文关键词
       ['tun( mode)?', '(no|lost) (internet|connection)|can.?t connect|not working'],
+      ['(mac|macos)', 'tun( mode)?', '(no|lost) (internet|connection)|can.?t connect|not working'],
       ['enable tun', 'lose internet|no network'],
       ['tun( mode)?', '(only|just) (tg|telegram) works', '(browser|website)s? (doesn.?t|not) work'],
     ],
-    excludeKeywords: [['(mac|macos)'], ['permission denied'], ['file not found'], ['(ssl|证书).*(错误|error)']],
+    excludeKeywords: [
+      // 注意：这里不再排除 macos
+      ['permission denied'], // 排除权限问题
+      ['file not found'], // 排除文件找不到问题
+      ['(ssl|证书).*(错误|error)'], // 排除 SSL 证书问题
+    ],
     answer: `**Q: TUN 模式启动后无法上网？**
 
-A: 请按以下顺序排查：
-*   **方案 A**: 在软件设置中尝试更换 **TUN 堆栈模式** (如 GVisor, System)。
-*   **方案 B (Windows)**: 检查 Windows 防火墙设置，确保 GUI 客户端及其内核程序未被阻止。
-*   **方案 C (IPv6 问题)**: 如果您的网络不支持 IPv6，请进行以下调整：
-    1. **配置设置 -> 入站设置** -> \`tun-in\` -> 删除 IPv6 地址前缀，并启用**严格路由**。
-    2. **配置设置 -> DNS 设置 -> 通用** -> 将 **解析策略** 设为 \`只使用 IPv4\`。
-*   **方案 D (IP 冲突排查)**: 前往 **配置设置 -> 入站设置** -> \`tun-in\`，尝试修改 **IP 地址前缀** 为一个冷门的私有网段，以避免与当前局域网或其他网络接口产生冲突。`,
-  },
-  {
-    keywordGroups: [
-      ['(mac|macos)', 'tun(模式)?', '([没无]反应)|(([没无不]法?|不能|连不上|上不了|没).*网(络)?|断网)'],
-      ['(mac|macos)', 'tun(模式)?', '系统代理', '(才|必须|要开|依赖|同时)'],
-      ['(mac|macos)', 'tun(模式)?', '(打不开|无法访问)', '(网站|网页|github|google)'],
-      ['(mac|macos)', 'tun(模式)?', '(只|仅)能.*(tg|电报|telegram)', '(网页|网站|浏览器).*(打不开|没反应|用不了)'],
-      // --- 新增英文关键词 ---
-      ['(mac|macos)', 'tun( mode)?', '(no|lost) (internet|connection)|can.?t connect|not working'],
-    ],
-    excludeKeywords: [['permission denied'], ['file not found'], ['(ssl|证书).*(错误|error)']],
-    answer: `**Q: macOS 启用 TUN 后无法上网？**
+A: 请按以下顺序排查，方案覆盖 Windows, macOS 及 Linux：
+*   **方案 A (通用): 更换 TUN 堆栈模式**
+    在软件设置中尝试更换 **TUN 堆栈模式** (如 GVisor, System)。
 
-A:
-*   **原因**: sing-box 在 macOS 上不劫持发往局域网的 DNS 请求。
-*   **解决方案**: 将您 Mac 的系统 DNS 修改为任意公共 DNS 服务器（如 \`8.8.8.8\`）。`,
+*   **方案 B (macOS 特定): 修改系统 DNS**
+    *   **原因**: sing-box 在 macOS 上不劫持发往局域网的 DNS 请求。
+    *   **解决方案**: 将您 Mac 的系统 DNS 修改为任意公共 DNS 服务器（例如 \`8.8.8.8\`）。
+
+*   **方案 C (Windows 特定): 检查防火墙**
+    检查 Windows 防火墙设置，确保 GUI 客户端及其内核程序未被阻止。
+
+*   **方案 D (通用 / IPv6 问题): 调整 IPv6 设置**
+    如果您的网络不支持 IPv6，请进行以下调整：
+    1.  **配置设置 -> 入站设置** -> \`tun-in\` -> 删除 IPv6 地址前缀，并启用 **严格路由**。
+    2.  **配置设置 -> DNS 设置 -> 通用** -> 将 **解析策略** 设为 \`只使用 IPv4\`。
+
+*   **方案 E (通用 / IP 冲突): 修改 IP 地址前缀**
+    前往 **配置设置 -> 入站设置** -> \`tun-in\`，尝试修改 **IP 地址前缀** 为一个冷门的私有网段，以避免与当前局域网或其他网络接口产生冲突。`,
   },
   {
     keywordGroups: [
@@ -316,12 +320,12 @@ A:
       // 模式三：模糊的网络问题
       ['(为啥|怎么回事|咋回事)', '(突然)?', '(上|连)不了网|没网了|断网了'],
 
-      // 模式四：【新增】超模糊的“突然不能用”问题
+      // 模式四：超模糊的“突然不能用”问题
       ['(突然|忽然|一下|怎么就)', '(用|连|启)不(了|动)|坏了|不行了|没反应了'],
       ['(昨天|之前)还(好好的|能用|正常)', '(今天|现在)就?(不行了|用不了|坏了)'],
       ['(啥也没干|没动过)', '就?(用不了|坏了|不行了)'],
 
-      // --- 对应的英文模式 ---
+      // 英文模式
       ['(app|client|core|program)', '(won.?t|doesn.?t|can.?t) (start|launch|run)|failed to (start|launch|run)'],
       ['(after|when) i (start|launch|run|update)', '(no|lost) internet|connection lost'],
       ['(why)? it suddenly stopped working', '(help)?'],
@@ -329,22 +333,15 @@ A:
       ['it just broke|doesn.?t work anymore'],
     ],
     excludeKeywords: [
-      // --- 排除更具体的规则，确保兜底规则是最后选择 ---
-      ['tun'], // 排除所有提及 tun 的问题
-      ['订阅|subscription'], // 排除订阅问题
-      ['节点|node'], // 排除节点问题
-
-      // --- 排除提供了明确错误信息的场景 ---
+      ['tun'], // 仍然排除 'tun'，以确保优先匹配上面的专项规则
+      ['订阅|subscription'],
+      ['节点|node'],
       ['(截图|图片|视频|screenshot|image)'],
       ['(代码|堆栈|code|stack ?trace)'],
       ['[a-zA-Z]:\\\\[^\\s]*|[a-zA-Z/]+/[^\\s]*\\.[a-zA-Z]{2,}:\\d+'],
       ['\\b(fail(ed)?|exception|panic|fatal|timeout|denied|invalid|refused|unauthorized|missing|unexpected|error)\\b'],
       ['(异常|超时|拒绝|权限|找不到|无效|无法|错误码|未授权|缺少|意外的|报错)'],
       ['(日志|log)', '(错误|error|提示|显示|说)'],
-      ['(这是|下面是|附上)', '(日志|log|错误|error|截图)'],
-      ['(错误|error)', '(是|如下)'],
-      ['(帮|请帮|大佬)', '(看看|看一看|康康)', '(日志|截图|错误)'],
-      ['(status: ?\\d+|exit code ?\\d+|line ?\\d+|错误代码 ?\\d+)'],
     ],
     answer: `**Q: 程序无法启动或运行异常的通用排查指南**
 
@@ -369,10 +366,28 @@ A:
 *   **检查管理员权限**:
     *   **Windows**: 前往 **设置 -> 通用**，启用 **以管理员身份运行** 并重启客户端。
     *   **macOS/Linux**: 前往 **设置 -> 内核** 页面，点击授权按钮为内核程序重新授权。
-*   **TUN 模式特定排查**: 如果您正在使用 TUN 模式，请检查：
-    *   **TUN 网卡名称**: 确保 **入站设置** 的 **TUN 网卡名称** 不为空（可尝试填入 \`sing-box-tun\` 或 \`mihomo-tun\`）。
-    *   **更换 TUN 堆栈**: 在软件的 TUN 设置中，尝试更换 **TUN 堆栈模式** (如 GVisor, System)。
-    *   **修改 IP 地址前缀**: 前往 **配置设置 -> 入站设置** -> \`tun-in\`，尝试将 **IP 地址前缀** 修改为一个冷门的私有网段，以避免与局域网或其他网络接口 IP 冲突。
+
+0.0.3. **第三步：TUN 模式无法上网专项排查**
+
+如果您的问题与 **TUN 模式** 相关（例如，开启后无法上网），请仔细遵循以下步骤：
+
+*   **方案 A (通用): 更换 TUN 堆栈模式**
+    在软件设置中尝试更换 **TUN 堆栈模式** (如 GVisor, System)。
+
+*   **方案 B (macOS 特定): 修改系统 DNS**
+    *   **原因**: sing-box 在 macOS 上不劫持发往局域网的 DNS 请求。
+    *   **解决方案**: 将您 Mac 的系统 DNS 修改为任意公共 DNS 服务器（例如 \`8.8.8.8\`）。
+
+*   **方案 C (Windows 特定): 检查防火墙**
+    检查 Windows 防火墙设置，确保 GUI 客户端及其内核程序未被阻止。
+
+*   **方案 D (通用 / IPv6 问题): 调整 IPv6 设置**
+    如果您的网络不支持 IPv6，请进行以下调整：
+    1.  **配置设置 -> 入站设置** -> \`tun-in\` -> 删除 IPv6 地址前缀，并启用 **严格路由**。
+    2.  **配置设置 -> DNS 设置 -> 通用** -> 将 **解析策略** 设为 \`只使用 IPv4\`。
+
+*   **方案 E (通用 / IP 冲突): 修改 IP 地址前缀**
+    前往 **配置设置 -> 入站设置** -> \`tun-in\`，尝试修改 **IP 地址前缀** 为一个冷门的私有网段，以避免与当前局域网或其他网络接口产生冲突。
 
 0.0.3. **最终步骤：如果问题仍未解决**
 

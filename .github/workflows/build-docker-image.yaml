@@ -6,20 +6,24 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: bubble-droid/gemini-telegram-webhook
+  # 镜像名仍然是仓库名，它通常已经是小写的
+  IMAGE_NAME: ${{ github.event.repository.name }}
 
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write # 'packages' 需要 write 权限来删除镜像
+      packages: write
       attestations: write
       id-token: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set lower case owner name
+        run: echo "OWNER_LC=${{ github.repository_owner,,}}" >> $GITHUB_ENV
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v3
@@ -40,21 +44,23 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          # 修正：使用转换后的小写用户名来构建 tag
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.IMAGE_NAME }}:latest
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
+          # 修正：同样，subject-name 也需要使用小写用户名
+          subject-name: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.IMAGE_NAME}}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
-      # --- 新增的清理步骤 ---
-      - name: Delete untagged images
+      - name: Delete untagged older versions
         uses: actions/delete-package-versions@v5
         with:
+          # 此处保持不变，因为它只需要包名，不需要所有者前缀
           package-name: ${{ env.IMAGE_NAME }}
           package-type: 'container'
-          min-versions-to-keep: 0 # 保留0个未打标签的版本，即全部删除
-          delete-untagged-versions: 'true' # 明确指定删除未打标签的版本
+          min-versions-to-keep: 0
+          delete-only-untagged-versions: "true"
           token: ${{ secrets.GITHUB_TOKEN }}

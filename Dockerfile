@@ -26,7 +26,7 @@ COPY --from=build /app/package-docker.json /app/package.json
 COPY ./proxy/sing-box-config.json /etc/sing-box/config.json
 
 # 覆盖 proxychains 配置
-COPY ./proxy/proxychains.conf /etc/proxychains/proxychains.conf
+COPY ./proxy/proxychains.conf /etc/proxychains4.conf
 
 COPY ./proxy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh

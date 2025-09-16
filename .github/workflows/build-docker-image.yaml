@@ -6,7 +6,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # 镜像名仍然是仓库名，它通常已经是小写的
   IMAGE_NAME: ${{ github.event.repository.name }}
 
 jobs:

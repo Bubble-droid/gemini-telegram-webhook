@@ -46,13 +46,12 @@ jobs:
         with:
           context: .
           push: true
-          # 修正：使用转换后的小写用户名来构建 tag
           tags: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.IMAGE_NAME }}:latest
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME}}
+          subject-name: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.IMAGE_NAME}}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
@@ -61,6 +60,6 @@ jobs:
         with:
           package-name: ${{ env.IMAGE_NAME }}
           package-type: 'container'
-          min-versions-to-keep: 0
+          min-versions-to-keep: 1
           delete-only-untagged-versions: "true"
           token: ${{ secrets.GITHUB_TOKEN }}

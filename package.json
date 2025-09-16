@@ -28,7 +28,8 @@
     "start": "node --enable-source-maps --env-file=.env dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --fix",
-    "format": "prettier --write \"src/**/*.ts\""
+    "format": "prettier --write \"src/**/*.ts\"",
+    "push:github": "pnpm build:server && git add . && git commit -m 'Update' && git push"
   },
   "packageManager": "pnpm@10.14.0",
   "dependencies": {

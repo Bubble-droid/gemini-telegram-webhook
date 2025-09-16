@@ -204,11 +204,7 @@ A:
 *   **原因**: sing-box 无法创建 TUN 虚拟网卡。
 *   **解决方案**:
     1. 检查 **入站设置** -> \`tun-in\` 的 **TUN 网卡名称** 是否为空，尝试填入任意名称（如 \`sing-box-tun\`）。
-    2. 确保没有其他应用（如其他代理软件、VPN）占用了 TUN 服务。`},{keywordGroups:[["(mac|macos)","tun(模式)?","([没无不]法?|不能|连不上|上不了|没).*网(络)?|断网"],["(mac|macos)","tun(模式)?","系统代理","(才|必须|要开|依赖|同时)"]],excludeKeywords:[["permission denied"],["file not found"],["(ssl|证书).*(错误|error)"]],answer:`**Q: macOS 启用 TUN 后无法上网？**
-
-A:
-*   **原因**: sing-box 在 macOS 上不劫持发往局域网的 DNS 请求。
-*   **解决方案**: 将您 Mac 的系统 DNS 修改为任意公共 DNS 服务器（如 \`8.8.8.8\`）。`},{keywordGroups:[["tun(模式)?","([没无不]法?|不能|连不上|上不了|没).*网(络)?"],["tun(模式)?","(断网|网络(异常|问题|断了))"],["tun","(一开|打开|启用).*(就)?","(没网|断网|上不了网)"]],excludeKeywords:[["(mac|macos)"],["permission denied"],["file not found"],["(ssl|证书).*(错误|error)"]],answer:`**Q: TUN 模式启动后无法上网？**
+    2. 确保没有其他应用（如其他代理软件、VPN）占用了 TUN 服务。`},{keywordGroups:[["tun(模式)?","([没无]反应)|(([没无不]法?|不能|连不上|上不了|没).*网(络)?)"],["tun(模式)?","系统代理","(才|必须|要开|依赖|同时)"],["tun(模式)?","(断网|网络(异常|问题|断了))"],["tun","(一开|打开|启用).*(就)?","(没网|断网|上不了网)"]],excludeKeywords:[["(mac|macos)"],["permission denied"],["file not found"],["(ssl|证书).*(错误|error)"]],answer:`**Q: TUN 模式启动后无法上网？**
 
 A: 请按以下顺序排查：
 *   **方案 A**: 在软件设置中尝试更换 **TUN 堆栈模式** (如 GVisor, System)。
@@ -216,7 +212,11 @@ A: 请按以下顺序排查：
 *   **方案 C (IPv6 问题)**: 如果您的网络不支持 IPv6，请进行以下调整：
     1. **配置设置 -> 入站设置** -> \`tun-in\` -> 删除 IPv6 地址前缀，并启用**严格路由**。
     2. **配置设置 -> DNS 设置 -> 通用** -> 将 **解析策略** 设为 \`只使用 IPv4\`。
-*   **方案 D (IP 冲突排查)**: 前往 **配置设置 -> 入站设置** -> \`tun-in\`，尝试修改 **IP 地址前缀** 为一个冷门的私有网段，以避免与当前局域网或其他网络接口产生冲突。`},{keywordGroups:[["tun(模式)?","(ssl|证书).*(错误|error)"]],answer:"**Q: TUN 模式下出现 SSL 证书错误？**\n\nA: 尝试将您操作系统的 DNS 服务器地址修改为公共 DNS，例如 `8.8.8.8` 或 `1.1.1.1`。"},{keywordGroups:[["(怎么|如何|咋)","(看|查看|打开|在哪)","日志"],["log","where|how to view|find"]],answer:"**Q: 如何查看 GUI 日志？**\n\nA: 按 `Ctrl + Shift + F12` 打开开发者工具控制台即可查看，主要记录 GUI 自身运行信息。"},{keywordGroups:[["(怎么|如何|咋)","(启用|开启|打开)","滚动(发行)?"],["how to","enable","rolling(-release)?"]],answer:`**Q: 怎么启用滚动发行？**
+*   **方案 D (IP 冲突排查)**: 前往 **配置设置 -> 入站设置** -> \`tun-in\`，尝试修改 **IP 地址前缀** 为一个冷门的私有网段，以避免与当前局域网或其他网络接口产生冲突。`},{keywordGroups:[["(mac|macos)","tun(模式)?","([没无]反应)|(([没无不]法?|不能|连不上|上不了|没).*网(络)?|断网)"],["(mac|macos)","tun(模式)?","系统代理","(才|必须|要开|依赖|同时)"]],excludeKeywords:[["permission denied"],["file not found"],["(ssl|证书).*(错误|error)"]],answer:`**Q: macOS 启用 TUN 后无法上网？**
+
+A:
+*   **原因**: sing-box 在 macOS 上不劫持发往局域网的 DNS 请求。
+*   **解决方案**: 将您 Mac 的系统 DNS 修改为任意公共 DNS 服务器（如 \`8.8.8.8\`）。`},{keywordGroups:[["tun(模式)?","(ssl|证书).*(错误|error)"]],answer:"**Q: TUN 模式下出现 SSL 证书错误？**\n\nA: 尝试将您操作系统的 DNS 服务器地址修改为公共 DNS，例如 `8.8.8.8` 或 `1.1.1.1`。"},{keywordGroups:[["(怎么|如何|咋)","(看|查看|打开|在哪)","日志"],["log","where|how to view|find"]],answer:"**Q: 如何查看 GUI 日志？**\n\nA: 按 `Ctrl + Shift + F12` 打开开发者工具控制台即可查看，主要记录 GUI 自身运行信息。"},{keywordGroups:[["(怎么|如何|咋)","(启用|开启|打开)","滚动(发行)?"],["how to","enable","rolling(-release)?"]],answer:`**Q: 怎么启用滚动发行？**
 
 A:
 1. 在 **通用设置** 中确保 **启用滚动发行** 已启用。

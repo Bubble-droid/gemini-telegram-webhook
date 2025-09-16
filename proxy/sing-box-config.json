@@ -138,7 +138,8 @@
   "route": {
     "rules": [
       {
-        "action": "resolve"
+        "action": "resolve",
+        "strategy": "prefer_ipv6"
       },
       {
         "action": "route",

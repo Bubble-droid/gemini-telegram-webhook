@@ -61,7 +61,6 @@ jobs:
       - name: Delete untagged older versions
         uses: actions/delete-package-versions@v5
         with:
-          # 此处保持不变，因为它只需要包名，不需要所有者前缀
           package-name: ${{ env.IMAGE_NAME }}
           package-type: 'container'
           min-versions-to-keep: 0

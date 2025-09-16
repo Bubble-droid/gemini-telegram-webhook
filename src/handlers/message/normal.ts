@@ -1,12 +1,11 @@
 // src/handlers/message/normal.ts
 
-import { GeminiError, Log, bot, callCustomModels, config } from '@/services';
+import { Log, bot, config } from '@/services';
 import type * as Bot from '@/types';
 import { BotCommands } from '@/configs';
 import { handleMention } from '@/handlers/message';
 import { faqData } from '@/configs';
-import { scheduleDeletion, toHtml } from '@/utils';
-import type { Content, GenerateContentConfig } from '@google/genai';
+import { handleOCR, scheduleDeletion, toHtml } from '@/utils';
 import { handleFile } from '@/handlers';
 
 /**
@@ -80,139 +79,77 @@ export class NormalHandler {
     return this.handleGenericCommandAlias(commandAlias, clean);
   }
 
-  private async handleOCR(): Promise<string | void> {
-    const contents: Content[] = [];
-    const fileData = await handleFile(this.message).catch(() => null);
-    if (!fileData) return;
-    contents.push({
-      role: 'user',
-      parts: [
-        {
-          inlineData: fileData,
-        },
-        {
-          text: `Just recognize the text in the image. Do not offer unnecessary explanations.`,
-        },
-      ],
-    });
-    const model = 'gemini-2.5-flash-lite';
-    const prompt = `## SYSTEM PROTOCOL: HEADLESS OCR & FORMATTING ENGINE ##
-
-# 1. FUNCTION
-Your sole function is to serve as a high-fidelity, image-to-text recognition and structuring engine (OCR). You operate as a headless service. You do not have a personality. You do not interact. You only process.
-
-# 2. EXECUTION FLOW
-1.  Receive a \`[Source Image]\` from the user input.
-2.  Visually analyze the \`[Source Image]\` to perform Optical Character Recognition (OCR) and structural analysis according to the \`[Recognition Directives]\` below.
-3.  Generate the final output strictly adhering to the \`[Output Constraints]\`.
-
-# 3. RECOGNITION DIRECTIVES
-* **High-Fidelity OCR**: All characters, words, and symbols visible in the \`[Source Image]\` must be extracted with perfect accuracy across all languages. Pay close attention to punctuation, spacing, and case sensitivity.
-* **Visual Structure to Markdown**: Any visual structural elements within the \`[Source Image]\` (e.g., tables, lists, code blocks from a screenshot, presentation slides, documents) MUST be interpreted and converted into their corresponding clean Markdown format.
-* **Mathematical Formula Handling**: Mathematical expressions and formulas spotted in the \`[Source Image]\` should be identified and correctly enclosed in LaTeX delimiters (\`$...$\` for inline, \`$$...$$\` for block).
-* **Content Integrity**: The informational content visible in the \`[Source Image]\` must be fully preserved. No information may be added, omitted, or summarized. Recognize and transcribe everything as seen.
-* **Readability & Layout Optimization**: The final Markdown output must be well-formatted and organized for optimal human readability. This includes proper line breaks, spacing, and consistent list/table structure.
-
-# 4. OUTPUT CONSTRAINTS
-* **ABSOLUTE RULE**: The output MUST be the recognized and formatted text, and NOTHING else.
-* **MUST NOT**: Under NO circumstances should the output contain any of the following:
-    * Prefaces or introductions (e.g., "Here is the recognized text:", "好的，识别内容如下：").
-    * Postscripts or summaries (e.g., "The image contains...", "希望您满意。").
-    * Any form of conversational filler, greetings, or apologies.
-    * Explanations about the recognition process or formatting choices.
-    * Any text that is not the direct, formatted representation of the content in the \`[Source Image]\`.
-* The response body must begin with the first character of the recognized text and end with its last character.
-
----
-### TEST CASES
-
-**User Input:**
-[An image of a textbook page showing the text: The famous equation is E = mc^2. It relates energy to mass.]
-
-**Your Output:**
-The famous equation is $E = mc^2$. It relates energy to mass.
-
-**User Input:**
-[A screenshot of a simple spreadsheet with two columns, 'Name' and 'Role', and one data row: 'Alice', 'Engineer'.]
-
-**Your Output:**
-| Name  | Role     |
-|-------|----------|
-| Alice | Engineer |
-
-**User Input:**
-[A clean screenshot of a code editor showing a python function.]
-\`\`\`python
-def calculate_sum(a, b):
-    # Returns the sum of two numbers
-    return a + b
-\`\`\`
-
-**Your Output:**
-
-\`\`\`python
-def calculate_sum(a, b):
-    # Returns the sum of two numbers
-    return a + b
-\`\`\`
-
------
-
-Engine activated. Awaiting input.`;
-    const config: GenerateContentConfig = {
-      temperature: 0.3,
-      systemInstruction: [{ text: prompt }],
-    };
-    const responseContent = await callCustomModels(model, config, contents).catch((error: unknown) => {
-      const errorMessage = error instanceof GeminiError ? error.message : String(error);
-      Log.error('Gemini API 调用失败', { err: errorMessage });
-      return;
-    });
-    if (!responseContent) return;
-    const recognize = responseContent.parts
-      ?.filter((part) => part.text)
-      .map((part) => part.text)
-      .join('')
-      .trim();
-    return recognize;
-  }
-
   /**
    * @description 该方法动态构建正则表达式，以灵活匹配用户消息，并回复相应的 FAQ 答案。
+   *              它现在支持排除规则，并能在日志中记录命中的具体关键词。
    * @returns {Promise<boolean>} 如果进行了关键词回复，则返回 true，否则返回 false。
    */
   private async handleKeywordReply(): Promise<boolean> {
+    // 步骤 1: (可选) 如果消息包含图片，执行 OCR 并将识别文本附加到消息中
     if (this.photo || this.document?.mime_type?.startsWith('image/')) {
-      const recognizedText = await this.handleOCR();
-      if (recognizedText) {
-        this.messageText += `\n\n<image>\n${recognizedText}\n</image>`;
+      const fileData = await handleFile(this.message).catch(() => null);
+      if (fileData) {
+        const recognizedText = await handleOCR(fileData);
+        this.messageText += recognizedText ? `\n\n<image>\n${recognizedText}\n</image>` : `\n\n<image>\nRECOGNITION_FAILED\n</image>`;
       }
     }
-    // 寻找第一个能够完全匹配用户消息的 FAQ 条目
+
+    // 步骤 2: 寻找第一个满足“包含”且不满足“排除”条件的 FAQ 条目
     const matchedFaq = faqData.find((faqItem) => {
-      // 将多个 "与" 条件组 (`keywordGroups`) 映射成一个由 "或" 连接的完整正则表达式
-      const pattern = faqItem.keywordGroups
-        .map((group) => {
-          // 对于每个 "与" 条件组，将其中的所有正则模式转换为正向预查 `(?=.*pattern)`
-          // 这可以确保消息中包含所有模式，且不关心它们的顺序
-          const andConditions = group.map((p) => `(?=.*${p})`).join('');
-          // 返回一个代表完整 "与" 条件的字符串
-          return `(${andConditions})`;
-        })
-        .join('|'); // 使用 "|" 将所有 "与" 条件组连接起来，形成最终的 "或" 逻辑
+      // --- 包含逻辑检查 (Inclusion Check) ---
+      const inclusionPattern = faqItem.keywordGroups.map((group) => `(${group.map((p) => `(?=.*${p})`).join('')})`).join('|');
+      const inclusionRegex = new RegExp(inclusionPattern, 'i');
+      const isMatch = inclusionRegex.test(this.messageText);
 
-      // 创建一个新的正则表达式对象，并启用不区分大小写模式 ('i')
-      const regex = new RegExp(pattern, 'i');
+      // 优化：如果连包含条件都不满足，直接跳过，无需检查排除条件
+      if (!isMatch) {
+        return false;
+      }
 
-      // 测试用户消息是否匹配构建好的正则表达式
-      return regex.test(this.messageText);
+      // --- 排除逻辑检查 (Exclusion Check) ---
+      // 检查是否存在有效的排除规则
+      if (faqItem.excludeKeywords && faqItem.excludeKeywords.length > 0) {
+        const exclusionPattern = faqItem.excludeKeywords.map((group) => `(${group.map((p) => `(?=.*${p})`).join('')})`).join('|');
+        const exclusionRegex = new RegExp(exclusionPattern, 'i');
+        const isExcluded = exclusionRegex.test(this.messageText);
+
+        // 如果命中了排除规则，则此 FAQ 条目不匹配
+        if (isExcluded) {
+          return false;
+        }
+      }
+
+      // 最终决定：满足包含条件，且没有命中任何排除规则
+      return true;
     });
 
-    // 如果找到了匹配项
+    // 步骤 3: 如果找到了匹配项，则发送回复
     if (matchedFaq) {
-      Log.info('Found a matching FAQ item via regex, sending reply.', {
+      // --- [新增] 提取并记录命中的关键词 ---
+      const matchedKeywords: string[] = [];
+      // 找到具体是哪一个 "与" 条件组 (group) 命中了
+      const winningGroup = matchedFaq.keywordGroups.find((group) => {
+        const groupPattern = group.map((p) => `(?=.*${p})`).join('');
+        return new RegExp(groupPattern, 'i').test(this.messageText);
+      });
+
+      // 如果找到了获胜组，则提取其中每个模式匹配到的文本
+      if (winningGroup) {
+        for (const pattern of winningGroup) {
+          // 注意：这里我们为每个模式创建一个新的、简单的 RegExp 来提取文本
+          // 因为 `(?=...)` 正向预查本身不消耗字符，无法用于捕获
+          const matchResult = this.messageText.match(new RegExp(pattern, 'i'));
+          if (matchResult) {
+            // matchResult[0] 包含实际匹配到的文本
+            matchedKeywords.push(matchResult[0]);
+          }
+        }
+      }
+
+      Log.info('Found a matching FAQ item. Matched keywords:', {
         chatId: this.chatId,
         messageId: this.messageId,
+        keywords: matchedKeywords, // 输出实际命中的关键词数组
       });
       // 发送对应的答案
       await this.sendReply(matchedFaq.answer);

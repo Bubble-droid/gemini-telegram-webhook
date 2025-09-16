@@ -8,6 +8,7 @@
     "@google/genai": "^1.19.0",
     "cloudflare": "^4.5.0",
     "fastify": "^5.6.0",
+    "tesseract.js": "^6.0.1",
     "tslog": "^4.9.3",
     "vm2": "^3.9.19"
   }

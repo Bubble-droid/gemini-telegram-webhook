@@ -70,8 +70,8 @@ Engine activated. Awaiting input.`;
 
 export class Recognizer {
   private readonly fileData: Blob;
-  private readonly data?: string;
-  private readonly mimeType?: string;
+  private readonly data: string | undefined;
+  private readonly mimeType: string | undefined;
 
   constructor(fileData: Blob) {
     this.fileData = fileData;

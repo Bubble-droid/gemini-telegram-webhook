@@ -20,9 +20,9 @@ export class NormalHandler {
   private readonly chatId: number;
   private readonly userId: number;
   private readonly messageId: number;
-  private readonly replyToMessage?: Bot.Message;
-  private readonly photo?: Bot.PhotoSize[];
-  private readonly document?: Bot.Document;
+  private readonly replyToMessage: Bot.Message | undefined;
+  private readonly photo: Bot.PhotoSize[] | undefined;
+  private readonly document: Bot.Document | undefined;
   private messageText: string;
 
   constructor(message: Bot.Message) {

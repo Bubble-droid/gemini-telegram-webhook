@@ -6,16 +6,14 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # 为了方便在多个步骤中使用，建议将 IMAGE_NAME 定义为不包含所有者的部分
-  IMAGE_NAME: gemini-telegram-webhook
+  IMAGE_NAME: bubble-droid/gemini-telegram-webhook
 
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # `packages: write` 权限同时允许推送和删除镜像
-      packages: write
+      packages: write # 'packages' 需要 write 权限来删除镜像
       attestations: write
       id-token: write
 
@@ -36,35 +34,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: set lower case owner name
-        run: |
-          echo "OWNER_LC=${REPOSITORY_OWNER,,}" >>${GITHUB_ENV}
-        env:
-          REPOSITORY_OWNER: '${{ github.repository_owner }}'
-
       - name: Build and push Docker image
         id: push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          # 使用 github.repository_owner 动态构建完整的镜像路径
-          tags: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.IMAGE_NAME }}:latest
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.IMAGE_NAME}}
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
       # --- 新增的清理步骤 ---
-      - name: Clean up old untagged images
-        uses: snok/container-retention-policy@v2
+      - name: Delete untagged images
+        uses: actions/delete-package-versions@v5
         with:
-          # 要清理的镜像包名称
-          image-names: ${{ env.IMAGE_NAME }}
-          # 删除所有未标记的镜像
-          untagged-only: true
-          # 使用 GITHUB_TOKEN 进行认证
+          package-name: ${{ env.IMAGE_NAME }}
+          package-type: 'container'
+          min-versions-to-keep: 0 # 保留0个未打标签的版本，即全部删除
+          delete-untagged-versions: 'true' # 明确指定删除未打标签的版本
           token: ${{ secrets.GITHUB_TOKEN }}

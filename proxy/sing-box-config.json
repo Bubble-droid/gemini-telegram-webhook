@@ -28,15 +28,15 @@
     {
       "type": "wireguard",
       "tag": "warp",
-      "address": ["172.16.0.2/32", "2606:4700:110:8a90:d2cf:1f95:ed2c:4d7f/128"],
-      "private_key": "KJehkcYzV0r7534X4f3MtWMoFB+fcn9CgaDRin3d5Gk=",
+      "address": ["172.16.0.2/32", "2606:4700:110:80ab:fff8:3aa0:24e5:ac66/128"],
+      "private_key": "uEoctg+RAQu/UhI0KIrER/++USOY9QMgHYmuzp3IVHE=",
       "peers": [
         {
-          "address": "162.159.192.4",
-          "port": 4500,
+          "address": "162.159.192.7",
+          "port": 1701,
           "public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
           "allowed_ips": ["0.0.0.0/0", "::/0"],
-          "reserved": [63, 202, 133]
+          "reserved": [214, 72, 152]
         }
       ]
     }

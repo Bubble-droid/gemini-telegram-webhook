@@ -6,13 +6,15 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: bubble-droid/gemini-telegram-webhook
+  # 为了方便在多个步骤中使用，建议将 IMAGE_NAME 定义为不包含所有者的部分
+  IMAGE_NAME: gemini-telegram-webhook
 
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # `packages: write` 权限同时允许推送和删除镜像
       packages: write
       attestations: write
       id-token: write
@@ -40,11 +42,25 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          # 使用 github.repository_owner 动态构建完整的镜像路径
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
+          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME}}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+      # --- 新增的清理步骤 ---
+      - name: Clean up old untagged images
+        uses: snok/container-retention-policy@v2
+        with:
+          # 要清理的镜像包名称
+          image-names: ${{ env.IMAGE_NAME }}
+          # 删除所有未标记的镜像
+          keep-untagged: false
+          # 指定所有者（你的用户名或组织名）
+          owner: ${{ github.repository_owner }}
+          # 使用 GITHUB_TOKEN 进行认证
+          token: ${{ secrets.GITHUB_TOKEN }}

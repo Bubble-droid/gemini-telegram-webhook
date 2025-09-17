@@ -159,7 +159,7 @@ A:
 
 A:
 1. 访问您的 GitHub 开发者设置，生成一个新的 Personal Access Token (PAT)。
-2. 在客户端的 **设置 -> 通用** 中，将获取的 Token 填入 **向 REST API 进行身份验证** 一栏。`},{keywordGroups:[["订阅","[没无](有)?(流量|速度|信息)|用不了|连不上|没速度"],["subscription","no traffic (info)?|not a valid"],["subscription","(doesn.?t|not) work|fail(ed)? to update|can.?t update"]],excludeKeywords:[["tun"]],answer:`**Q: 订阅无流量信息或更新失败？**
+2. 在客户端的 **设置 -> 通用** 中，将获取的 Token 填入 **向 REST API 进行身份验证** 一栏。`},{keywordGroups:[["订阅","[没无](有)?(流量|速度|信息)|用不了|连不上|没速度"],["subscription","no traffic (info)?|not a valid"],["订阅","(无法|不能|没法)?更新|更新.*(不了|失败)"],["subscription","(doesn.?t|not) work|fail(ed)? to update|can.?t update"]],excludeKeywords:[["tun"]],answer:`**Q: 订阅无流量信息或更新失败？**
 
 A:
 *   在 **订阅 -> 编辑** 中，为目标订阅添加请求头 \`User-Agent\`: \`Clash.Meta\`。
@@ -179,32 +179,32 @@ A:
 1. 在 **插件中心** 安装并运行 **节点转换插件**。
 2. 在插件界面粘贴节点链接，选择配置格式，然后复制转换后的节点配置内容。
 3. 将复制的内容添加至 **手动管理订阅**。
-4. 在 **配置设置** 的 **出站分组** 或 **代理组** 中引用该节点。`},{keywordGroups:[["cache-file.*timeout"]],answer:`**Q: 报错 "start service: initialize cache-file: timeout"？**
+4. 在 **配置设置** 的 **出站分组** 或 **代理组** 中引用该节点。`},{keywordGroups:[["cache.*(file)?","timeout"]],answer:`**Q: 报错 "start service: initialize cache-file: timeout"？**
 
 A:
 *   **原因**: sing-box 缓存文件被占用，通常是由于进程未正常退出。
-*   **解决方案**: 打开任务管理器（或活动监视器），手动结束所有名为 \`sing-box\` 的进程，然后重启内核。`},{keywordGroups:[["detour.*empty direct"]],answer:`**Q: 报错 "detour to an empty direct outbound makes no sense"？**
+*   **解决方案**: 打开任务管理器（或活动监视器），手动结束所有名为 \`sing-box\` 的进程，然后重启内核。`},{keywordGroups:[["detour","empty","direct"]],answer:`**Q: 报错 "detour to an empty direct outbound makes no sense"？**
 
 A:
 *   **原因**: 新版 sing-box 禁止将 DNS 服务器的出站设置为 \`direct\`。
 *   **解决方案**:
     1. 前往 **配置设置 -> DNS 设置 -> 服务器**。
     2. 找到“出站”标签为 \`直连\` 的服务器，点击 **编辑**。
-    3. 点击出站标签旁边的 **x** 按钮将其清空（留空默认即为直连）。`},{keywordGroups:[["missing.*tags"]],answer:`**Q: 报错 "create service: initialize outbound[*]: missing tags"？**
+    3. 点击出站标签旁边的 **x** 按钮将其清空（留空默认即为直连）。`},{keywordGroups:[["missing","tags"]],answer:`**Q: 报错 "create service: initialize outbound[*]: missing tags"？**
 
 A:
 *   **原因**: 某个出站分组内没有任何节点或有效分组。
-*   **解决方案**: 前往 **配置设置 -> 出站设置**，找到左侧有红色感叹号的出站分组，点击 **编辑** 并确保其至少包含一个订阅或有效节点。`},{keywordGroups:[["tun(模式)?","([没无]|缺少)权限|permission denied"],["tun(模式)?","(启动|开启|打开)失败","(权限|permission)"],["(linux|内核)","(怎么|如何|咋)","(给|授(予)?)?(特)?权|提权|管理员"],["tun( mode)?","permission|privilege|admin rights|sudo|root"]],excludeKeywords:[["file not found"]],answer:`**Q: TUN 模式无权限导致启动失败？**
+*   **解决方案**: 前往 **配置设置 -> 出站设置**，找到左侧有红色感叹号的出站分组，点击 **编辑** 并确保其至少包含一个订阅或有效节点。`},{keywordGroups:[["tun(模式)?","([没无]|缺少)权限|permission denied"],["tun(模式)?","(启动|开启|打开)失败","(权限|permission)"],["(linux|内核)","(怎么|如何|咋)","(给|授(予)?)?(特)?权|提权|管理员|((启)?用|开启|打开).*tun(模式)?"],["tun( mode)?","permission|privilege|admin rights|sudo|root"]],excludeKeywords:[["file not found"]],answer:`**Q: TUN 模式无权限导致启动失败？**
 
 A:
 *   **Windows**: 前往 **设置 -> 通用**，启用 **以管理员身份运行** 并重启客户端。
-*   **macOS/Linux**: 前往 **设置 -> 内核** 页面，点击授权按钮为内核程序授权。`},{keywordGroups:[["linux","授权","[没无]反应|点不了|点了没用|按了没反应"],["linux","pkexec"],["(授(予)?|给)(特)?权","没(有)?(效果|反应)|点(了)?没用"],["linux","authorize button","doesn.?t work|no response|nothing happens"]],answer:"**Q: Linux 点击授权按钮没反应？**\n\nA: Linux 上的授权操作依赖 `pkexec` 命令，需确保已安装提供此命令的软件包。"},{keywordGroups:[["tun.*configure.*system cannot find the file"]],answer:`**Q: 报错 "configure tun interface: The system cannot find the file specified."？**
+*   **macOS/Linux**: 前往 **设置 -> 内核** 页面，点击授权按钮为内核程序授权。`},{keywordGroups:[["linux","授权","[没无]反应|点不了|点了没用|按了没反应"],["(授(予)?|给)(特)?权","没(有)?(效果|反应)|点(了)?没用"],["linux","authorize button","doesn.?t work|no response|nothing happens"]],answer:"**Q: Linux 点击授权按钮没反应？**\n\nA: Linux 上的授权操作依赖 `pkexec` 命令，需确保已安装提供此命令的软件包。"},{keywordGroups:[["tun","configure","cannot","find","file"],["tun","configure","找不到","文件"]],answer:`**Q: 报错 "configure tun interface: The system cannot find the file specified."？**
 
 A:
 *   **原因**: sing-box 无法创建 TUN 虚拟网卡。
 *   **解决方案**:
     1. 检查 **入站设置** -> \`tun-in\` 的 **TUN 网卡名称** 是否为空，尝试填入任意名称（如 \`sing-box-tun\`）。
-    2. 确保没有其他应用（如其他代理软件、VPN）占用了 TUN 服务。`},{keywordGroups:[["tun(模式)?","([没无]反应)|(([没无不]法?|不能|连不上|上不了|没).*网(络)?)"],["tun(模式)?","系统代理","(才|必须|要开|依赖|同时)"],["tun(模式)?","(断网|网络(异常|问题|断了))"],["tun","(一开|打开|启用).*(就)?","(没网|断网|上不了网)"],["tun(模式)?","(打不开|无法访问)","(网站|网页|github|google)"],["(启动|运行|开)了?.*(内核|tun)","(就)?(没网|断网|上不了网)"],["tun(模式)?","(只|仅)能.*(tg|电报|telegram)","(网页|网站|浏览器).*(打不开|没反应|用不了)"],["(mac|macos)","tun(模式)?","([没无]反应)|(([没无不]法?|不能|连不上|上不了|没).*网(络)?|断网)"],["tun( mode)?","(no|lost) (internet|connection)|can.?t connect|not working"],["(mac|macos)","tun( mode)?","(no|lost) (internet|connection)|can.?t connect|not working"],["enable tun","lose internet|no network"],["tun( mode)?","(only|just) (tg|telegram) works","(browser|website)s? (doesn.?t|not) work"]],excludeKeywords:[["permission denied"],["file not found"],["(ssl|证书).*(错误|error)"]],answer:`**Q: TUN 模式启动后无法上网？**
+    2. 确保没有其他应用（如其他代理软件、VPN）占用了 TUN 服务。`},{keywordGroups:[["tun(模式)?","([没无]反应)|(([没无不]法?|不能|连不上|上不了|没).*网(络)?)"],["tun(模式)?","系统代理","(才|必须|要开|依赖|同时)"],["tun(模式)?","(断网|网络(异常|问题|断了))"],["tun(模式)?","(一开|打开|启用).*(就)?","(没网|断网|上不了网)"],["tun(模式)?","(打不开|无法访问)","(网站|网页|github|google)"],["(启动|运行|开)了?.*(内核|tun)","(就)?(没网|断网|上不了网)"],["tun(模式)?","(只|仅)能.*(tg|电报|telegram)","(网页|网站|浏览器).*(打不开|没反应|用不了)"],["tun(模式)?","(不能?|无法)?访问|访问不了","(网络|网页|网站)"],["(mac|macos)","tun(模式)?","([没无]反应)|(([没无不]法?|不能|连不上|上不了|没).*网(络)?|断网)"],["tun( mode)?","(no|lost) (internet|connection)|can.?t connect|not working"],["(mac|macos)","tun( mode)?","(no|lost) (internet|connection)|can.?t connect|not working"],["enable tun","lose internet|no network"],["tun( mode)?","(only|just) (tg|telegram) works","(browser|website)s? (doesn.?t|not) work"]],excludeKeywords:[["permission denied"],["file not found"],["(ssl|证书).*(错误|error)"]],answer:`**Q: TUN 模式启动后无法上网？**
 
 A: 请按以下顺序排查，方案覆盖 Windows, macOS 及 Linux：
 *   **方案 A (通用): 更换 TUN 堆栈模式**
@@ -228,7 +228,7 @@ A: 请按以下顺序排查，方案覆盖 Windows, macOS 及 Linux：
 A:
 1. 在 **通用设置** 中确保 **启用滚动发行** 已启用。
 2. 在 **插件中心** 安装并运行 \`滚动发行\` 插件。
-3. 定期在 **插件中心** 更新 \`滚动发行\` 插件。`},{keywordGroups:[["(今天|刚刚)?(更新|升级|重启|安装|设置).*(后|以后|完了)","(突然|就)?(不能?(启动|运行|上网|打开|用)|(启动|运行|用|上|连)不(了|动|起来)|打不开(网站|网页)?|没(有)?网(络)?|挂了|崩了|没反应|失败|出问题|报错|寄了|坏了)"],["(内核|程序|软件|客户端)","(无法|不能|没法)?.*(启动|运行)|(启动|运行).*(不了|不起来|失败|没反应)|启动失败"],["(内核|程序|软件|客户端)","(启动|运行|开)了?(之后|以后)?","(就)?(没网|断网|上不了网)"],["(突然|忽然|一下|怎么就)","(不能?用(了)?|用不(了|动)|坏了|不行了|没反应了|连不上|没网了)"],["(昨天|之前)还(好好的|能用|正常)","(今天|现在)就?(不行了|用不了|坏了)"],["(啥也没干|没动过)","就?(用不了|坏了|不行了)"],["(为啥|怎么|咋)","(突然|一下|忽然)?(就)?(不能?用(了)?|用不(了|动)|坏了|不行了|没反应了|连不上|没网了)"],["(app|client|core|program)","(won.?t|doesn.?t|can.?t) (start|launch|run)|failed to (start|launch|run)"],["(after|when) i (start|launch|run|update)","(no|lost) internet|connection lost"],["(why)? it suddenly stopped working","(help)?"],["it was working (fine|yesterday)","(but )?now it doesn.?t"],["it just broke|doesn.?t work anymore"]],excludeKeywords:[["tun"],["订阅|subscription"],["节点|node"],["(截图|图片|视频|screenshot|image)"],["(代码|堆栈|code|stack ?trace)"],["[a-zA-Z]:\\\\[^\\s]*|[a-zA-Z/]+/[^\\s]*\\.[a-zA-Z]{2,}:\\d+"],["\\b(fail(ed)?|exception|panic|fatal|timeout|denied|invalid|refused|unauthorized|missing|unexpected|error)\\b"],["(异常|超时|拒绝|权限|找不到|无效|无法|错误码|未授权|缺少|意外的|报错)"],["(日志|log)","(错误|error|提示|显示|说)"]],answer:`**Q: 程序无法启动或运行异常的通用排查指南**
+3. 定期在 **插件中心** 更新 \`滚动发行\` 插件。`},{keywordGroups:[["(今天|刚刚)?(更新|升级|重启|安装|设置).*(后|以后|完了)","(突然|就)?(不能?(启动|运行|上网|打开|用|访问)|(启动|运行|用|上|连|访问)不(了|动|起来)|打不开(网站|网页)?|没(有)?网(络)?|挂了|崩了|没反应|失败|出问题|报错|寄了|坏了)"],["(内核|程序|软件|客户端)","(无法|不能|没法)?.*(启动|运行)|(启动|运行).*(不了|不起来|失败|没反应)|启动失败"],["(内核|程序|软件|客户端)","(启动|运行|开)了?(之后|以后)?","(就)?(没网|断网|上不了网)"],["(突然|忽然|一下|怎么就)","(不能?用(了)?|用不(了|动)|坏了|不行了|没反应了|连不上|没网了)"],["(昨天|之前)还(好好的|能用|正常)","(今天|现在)就?(不行了|用不了|坏了)"],["(啥也没干|没动过)","就?(用不了|坏了|不行了)"],["(为啥|怎么|咋)","(突然|一下|忽然)?(就)?(不能?用(了)?|用不(了|动)|坏了|不行了|没反应了|连不上|没网了)"],["(app|client|core|program)","(won.?t|doesn.?t|can.?t) (start|launch|run)|failed to (start|launch|run)"],["(after|when) i (start|launch|run|update)","(no|lost) internet|connection lost"],["(why)? it suddenly stopped working","(help)?"],["it was working (fine|yesterday)","(but )?now it doesn.?t"],["it just broke|doesn.?t work anymore"]],excludeKeywords:[["tun"],["订阅|subscription"],["节点|node"],["(截图|图片|视频|screenshot|image)"],["(代码|堆栈|code|stack ?trace)"],["[a-zA-Z]:\\\\[^\\s]*|[a-zA-Z/]+/[^\\s]*\\.[a-zA-Z]{2,}:\\d+"],["\\b(fail(ed)?|exception|panic|fatal|timeout|denied|invalid|refused|unauthorized|missing|unexpected|error)\\b"],["(异常|超时|拒绝|权限|找不到|无效|无法|错误码|未授权|缺少|意外的|报错)"],["(日志|log)","(错误|error|提示|显示|说)"]],answer:`**Q: 程序无法启动或运行异常的通用排查指南**
 
 你可能遇到了程序启动或运行问题，但未提供具体的错误信息。请首先尝试以下通用的解决方案，它们能解决大部分常见的故障。
 

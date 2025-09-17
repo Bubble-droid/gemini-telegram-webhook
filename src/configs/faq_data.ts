@@ -103,6 +103,7 @@ A:
     keywordGroups: [
       ['订阅', '[没无](有)?(流量|速度|信息)|用不了|连不上|没速度'],
       ['subscription', 'no traffic (info)?|not a valid'],
+      ['订阅', '(无法|不能|没法)?更新|更新.*(不了|失败)'],
       // --- 新增英文关键词 ---
       ['subscription', '(doesn.?t|not) work|fail(ed)? to update|can.?t update'],
     ],
@@ -162,7 +163,7 @@ A:
 
   // 🐞 B.2.4 内核错误 (Core Errors)
   {
-    keywordGroups: [['cache-file.*timeout']],
+    keywordGroups: [['cache.*(file)?', 'timeout']],
     answer: `**Q: 报错 "start service: initialize cache-file: timeout"？**
 
 A:
@@ -170,7 +171,7 @@ A:
 *   **解决方案**: 打开任务管理器（或活动监视器），手动结束所有名为 \`sing-box\` 的进程，然后重启内核。`,
   },
   {
-    keywordGroups: [['detour.*empty direct']],
+    keywordGroups: [['detour', 'empty', 'direct']],
     answer: `**Q: 报错 "detour to an empty direct outbound makes no sense"？**
 
 A:
@@ -181,7 +182,7 @@ A:
     3. 点击出站标签旁边的 **x** 按钮将其清空（留空默认即为直连）。`,
   },
   {
-    keywordGroups: [['missing.*tags']],
+    keywordGroups: [['missing', 'tags']],
     answer: `**Q: 报错 "create service: initialize outbound[*]: missing tags"？**
 
 A:
@@ -194,7 +195,7 @@ A:
     keywordGroups: [
       ['tun(模式)?', '([没无]|缺少)权限|permission denied'],
       ['tun(模式)?', '(启动|开启|打开)失败', '(权限|permission)'],
-      ['(linux|内核)', '(怎么|如何|咋)', '(给|授(予)?)?(特)?权|提权|管理员'],
+      ['(linux|内核)', '(怎么|如何|咋)', '(给|授(予)?)?(特)?权|提权|管理员|((启)?用|开启|打开).*tun(模式)?'],
       // --- 新增英文关键词 ---
       ['tun( mode)?', 'permission|privilege|admin rights|sudo|root'],
     ],
@@ -208,7 +209,6 @@ A:
   {
     keywordGroups: [
       ['linux', '授权', '[没无]反应|点不了|点了没用|按了没反应'],
-      ['linux', 'pkexec'],
       ['(授(予)?|给)(特)?权', '没(有)?(效果|反应)|点(了)?没用'],
       // --- 新增英文关键词 ---
       ['linux', 'authorize button', 'doesn.?t work|no response|nothing happens'],
@@ -218,7 +218,11 @@ A:
 A: Linux 上的授权操作依赖 \`pkexec\` 命令，需确保已安装提供此命令的软件包。`,
   },
   {
-    keywordGroups: [['tun.*configure.*system cannot find the file']],
+    keywordGroups: [
+      ['tun', 'configure', 'cannot', 'find', 'file'],
+
+      ['tun', 'configure', '找不到', '文件'],
+    ],
     answer: `**Q: 报错 "configure tun interface: The system cannot find the file specified."？**
 
 A:
@@ -233,10 +237,11 @@ A:
       ['tun(模式)?', '([没无]反应)|(([没无不]法?|不能|连不上|上不了|没).*网(络)?)'],
       ['tun(模式)?', '系统代理', '(才|必须|要开|依赖|同时)'],
       ['tun(模式)?', '(断网|网络(异常|问题|断了))'],
-      ['tun', '(一开|打开|启用).*(就)?', '(没网|断网|上不了网)'],
+      ['tun(模式)?', '(一开|打开|启用).*(就)?', '(没网|断网|上不了网)'],
       ['tun(模式)?', '(打不开|无法访问)', '(网站|网页|github|google)'],
       ['(启动|运行|开)了?.*(内核|tun)', '(就)?(没网|断网|上不了网)'],
       ['tun(模式)?', '(只|仅)能.*(tg|电报|telegram)', '(网页|网站|浏览器).*(打不开|没反应|用不了)'],
+      ['tun(模式)?', '(不能?|无法)?访问|访问不了', '(网络|网页|网站)'],
       // macOS 特定关键词
       ['(mac|macos)', 'tun(模式)?', '([没无]反应)|(([没无不]法?|不能|连不上|上不了|没).*网(络)?|断网)'],
       // 英文关键词
@@ -314,7 +319,7 @@ A:
         '(今天|刚刚)?(更新|升级|重启|安装|设置).*(后|以后|完了)',
 
         // 第二部分：【核心升级】匹配灵活多样的否定结果
-        '(突然|就)?(不能?(启动|运行|上网|打开|用)|(启动|运行|用|上|连)不(了|动|起来)|打不开(网站|网页)?|没(有)?网(络)?|挂了|崩了|没反应|失败|出问题|报错|寄了|坏了)',
+        '(突然|就)?(不能?(启动|运行|上网|打开|用|访问)|(启动|运行|用|上|连|访问)不(了|动|起来)|打不开(网站|网页)?|没(有)?网(络)?|挂了|崩了|没反应|失败|出问题|报错|寄了|坏了)',
       ],
 
       // 模式二：[主体] -> [负面结果]

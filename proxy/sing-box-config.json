@@ -125,17 +125,6 @@
       "tag": "mixed-in",
       "listen": "127.0.0.1",
       "listen_port": 10080
-    },
-    {
-      "type": "tun",
-      "tag": "tun-in",
-      "interface_name": "sing-box-tun",
-      "mtu": 1492,
-      "address": ["172.18.0.1/30", "fdfe:dcba:9876::1/126"],
-      "auto_route": true,
-      "endpoint_independent_nat": false,
-      "stack": "mixed",
-      "auto_redirect": true
     }
   ],
   "outbounds": [
@@ -188,8 +177,6 @@
       }
     ],
     "final": "Proxy",
-    "find_process": true,
-    "auto_detect_interface": true,
     "default_domain_resolver": {
       "server": "dns-google",
       "strategy": "prefer_ipv6",

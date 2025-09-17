@@ -194,11 +194,11 @@ A:
 
 A:
 *   **原因**: 某个出站分组内没有任何节点或有效分组。
-*   **解决方案**: 前往 **配置设置 -> 出站设置**，找到左侧有红色感叹号的出站分组，点击 **编辑** 并确保其至少包含一个订阅或有效节点。`},{keywordGroups:[["tun(模式)?","([没无]|缺少)权限|permission denied"],["tun(模式)?","(启动|开启|打开)失败","(权限|permission)"],["(linux|内核)","(怎么|如何|咋)","(给|授(予)?)?(特)?权|提权|管理员|((启)?用|开启|打开).*tun(模式)?"],["tun( mode)?","permission|privilege|admin rights|sudo|root"]],excludeKeywords:[["file not found"]],answer:`**Q: TUN 模式无权限导致启动失败？**
+*   **解决方案**: 前往 **配置设置 -> 出站设置**，找到左侧有红色感叹号的出站分组，点击 **编辑** 并确保其至少包含一个订阅或有效节点。`},{keywordGroups:[["tun(模式)?","(启动|开启|打开)失败","(权限|permission)"],["tun(模式)?","([没无]|缺少)权限|permission denied"],["(linux|内核)","(怎么|如何|咋)","(给|授(予)?)?(特)?权|提权|管理员"],["linux","(怎么|如何|咋)","(启用|开启|打开)","tun"],["tun( mode)?","permission|privilege|admin rights|sudo|root"]],excludeKeywords:[["file not found"]],answer:`**Q: TUN 模式无权限导致启动失败？**
 
 A:
 *   **Windows**: 前往 **设置 -> 通用**，启用 **以管理员身份运行** 并重启客户端。
-*   **macOS/Linux**: 前往 **设置 -> 内核** 页面，点击授权按钮为内核程序授权。`},{keywordGroups:[["linux","授权","[没无]反应|点不了|点了没用|按了没反应"],["(授(予)?|给)(特)?权","没(有)?(效果|反应)|点(了)?没用"],["linux","authorize button","doesn.?t work|no response|nothing happens"]],answer:"**Q: Linux 点击授权按钮没反应？**\n\nA: Linux 上的授权操作依赖 `pkexec` 命令，需确保已安装提供此命令的软件包。"},{keywordGroups:[["tun","configure","cannot","find","file"],["tun","configure","找不到","文件"]],answer:`**Q: 报错 "configure tun interface: The system cannot find the file specified."？**
+*   **macOS/Linux**: 前往 **设置 -> 内核** 页面，点击 **授予特权** 按钮为内核授权。`},{keywordGroups:[["linux","授权","[没无]反应|点不了|点了没用|按了没反应"],["(授(予)?|给)(特)?权","没(有)?(效果|反应)|点(了)?没用"],["linux","authorize button","doesn.?t work|no response|nothing happens"]],answer:"**Q: Linux 点击授权按钮没反应？**\n\nA: Linux 上的授权操作依赖 `pkexec` 命令，需确保已安装提供此命令的软件包。"},{keywordGroups:[["tun","configure","cannot","find","file"],["tun","configure","找不到","文件"]],answer:`**Q: 报错 "configure tun interface: The system cannot find the file specified."？**
 
 A:
 *   **原因**: sing-box 无法创建 TUN 虚拟网卡。
@@ -250,7 +250,7 @@ A:
 *   **结束残留进程**: 打开系统的任务管理器（或活动监视器），手动结束所有名为 \`sing-box\` 或 \`mihomo\` 的进程，然后重启内核。
 *   **检查管理员权限**:
     *   **Windows**: 前往 **设置 -> 通用**，启用 **以管理员身份运行** 并重启客户端。
-    *   **macOS/Linux**: 前往 **设置 -> 内核** 页面，点击授权按钮为内核程序重新授权。
+    *   **macOS/Linux**: 前往 **设置 -> 内核** 页面，点击 **授予特权** 按钮为内核授权。
 
 0.0.3. **第三步：TUN 模式无法上网专项排查**
 

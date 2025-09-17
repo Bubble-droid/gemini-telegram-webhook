@@ -1,14 +1,17 @@
 {
   "log": {
-    "level": "error",
+    "level": "debug",
     "timestamp": true
   },
   "dns": {
     "servers": [
       {
         "tag": "dns-google",
-        "type": "udp",
-        "server": "8.8.4.4"
+        "type": "https",
+        "server": "dns.google",
+        "server_port": 443,
+        "path": "/dns-query",
+        "domain_resolver": "dns-hosts"
       },
       {
         "tag": "dns-cloudflare",
@@ -34,6 +37,10 @@
         "ip_accept_any": true,
         "action": "route",
         "server": "dns-hosts"
+      },
+      {
+        "query_type": "HTTPS",
+        "action": "reject"
       },
       {
         "action": "route",
@@ -108,10 +115,27 @@
   ],
   "inbounds": [
     {
+      "type": "direct",
+      "tag": "dns-in",
+      "listen": "127.0.0.1",
+      "listen_port": 53
+    },
+    {
       "type": "mixed",
       "tag": "mixed-in",
       "listen": "127.0.0.1",
       "listen_port": 10080
+    },
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "sing-box-tun",
+      "mtu": 1492,
+      "address": ["172.18.0.1/30", "fdfe:dcba:9876::1/126"],
+      "auto_route": true,
+      "endpoint_independent_nat": false,
+      "stack": "mixed",
+      "auto_redirect": true
     }
   ],
   "outbounds": [
@@ -142,12 +166,35 @@
         "strategy": "prefer_ipv6"
       },
       {
+        "action": "sniff",
+        "sniffer": ["http", "tls", "quic", "dns"]
+      },
+      {
+        "type": "logical",
+        "mode": "or",
+        "rules": [
+          {
+            "port": 53
+          },
+          {
+            "protocol": "dns"
+          }
+        ],
+        "action": "hijack-dns"
+      },
+      {
         "action": "route",
         "outbound": "Proxy"
       }
     ],
     "final": "Proxy",
-    "default_domain_resolver": "dns-google"
+    "find_process": true,
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "dns-google",
+      "strategy": "prefer_ipv6",
+      "disable_cache": true
+    }
   },
   "experimental": {
     "clash_api": {

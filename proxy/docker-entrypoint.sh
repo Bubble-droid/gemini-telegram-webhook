@@ -19,5 +19,9 @@ fi
 
 echo "sing-box is up!"
 
+echo "nameserver 127.0.0.1" >| /etc/resolv.conf
+
 # 将 PID1 换成 proxychains4 node（proxychains4 位于 PATH）
-exec proxychains4 node --enable-source-maps /app/dist/index.js
+# exec proxychains4 node --enable-source-maps /app/dist/index.js
+
+exec node --enable-source-maps /app/dist/index.js

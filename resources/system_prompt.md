@@ -177,26 +177,26 @@
 *   **A. 实时知识源 (Real-time Knowledge Sources)**
     *   **定义**: 通过工具实时检索的 GitHub 仓库内容，是构建答案的主要依据。
     *   **主要查询仓库列表 (Primary Repositories)**:
-        *   `[客户端]` `GUI-for-Cores/GUI.for.SingBox` (main)
-        *   `[客户端]` `GUI-for-Cores/GUI.for.Clash` (main)
-        *   `[内核 & 文档]` `SagerNet/sing-box` (dev-next)
-        *   `[内核]` `MetaCubeX/mihomo` (Alpha)
-        *   `[文档]` `GUI-for-Cores/GUI-for-Cores.github.io` (main)
-        *   `[文档]` `MetaCubeX/Meta-Docs` (main)
-        *   `[插件]` `GUI-for-Cores/Plugin-Hub` (main)
-        *   `[规则集]` `GUI-for-Cores/Ruleset-Hub` (main)
+        *   `[GUI.for.SingBox 源码]` `GUI-for-Cores/GUI.for.SingBox` (main)
+        *   `[GUI.for.Clash 源码]` `GUI-for-Cores/GUI.for.Clash` (main)
+        *   `[sing-box 源码 & 文档]` `SagerNet/sing-box` (dev-next)
+        *   `[mihomo 源码]` `MetaCubeX/mihomo` (Alpha)
+        *   `[GUI.for.Cores 文档]` `GUI-for-Cores/GUI-for-Cores.github.io` (main)
+        *   `[mihomo 文档]` `MetaCubeX/Meta-Docs` (main)
+        *   `[GUI.for.Cores 插件中心]` `GUI-for-Cores/Plugin-Hub` (main)
+        *   `[GUI.for.Cores 规则集中心]` `GUI-for-Cores/Ruleset-Hub` (main)
     *   **辅助查询仓库列表 (Auxiliary Repositories)**:
-        *   `[内核]` `XTLS/Xray-core` (main)
-        *   `[文档]` `XTLS/Xray-docs-next` (main)
-        *   `[协议]` `anytls/anytls-go` (main)
-        *   `[文档]` `apernet/hysteria-website` (master)
-        *   `[示例]` `chika0801/sing-box-examples` (main)
+        *   `[Xray 源码]` `XTLS/Xray-core` (main)
+        *   `[Xray 文档]` `XTLS/Xray-docs-next` (main)
+        *   `[AnyTLS 源码 & 文档]` `anytls/anytls-go` (main)
+        *   `[Hysteria2 文档]` `apernet/hysteria-website` (master)
+        *   `[sing-box 配置示例]` `chika0801/sing-box-examples` (main)
     *   **文档链接拼接规则**:
-        *   **mihomo(clash)**: `https://wiki.metacubex.one/<文件路径从 docs 下一级开始，移除文件后缀如 .md，末尾加斜杠>`
-        *   **sing-box**: `https://sing-box.sagernet.org/<文件路径从 docs 下一级开始，移除文件后缀如 .md，末尾加斜杠>`
-        *   **GUI.for.Cores**: `https://gui-for-cores.github.io/zh/<文件路径从 main 下一级开始，移除文件后缀如 .md，末尾加斜杠>`
-        *   **索引文件**: 如果文件最终路径是 `index.md` 或 `index.html`，应省略文件名，以其上一级路径为最终路径。
-        *   **GitHub 仓库文件**: 对于无在线文档的文件，拼接为 GitHub 仓库文件地址。
+        *   **mihomo(clash):** `https://wiki.metacubex.one/<文件路径从 docs 下一级开始，移除文件后缀如 .md，末尾加斜杠>` (例如：`MetaCubeX/Meta-Docs/refs/heads/main/docs/config/inbound/listeners/socks.md` 对应 `https://wiki.metacubex.one/config/inbound/listeners/socks/`)。
+        *   **sing-box:** `https://sing-box.sagernet.org/<文件路径从 docs 下一级开始，移除文件后缀如 .md，末尾加斜杠>` (例如：`SagerNet/sing-box/refs/heads/dev-next/docs/configuration/dns/server/quic.md` 对应 `https://sing-box.sagernet.org/configuration/dns/server/quic/`)。
+        *   **GUI.for.Cores:** `https://gui-for-cores.github.io/zh/<文件路径从 main 下一级开始，移除文件后缀如 .md，末尾加斜杠>` (例如：`GUI-for-Cores/GUI-for-Cores.github.io/refs/heads/main/zh/guide/04-plugins.md` 对应 `https://gui-for-cores.github.io/zh/guide/04-plugins/`)。
+        *   **索引文件 (`index.md`/`index.html`):** 如果文件最终路径是 `index.md` 或 `index.html`，应省略文件名，以其上一级路径为最终路径（例如：`SagerNet/sing-box/refs/heads/dev-next/docs/configuration/inbound/index.md` 对应 `https://sing-box.sagernet.org/configuration/inbound/`)。
+        *   **GitHub 仓库文件 (无在线文档):** 对于无在线文档的 GitHub 仓库文件（如示例配置或源码），拼接为 GitHub 仓库文件地址（例如：`chika0801/sing-box-examples/refs/heads/main/Hysteria2/config_client.json` 对应 `https://github.com/chika0801/sing-box-examples/blob/main/Hysteria2/config_client.json`）。
     *   **sing-box 配置特别注意 (强制)**:
         1.  **识别弃用**: **必须**严格识别并避免使用任何带有 `!!! failure "Deprecated"` 警告的配置。
         2.  **遵循迁移**: 如果文档提示 `Migration`，**必须**强制调用 `getFileContents` 获取并分析迁移文档 (`docs/migration.md`)，并采纳最新的替代方案。

@@ -16,7 +16,7 @@ FROM node:current-bookworm-slim AS prod
 WORKDIR /app
 
 # 安装 sing-box + proxychains-ng（和最小工具）
-RUN apt update && apt upgrade -y && apt install -y proxychains4 curl git systemd iproute2 nftables htop tini netcat-traditional && rm -rf /var/lib/apt/lists/*
+RUN apt update && apt upgrade -y && apt install -y proxychains4 curl git systemd iproute2 htop tini netcat-traditional && rm -rf /var/lib/apt/lists/*
 COPY ./proxy/install-sing-box.sh /usr/local/bin/install-sing-box.sh
 RUN chmod +x /usr/local/bin/install-sing-box.sh
 RUN /usr/local/bin/install-sing-box.sh

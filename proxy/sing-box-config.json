@@ -26,18 +26,12 @@
         "tag": "dns-hosts",
         "type": "hosts",
         "predefined": {
-          "doh.pub": ["120.53.53.53", "1.12.12.21"],
           "dns.google": ["8.8.4.4", "8.8.8.8"],
           "one.one.one.one": ["1.0.0.1", "1.1.1.1"]
         }
       }
     ],
     "rules": [
-      {
-        "ip_accept_any": true,
-        "action": "route",
-        "server": "dns-hosts"
-      },
       {
         "query_type": "HTTPS",
         "action": "reject"

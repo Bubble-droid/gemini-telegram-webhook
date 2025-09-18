@@ -115,6 +115,84 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
   },
 
   /**
+   * 新增工具: searchReposInGlobal
+   * 通过关键词在整个 GitHub 平台搜索仓库。
+   *
+   * @param {ToolExecArgs} args - 工具调用时传递的参数对象
+   * @returns {Promise<>} 工具执行结果对象。
+   */
+  searchReposInGlobal: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.SearchReposInGlobalResult>> => {
+    Log.info('执行工具: searchReposInGlobal, 参数:', { args });
+    const { keyword, qualifier } = args;
+    const urlPath: string = `search/repositories`;
+    const queryParams: string = `q=${encodeURIComponent(keyword)}+in:${qualifier}`;
+    const result = await makeGitHubApiRequest<Github.GitHubSearchResult<Github.GitHubRepository>>({
+      method: 'GET',
+      urlPath,
+      queryParams,
+    });
+    if (result.success) {
+      const repositories: Tool.SearchReposInGlobalResult['repositories'] = result.data.items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        full_name: item.full_name,
+        private: item.private,
+        owner_login: item.owner.login,
+        html_url: item.html_url,
+        description: item.description,
+        fork: item.fork,
+        stargazers_count: item.stargazers_count,
+        language: item.language,
+        forks_count: item.forks_count,
+        open_issues_count: item.open_issues_count,
+        default_branch: item.default_branch,
+        updated_at: item.updated_at,
+      }));
+      Log.info(`searchReposInGlobal 工具执行完毕，找到 ${repositories.length} 个仓库，总数 ${result.data.total_count}。`);
+      return { success: true, data: { repositories, total_count: result.data.total_count } };
+    } else {
+      return result;
+    }
+  },
+
+  /**
+   * 新增工具: searchIssuesInGlobal
+   * 通过关键词在整个 GitHub 平台搜索 Issue。
+   *
+   * @param {ToolExecArgs} args - 工具调用时传递的参数对象
+   * @returns {Promise<>} 工具执行结果对象。
+   */
+  searchIssuesInGlobal: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.SearchIssuesInGlobalResult>> => {
+    Log.info('执行工具: searchIssuesInGlobal, 参数:', { args });
+    const { keyword, state = 'open' } = args;
+    const urlPath = `search/issues`;
+    const queryParams = `q=${encodeURIComponent(keyword)}+state:${state}+is:issue`;
+    const result = await makeGitHubApiRequest<Github.GitHubSearchResult<Github.GitHubIssueSearchItem>>({
+      method: 'GET',
+      urlPath,
+      queryParams,
+    });
+    if (result.success) {
+      const issues: Tool.SearchIssuesInGlobalResult['issues'] = result.data.items.map((item) => ({
+        id: item.id,
+        number: item.number,
+        html_url: item.html_url,
+        repository_url: item.repository_url,
+        title: item.title,
+        state: item.state,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        author_login: item.user?.login || '未知',
+        body: item.body,
+      }));
+      Log.info(`searchIssuesInGlobal 工具执行完毕，找到 ${issues.length} 个 Issue，总数 ${result.data.total_count}。`);
+      return { success: true, data: { issues, total_count: result.data.total_count } };
+    } else {
+      return result;
+    }
+  },
+
+  /**
    * 执行 listRepoTree 工具
    * 获取指定 GitHub 仓库的完整文件树（递归）。
    *

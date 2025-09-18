@@ -33,7 +33,7 @@ const extractMessageParts = async (message: Message, botName: string): Promise<P
   if (messageText.includes('🤖 模型：') || messageText.includes('✨ 本次任务')) {
     messageText = messageText
       .replace(/^🤖 模型：.*?\n+/g, '')
-      .replace(/✨ 本次任务[\s\S]*$/m, '')
+      .replace(/✨ API 调用[\s\S]*$/m, '')
       .trim();
   }
 
@@ -266,7 +266,7 @@ ${resTexts}
 
 ✨ API 调用 ${apiCallSuccessCount} 次，重试 ${totalRetryCount} 次 (无效 ${emptyReplyRetryCount}, 错误 ${errorRetryCount})。使用工具 ${usageToolCount} 次，耗时 ${totalDurationSecond} 秒，消耗 ${totalUsageToken} Token。
 
-⚠ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。`;
+⚠️ 本 AI 回答仅供参考，可能存在不准确之处，请您自行判断。`;
 
     // 调用新的分块发送函数来处理回复消息
     const finalReplyResult = await sendFormattedMessage(this.chatId, fullText, this.userMessageId, this.userId);

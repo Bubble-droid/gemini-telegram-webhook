@@ -7,6 +7,7 @@ export interface ToolExecArgs {
   userId: number;
   userMessageId: number;
   keyword: string;
+  qualifier: string;
   owner: string;
   repo: string;
   path?: string;
@@ -70,6 +71,28 @@ export interface SearchIssuesInRepoResult {
       updated_at: string;
       author_login: string;
       labels: string[];
+    }
+  >;
+  total_count: number;
+}
+
+/**
+ * searchReposInGlobal 工具的返回数据结构。
+ */
+export interface SearchReposInGlobalResult {
+  repositories: Array<
+    Pick<Github.GitHubRepository, 'full_name' | 'html_url' | 'description' | 'stargazers_count' | 'forks_count' | 'updated_at' | 'language'>
+  >;
+  total_count: number;
+}
+
+/**
+ * searchIssuesInGlobal 工具的返回数据结构。
+ */
+export interface SearchIssuesInGlobalResult {
+  issues: Array<
+    Pick<Github.GitHubIssueSearchItem, 'id' | 'number' | 'html_url' | 'repository_url' | 'title' | 'state' | 'created_at' | 'updated_at' | 'body'> & {
+      author_login: string;
     }
   >;
   total_count: number;
@@ -194,6 +217,8 @@ export interface ToolExecutorsType {
   searchFilesInRepo: (args: ToolExecArgs) => Promise<ToolExecResponse<SearchFilesInRepoResult>>;
   searchCommitsInRepo: (args: ToolExecArgs) => Promise<ToolExecResponse<SearchCommitsInRepoResult>>;
   searchIssuesInRepo: (args: ToolExecArgs) => Promise<ToolExecResponse<SearchIssuesInRepoResult>>;
+  searchReposInGlobal: (args: ToolExecArgs) => Promise<ToolExecResponse<SearchReposInGlobalResult>>;
+  searchIssuesInGlobal: (args: ToolExecArgs) => Promise<ToolExecResponse<SearchIssuesInGlobalResult>>;
   listRepoTree: (args: ToolExecArgs) => Promise<ToolExecResponse<ListRepoTreeResult>>;
   listDirContents: (args: ToolExecArgs) => Promise<ToolExecResponse<ListDirContentsResult>>;
   listRepoCommits: (args: ToolExecArgs) => Promise<ToolExecResponse<ListRepoCommitsResult>>;

@@ -570,7 +570,7 @@ export const simplifyGeminiApiResponse = (response: GenerateContentResponse): Ge
               data: 'BASE64_ENCODED_DATA',
             };
           }
-          if (newPart.text) {
+          if (newPart.text && !newPart.thought) {
             newPart.text = 'TEXT_CONTENT';
           }
 

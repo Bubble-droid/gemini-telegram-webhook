@@ -86,6 +86,51 @@ const functionForSearch: FunctionDeclaration[] = [
       required: ['keyword', 'owner', 'repo'],
     },
   },
+  {
+    name: 'searchReposInGlobal',
+    description: '根据关键词在整个 GitHub 平台搜索相关的公开仓库。',
+    behavior: Behavior.BLOCKING,
+    parameters: {
+      type: Type.OBJECT,
+      title: 'Search GitHub Repositories Globally Parameters',
+      properties: {
+        keyword: {
+          type: Type.STRING,
+          description: '用于搜索仓库名称和描述的关键词，例如 "sing-box dashboard"。',
+        },
+        qualifier: {
+          type: Type.STRING,
+          description:
+            '搜索范围，可以是 "name"（仓库名称）、"description"（仓库描述）、"readme"（README 文件内容）。多个值用逗号分隔，例如 "name,description"。',
+          default: 'name,description',
+          enum: ['name', 'description', 'readme'],
+        },
+      },
+      required: ['keyword'],
+    },
+  },
+  {
+    name: 'searchIssuesInGlobal',
+    description: '根据关键词在整个 GitHub 平台搜索相关的公开 Issue。',
+    behavior: Behavior.BLOCKING,
+    parameters: {
+      type: Type.OBJECT,
+      title: 'Search GitHub Issues Globally Parameters',
+      properties: {
+        keyword: {
+          type: Type.STRING,
+          description: '用于搜索 Issue 内容和标题的关键词，多个关键词请用 AND 或 OR 分隔，例如 "gvisor AND performance"。',
+        },
+        state: {
+          type: Type.STRING,
+          description: 'Issue 的状态，可以是 "open"（开放）、"closed"（关闭），默认为 "open"。',
+          default: 'open',
+          enum: ['open', 'closed'],
+        },
+      },
+      required: ['keyword'],
+    },
+  },
 ];
 
 const functionForList: FunctionDeclaration[] = [

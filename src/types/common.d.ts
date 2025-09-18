@@ -33,3 +33,9 @@ export interface MarkdownMarkRegex {
   SPOILER: RegExp;
   BLOCKQUOTE_LINE: RegExp;
 }
+
+export interface FaqItem {
+  keywordGroups: string[][];
+  excludeKeywords?: string[][];
+  answer: string;
+}

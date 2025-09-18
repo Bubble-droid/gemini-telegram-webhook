@@ -1,12 +1,12 @@
 // src/handlers/message/normal.ts
 
 import { Log, bot, config } from '@/services';
-import type * as Bot from '@/types';
+import type * as Bot from '@/types/telegram';
 import { BotCommands } from '@/configs';
 import { handleMention } from '@/handlers/message';
-import { faqData } from '@/configs';
-import { handleOCR, scheduleDeletion, toHtml } from '@/utils';
+import { handleOCR, kv, scheduleDeletion, toHtml } from '@/utils';
 import { handleFile } from '@/handlers';
+import type { FaqItem } from '@/types';
 
 /**
  * @class NormalHandler
@@ -15,6 +15,8 @@ import { handleFile } from '@/handlers';
  *              转交给提及消息处理器处理。同时，它也处理指令别名和预留的关键词回复。
  */
 export class NormalHandler {
+  private readonly durableResourceId: string;
+  private readonly faqDataKeyName: string;
   private readonly botName: string;
   private readonly message: Bot.Message;
   private readonly chatId: number;
@@ -26,7 +28,10 @@ export class NormalHandler {
   private messageText: string;
 
   constructor(message: Bot.Message) {
-    this.botName = config.load().botName;
+    const { durableResourceId, botName } = config.load();
+    this.durableResourceId = durableResourceId;
+    this.faqDataKeyName = 'faq_data';
+    this.botName = botName;
     const { message_id, chat, from, reply_to_message, photo, document, text, caption } = message;
     this.message = message;
     this.chatId = chat.id;
@@ -94,8 +99,11 @@ export class NormalHandler {
       }
     }
 
+    const faqDataResult = await kv.read<FaqItem[]>(this.durableResourceId, this.faqDataKeyName, 'json');
+    if (!faqDataResult.success) return false;
+
     // 步骤 2: 寻找第一个满足“包含”且不满足“排除”条件的 FAQ 条目
-    const matchedFaq = faqData.find((faqItem) => {
+    const matchedFaq = faqDataResult.data.find((faqItem) => {
       // --- 包含逻辑检查 (Inclusion Check) ---
       const inclusionPattern = faqItem.keywordGroups.map((group) => `(${group.map((p) => `(?=.*${p})`).join('')})`).join('|');
       const inclusionRegex = new RegExp(inclusionPattern, 'i');

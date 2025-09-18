@@ -1,19 +1,6 @@
 // src/configs/faq_data.ts
 
-/**
- * @interface FaqItem
- * @description 定义单个 FAQ 条目的结构。
- * @property {string[][]} keywordGroups - 正则表达式模式组。外层数组代表“或”关系，内层数组代表“与”关系。
- *                                        用户的消息必须满足至少一个内层数组的所有正则模式才算匹配。
- * @property {string[][] | undefined} excludeKeywords - [结构升级] 排除规则组。外层数组为 OR，内层数组为 AND。
- *                                                      如果消息匹配任意一个内层数组的所有正则，则不匹配此条目。
- * @property {string} answer - 对应的回答内容。
- */
-interface FaqItem {
-  keywordGroups: string[][];
-  excludeKeywords?: string[][];
-  answer: string;
-}
+import type { FaqItem } from '@/types';
 
 /**
  * @const faqData
@@ -161,6 +148,60 @@ A:
 4. 在 **配置设置** 的 **出站分组** 或 **代理组** 中引用该节点。`,
   },
 
+  // 🕹️ B.2.3.1 活动连接规则 (Active Connection Rules)
+  {
+    keywordGroups: [
+      // 场景一：直接提问“为什么不生效”
+      ['(活动连接|概览|连接面板)', '(右键|添加|设置)', '(直连|代理|拦截)', '([不没无]生效|没(有)?(效果|反应)|不起作用|没用)'],
+      // 场景二：询问“如何使其生效”
+      ['(活动连接|概览)', '(右键|添加)的?(规则)?', '(怎么|如何|咋)', '(让.*)?(生效|启用|起作用|应用)'],
+      // 场景三：询问规则存储位置或如何编辑 (有上下文)
+      ['(活动连接|概览)', '(添加|设置)的?(规则)?', '(在(哪|哪里)|如何|怎么)', '(看|查看|找到|编辑|修改|删除|移除)'],
+      // 新增场景四：询问规则文件位置 (无上下文)
+      ['添加(到)?', '(直连|代理|拦截)', '(哪个|什么|哪里).*(规则)?文件'],
+      // 场景五：直接提到规则集文件名
+      ['(direct|proxy|reject)(\\.(yaml|json))?', '(怎么用|如何生效|不起作用)'],
+      // 场景六：更口语化的组合
+      ['(右键|点了?)', '(添加|设置)', '(直连|代理|拦截)', '然后呢|下一步|怎么用'],
+    ],
+    answer: `**Q: 在活动连接中右键添加的规则不生效？**
+
+A: 通过 **概览 -> 活动连接** 面板右键添加的规则，本质上是向本地的三个特定规则集文件（\`direct.xxx\`, \`proxy.xxx\`, \`reject.xxx\`）追加条目。您需要手动在配置中引用这些规则集，才能让这些规则真正生效。
+
+操作步骤如下：
+
+**第一步：添加到规则集页面**
+
+1.  前往 **插件中心**，安装并运行 **一键添加规则集** 插件。
+2.  在弹出的窗口中，确保至少选中了 \`direct\`, \`reject\`, \`proxy\` 这三个规则集，然后点击确定。
+
+**第二步：在配置中引用规则集**
+
+您需要为每个配置方案单独进行设置：
+
+*   **对于 GUI.for.SingBox:**
+    1.  在 **配置** 页面，右键点击目标配置，选择 **路由设置**。
+    2.  进入 **规则集** 标签页，点击 **添加**。
+        *   **类型**: 选择 \`本地\`。
+        *   **规则集**: 分别选择 \`direct\`, \`proxy\`, \`reject\` 添加三次。
+    3.  进入 **规则** 标签页，点击 **添加**。
+        *   **规则类型**: 选择 \`规则集\`。
+        *   **规则集**: 选择您刚刚添加的规则集（例如 \`direct\`）。
+        *   **出站标签**: 选择对应的出站（例如 \`direct\` 规则集对应 \`direct\` 出站）。
+        *   重复此操作，为 \`proxy\` 和 \`reject\` 也创建规则。
+
+*   **对于 GUI.for.Clash:**
+    1.  在 **配置** 页面，右键点击目标配置，选择 **规则设置**。
+    2.  点击 **添加**。
+        *   **类型**: 选择 \`RULE-SET\`。
+        *   **规则集类型**: 选择 \`本地\`。
+        *   **规则集**: 选择对应的文件（例如 \`direct.yaml\`）。
+        *   **代理**: 选择对应的策略组（例如 \`DIRECT\`）。
+        *   重复此操作，为 \`proxy.yaml\` 和 \`reject.yaml\` 也创建规则。
+
+**重要提示**：规则的顺序至关重要。请将您手动添加的这些规则集规则，放置在路由规则列表的**靠前位置**，以确保它们能被优先匹配。`,
+  },
+
   // 🐞 B.2.4 内核错误 (Core Errors)
   {
     keywordGroups: [['cache.*(file)?', 'timeout']],
@@ -169,6 +210,28 @@ A:
 A:
 *   **原因**: sing-box 缓存文件被占用，通常是由于进程未正常退出。
 *   **解决方案**: 打开任务管理器（或活动监视器），手动结束所有名为 \`sing-box\` 的进程，然后重启内核。`,
+  },
+  {
+    keywordGroups: [['max.*early.*data', 'unknown.*(field)?']],
+    answer: `**Q: 报错 "unknown field \`max_early_data\`"**
+
+A:
+*   **原因**: 字段 \`max_early_data\` 的值类型不正确。
+*   **解决方案**:
+    *   右键点击出错订阅，选择**脚本**，填入以下内容:
+    \`\`\`javascript
+const onSubscribe = async (proxies, subscription) => {
+  proxies.forEach((p) => {
+    if (p.transport && 'max_early_data' in p.transport) {
+      const earlyData = p.transport.max_early_data;
+      if (typeof earlyData !== 'number' || isNaN(earlyData)) {
+         delete p.transport.max_early_data;
+      }
+    }
+  })
+  return { proxies, subscription }
+}
+    \`\`\``,
   },
   {
     keywordGroups: [['detour', 'empty', 'direct']],

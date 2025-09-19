@@ -79,7 +79,7 @@ A: 尝试安装 \`Noto-Sans-CJK\` 和 \`Microsoft-YaHei\` 字体后重启系统�
 
   // 🌐 B.2.2 网络与订阅 (Network & Subscription)
   {
-    keywordGroups: [['403'], ['rate limit exceeded'], ['(github|api).*(限制|rate limit)']],
+    keywordGroups: [['403'], ['rate limit exceeded'], ['(github|api).*(限制|rate limit)'], ['超出', '速(率)?', '限制']],
     answer: `**Q: GitHub API 速率限制 (403 rate limit exceeded)？**
 
 A:
@@ -121,23 +121,30 @@ A:
   // ⚙️ B.2.3 配置与导入 (Configuration & Import)
   {
     keywordGroups: [
-      ['(怎么|如何|咋)', '(导入|添加|载入|放进去|用|应用|加载)', '(自定义|自己.*|完整.*|写好)?.*配置(文件)?.*(运行|启动)?.*'],
+      // 场景一: "如何/怎么..." 的标准问法
+      ['(怎么|如何|咋)', '(导入|添加|载入|放进去|用|应用|加载)', '(自定义|自己.*|完整.*|写好|手搓|手写|本地)?.*配置(文件)?'],
+      // 场景二: "无法/不能..." 的陈述或疑问句 (覆盖您的范例)
+      ['([不没无]法?|不能|不行|不[支没]持)', '(导入|使用|用|加载)', '(自己|手搓|手写|本地|完整).*配置(文件)?'],
+      // 场景三: "是否支持..." 的直接问法
+      ['(支不[支没]持|能(不)?能)', '(导入|使用|用|加载)', '(自己|手搓|手写|本地|完整).*配置(文件)?'],
+      // 场景四: 英文关键词
       ['import', 'custom config|full config|apply|load'],
-      // --- 新增英文关键词 ---
       ['how to', '(import|load|use|apply)', '(my|a) (custom|full|own) config(uration)?'],
     ],
-    answer: `**Q: 如何导入自定义配置文件？**
+    answer: `**Q: 如何导入/使用自己编写的完整配置文件？**
 
-A: GUI.for.Cores 本身不直接支持导入完整的配置文件，但可通过特定功能实现：
-*   **GUI.for.Clash**: 添加订阅时，启用 **使用订阅内的策略组和分流规则** 选项。
-*   **GUI.for.SingBox**: 使用 **配置脚本** 功能实现，具体代码示例请询问助理。`,
+A: GUI.for.Cores 本身不直接支持导入完整的配置文件，这么设计是为了维持 GUI 操作的稳定性和一致性。但您可以通过以下特定功能，间接实现加载自定义配置核心内容的目的：
+
+*   **GUI.for.Clash**: 在添加订阅时，将您的完整配置文件托管在一个可访问的 URL 上（或存放在本地文件中），然后像添加普通订阅一样添加它。关键在于，必须启用 **“使用订阅内的策略组和分流规则”** 选项。这样，客户端会优先采用您文件中的 \`proxies\`, \`proxy-groups\`, 和 \`rules\` 部分。
+
+*   **GUI.for.SingBox**: 使用 **配置脚本 (Configuration Script)** 功能。这是一个高级功能，允许您通过编写 JavaScript 代码来动态修改生成的 sing-box 配置。您可以将完整配置文件通过脚本注入到最终配置中。具体代码示例请询问助理。`,
   },
   {
     keywordGroups: [
       ['(怎么|如何|咋)', '(导入|添加|加入|粘贴|使用)', '(单个)?节点|vmess|ss|vless|trojan'],
       ['import', 'single node|vmess|paste'],
       // --- 新增英文关键词 ---
-      ['how to', '(import|add|paste)', 'single node|share link'],
+      ['(how to)?', '(quick)?(import|add|paste)', '(single)?.*node|(share)?.*link'],
     ],
     answer: `**Q: 如何导入单个节点链接 (如 vmess://)？**
 
@@ -204,53 +211,129 @@ A: 通过 **概览 -> 活动连接** 面板右键添加的规则，本质上是�
 
   // 🐞 B.2.4 内核错误 (Core Errors)
   {
-    keywordGroups: [['cache.*(file)?', 'timeout']],
-    answer: `**Q: 报错 "start service: initialize cache-file: timeout"？**
+    keywordGroups: [
+      // 场景一：直接匹配错误日志
+      ['cache.*(file)?', 'timeout'],
+      // 场景二：中文描述
+      ['(缓存|cache)', '(文件|file)?', '(超时|timeout)'],
+      ['(启动|initialize)', '(内核|服务|service)', '(卡住|超时|timeout)', '(缓存|cache)'],
+    ],
+    answer: `**Q: 报错 "initialize cache-file: timeout" 或内核启动卡在缓存？**
 
 A:
-*   **原因**: sing-box 缓存文件被占用，通常是由于进程未正常退出。
-*   **解决方案**: 打开任务管理器（或活动监视器），手动结束所有名为 \`sing-box\` 的进程，然后重启内核。`,
-  },
-  {
-    keywordGroups: [['max.*early.*data', 'unknown.*(field)?']],
-    answer: `**Q: 报错 "unknown field \`max_early_data\`"**
-
-A:
-*   **原因**: 字段 \`max_early_data\` 的值类型不正确。
+*   **原因**: sing-box 内核在启动时需要读写缓存文件（\`cache.db\`），此报错意味着该文件被另一个进程锁定或占用，导致新进程在规定时间内无法访问，最终超时失败。这通常是由于旧的内核进程未能正常退出所致。
 *   **解决方案**:
-    *   右键点击出错订阅，选择**脚本**，填入以下内容:
-    \`\`\`javascript
-const onSubscribe = async (proxies, subscription) => {
-  proxies.forEach((p) => {
-    if (p.transport && 'max_early_data' in p.transport) {
-      const earlyData = p.transport.max_early_data;
-      if (typeof earlyData !== 'number' || isNaN(earlyData)) {
-         delete p.transport.max_early_data;
-      }
-    }
-  })
-  return { proxies, subscription }
-}
-    \`\`\``,
+    1.  **彻底关闭相关进程**: 打开您操作系统的任务/进程管理工具：
+        *   **Windows**: 任务管理器 (Task Manager)
+        *   **macOS**: 活动监视器 (Activity Monitor)
+        *   **Linux**: 系统监视器或使用 \`kill\` 命令
+    2.  **手动结束进程**: 在进程列表中，找到并手动结束所有名为 \`sing-box\` 的进程。
+    3.  **重启内核**: 返回客户端，重新启动内核。此操作应能顺利完成。`,
   },
   {
-    keywordGroups: [['detour', 'empty', 'direct']],
+    keywordGroups: [
+      // 场景一：直接匹配错误日志
+      ['detour', 'empty', 'direct'],
+      ['detour to an empty direct outbound'],
+      // 场景二：中文描述
+      ['(DNS|域名服务器)', '(出站|outbound)', '(直连|direct)', '(报错|出错|不行)'],
+    ],
     answer: `**Q: 报错 "detour to an empty direct outbound makes no sense"？**
 
 A:
-*   **原因**: 新版 sing-box 禁止将 DNS 服务器的出站设置为 \`direct\`。
-*   **解决方案**:
-    1. 前往 **配置设置 -> DNS 设置 -> 服务器**。
-    2. 找到“出站”标签为 \`直连\` 的服务器，点击 **编辑**。
-    3. 点击出站标签旁边的 **x** 按钮将其清空（留空默认即为直连）。`,
+*   **原因**: 出于规范性考虑，新版本的 sing-box 内核不再允许将 DNS 服务器的“出站 (detour)”选项显式地设置为 \`direct\` 类型。
+*   **解决方案**: 将该选项清空即可，内核会默认采用直连。
+    1.  前往 **配置设置 -> DNS 设置 -> 服务器**。
+    2.  找到“出站”为 \`直连 (direct)\` 的 DNS 服务器，点击其右侧的 **编辑** 按钮。
+    3.  在弹出的编辑窗口中，点击出站标签 **旁边的 “x” 按钮** 将其清空。
+    4.  保存设置。清空后，该 DNS 请求会默认直连发出，且符合内核新的配置规范。`,
   },
   {
-    keywordGroups: [['missing', 'tags']],
+    keywordGroups: [
+      // 场景一：直接匹配错误日志
+      ['missing', 'tags'],
+      // 场景二：中文描述
+      ['(缺少|missing)', '(标签|tags)'],
+      ['(出站|outbound|分组)', '(没有|缺少|空)', '(节点|订阅|tags|标签)'],
+    ],
     answer: `**Q: 报错 "create service: initialize outbound[*]: missing tags"？**
 
 A:
-*   **原因**: 某个出站分组内没有任何节点或有效分组。
-*   **解决方案**: 前往 **配置设置 -> 出站设置**，找到左侧有红色感叹号的出站分组，点击 **编辑** 并确保其至少包含一个订阅或有效节点。`,
+*   **原因**: 某个出站分组（Proxy Group）内是空的，没有任何可用的节点或指向其他有效的分组。**每个出站分组必须至少包含一个可用的出站目标。**
+*   **解决方案**:
+    1.  前往 **配置设置 -> 出站设置 (Outbounds)**。
+    2.  在左侧列表中，找到有 **感叹号 (!)** 标记的出站分组。
+    3.  点击 **编辑** 该分组，并确保其“引用出站 & 引用订阅”部分中至少选择了一个有效的订阅、单个节点或其他分组。`,
+  },
+  {
+    keywordGroups: [
+      // 场景一：直接匹配错误日志
+      ['max.*early.*data', 'unknown.*(field)?'],
+      // 场景二：简化匹配
+      ['max_early_data', '(报错|错误|error)'],
+      // 场景三：中文描述
+      ['订阅', '(更新|使用)后', '(报错|提示)', 'max_early_data'],
+    ],
+    answer: `**Q: 报错 "unknown field 'max_early_data'" 或相关类型错误？**
+
+A:
+*   **原因**: 部分订阅源提供的节点信息中，\`max_early_data\` 字段的值**不是规范的数字类型**（例如，错误地设置为了字符串 "" 或布尔值 false），导致内核解析配置时因类型不匹配而失败。
+*   **解决方案**: 使用 **订阅脚本 (Subscription Script)** 功能，在客户端接收到订阅内容后，自动修正这个错误。
+    1.  在 **订阅** 页面，右键点击出错的订阅，选择 **脚本**。
+    2.  将以下脚本代码 **完整复制并粘贴** 到脚本编辑框中：
+\`\`\`javascript
+const onSubscribe = async (proxies, subscription) => {
+  // 遍历从订阅中获取的每一个代理节点
+  proxies.forEach((p) => {
+    // 检查节点是否存在 'transport' 属性，并且其中包含 'max_early_data' 字段
+    if (p.transport && 'max_early_data' in p.transport) {
+      const earlyData = p.transport.max_early_data;
+
+      // 如果 'max_early_data' 的值不是一个有效的数字 (例如是字符串、布尔值等)
+      if (typeof earlyData !== 'number' || isNaN(earlyData)) {
+         // 则从配置中删除这个不规范的字段，避免内核报错
+         delete p.transport.max_early_data;
+      }
+    }
+  });
+
+  // 返回修正后的代理列表和原始订阅信息
+  return { proxies, subscription };
+}
+\`\`\`
+    3.  点击 **保存**，然后 **更新该订阅**。问题应得到解决。`,
+  },
+  {
+    keywordGroups: [
+      // 场景一：直接粘贴错误信息
+      ['unknown.*(field|key|option|parameter)'],
+      // 场景二：中文描述错误
+      ['(报错|提示)', '(未知|不存在|不认识|无效)', '(字段|选项|参数|配置项)'],
+      ['(字段|选项|参数|配置项)', '(不存在|找不到|未定义|不认识|是啥|什么意思)'],
+    ],
+    answer: `**Q: 报错 "unknown field" / 提示未知字段？**
+
+A: 这个错误通常意味着您在配置文件中使用了当前内核不认识的配置项。
+
+**原因分析**:
+*   **拼写错误或字段已弃用**: 您可能手误拼错了字段名称，或者该字段在您当前的内核版本中已被重命名或移除。
+*   **版本不兼容**: 您使用的配置字段可能只在较新的内核版本中才被支持，而您当前的内核版本过旧。
+*   **配置格式错误**: 该字段的值类型或结构不正确（例如，期望填入一个字符串，却提供了一个列表），导致内核无法正确解析。
+
+**解决方案**:
+请按照以下步骤排查：
+
+1.  **核对官方文档**: 前往您所使用内核（sing-box 或 Clash.Meta）的官方文档，仔细核对该字段的：
+    *   **准确名称**: 确保字段名拼写无误。
+    *   **支持版本**: 确认您当前的内核版本是否支持该字段。
+    *   **正确用法**: 检查该字段期望的值类型和配置结构。
+
+2.  **执行标准更新流程**: 为确保您使用的是最新环境，请依次执行：
+    *   前往 **设置 -> 关于**，更新 GUI 客户端。
+    *   前往 **插件中心**，更新并运行 **滚动发行** 插件。
+    *   前往 **设置 -> 内核**，更新内核至最新版本。
+
+3.  **修正配置**: 根据文档核对的结果，修正您配置中的错误字段或其值，然后重启内核。`,
   },
 
   // 🛡️ B.2.5 TUN 模式专项 (TUN Mode Specifics)
@@ -362,7 +445,7 @@ A: 尝试将您操作系统的 DNS 服务器地址修改为公共 DNS，例如 \
   // 📚 其他 (通用规则放在最后)
   {
     keywordGroups: [
-      ['(怎么|如何|咋)', '(看|查看|打开|在哪)', '日志'],
+      ['(怎么|如何|咋)', '(看|查看|打开|在哪)', '(gui)?.*(控制台|日志)'],
       ['log', 'where|how to view|find'],
     ],
     answer: `**Q: 如何查看 GUI 日志？**

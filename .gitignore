@@ -165,3 +165,5 @@ out
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vercel
+
+wrangler.jsonc

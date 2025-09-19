@@ -1,7 +1,6 @@
 // src/utils/formatters/generator.ts
 
-import type { AstNode, NodeType } from './parser';
-import { escaper } from './escaper';
+import { escaper, type AstNode, type NodeType } from '@/utils/formatters';
 
 /**
  * AST 生成器基类，负责将 AST 转换为字符串。

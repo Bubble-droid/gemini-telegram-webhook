@@ -1,9 +1,9 @@
 // src/handlers/update.ts
 
-import type { InlineKeyboardMarkup, Message, MessageEntity, ReplyMarkup, Update } from '@/types';
-import { config, Log, REACTiON_ROW, bot, AppError } from '@/services';
+import type { InlineKeyboardMarkup, Message, MessageEntity, Update } from '@/types';
+import { config, Log, bot, AppError } from '@/services';
 import { handleMention, handleCommand, handleNewMember, handleNormal } from '@/handlers/message';
-import { scheduleDeletion, sendErrorNotification, shortenString } from '@/utils';
+import { scheduleDeletion, scheduleMultipleDeletion, sendErrorNotification, shortenString, sleep } from '@/utils';
 import { escaper } from '@/utils/formatters';
 import { handleCallbackQuery } from '@/handlers';
 
@@ -27,7 +27,21 @@ export const handleUpdate = async (update: Update): Promise<void> => {
     return;
   }
   const { message_id, chat } = msg;
-  if (!allowGroups.includes(chat.id) || chat.type === 'private') return;
+  if (!['group', 'supergroup'].includes(chat.type)) {
+    const replyText = '不支持私聊与频道，请在群组内使用此机器人。';
+    const sentResult = await bot.sendMessage(chat.id, replyText);
+    if (sentResult.ok) {
+      scheduleMultipleDeletion(chat.id, [sentResult.messageId, message_id], 3 * 60_000);
+    }
+    return;
+  }
+  if (!allowGroups.includes(chat.id)) {
+    const replyText = '群组未授权！';
+    await bot.sendMessage(chat.id, replyText);
+    await sleep(3000);
+    bot.leaveChat(chat.id);
+    return;
+  }
   const messageText = msg.text || msg.caption || '';
   const messageEntities = msg.entities || msg.caption_entities || [];
   try {
@@ -65,10 +79,7 @@ export const handleUpdate = async (update: Update): Promise<void> => {
     Log.error('Error while handling update', { err, updateId: update_id });
     sendErrorNotification(err as AppError, `Error while handling update ${JSON.stringify({ chatId: chat.id, messageId: message_id })}`);
     const shorten = `<blockquote expandable>${escaper.html(shortenString(`❌ ${errorMessage}`))}</blockquote>`;
-    const replyMarkup: ReplyMarkup = {
-      inline_keyboard: [REACTiON_ROW],
-    };
-    const errorResult = await bot.sendMessage(chat.id, shorten, { replyToMessageId: message_id, parseMode: 'HTML', replyMarkup });
+    const errorResult = await bot.sendMessage(chat.id, shorten, { replyToMessageId: message_id, parseMode: 'HTML' });
     if (errorResult.ok) {
       scheduleDeletion(chat.id, errorResult.messageId, 3 * 60_000);
     }

@@ -1,4 +1,4 @@
-// src/services/BotConfig.ts
+// src/services/ConfigLoader.ts
 
 import { isIP } from 'node:net';
 import process from 'node:process';
@@ -9,12 +9,12 @@ const LOGGER_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as co
 export type LoggerLevel = (typeof LOGGER_LEVELS)[number];
 
 /**
- * @class BotConfig
+ * @class ConfigLoader
  * @description 负责加载、解析和验证应用程序的环境变量，并将其转换为强类型的配置对象。
  *              采用静态方法，使其可以直接通过类名调用，无需实例化。
  *              这确保了配置加载的集中化和一致性。
  */
-export class BotConfig {
+class ConfigLoader {
   // 定义默认配置常量，用于当对应的环境变量未设置时提供回退值
   private readonly DEFAULT_LISTEN_HOST: string = '127.0.0.1';
   private readonly DEFAULT_LISTEN_PORT: number = 39001;
@@ -219,4 +219,4 @@ export class BotConfig {
   };
 }
 
-export const config: BotConfig = new BotConfig();
+export const config: ConfigLoader = new ConfigLoader();

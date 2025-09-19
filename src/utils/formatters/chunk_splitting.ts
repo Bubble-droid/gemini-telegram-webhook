@@ -1,7 +1,6 @@
 // src/utils/formatters/chunk_splitting.ts
 
-import type { AstNode } from './parser';
-import type { Generator } from './generator';
+import type { AstNode, Generator } from '@/utils/formatters';
 
 const MAX_CONTENT_LENGTH = 4096;
 

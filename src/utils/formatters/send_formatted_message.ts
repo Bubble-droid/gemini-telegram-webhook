@@ -1,11 +1,9 @@
 // src/utils/formatters/send_formatted_message.ts
 
-import { formatter } from './formatter';
-import { splitAstAndGenerateChunks } from './chunk_splitting';
-import { scheduleDeletion } from '@/utils/scheduler_task';
+import { formatter, splitAstAndGenerateChunks, preprocessMarkdown } from '@/utils/formatters';
+import { scheduleDeletion } from '@/utils';
 import { Log, makeInlineKeyboard, bot, TelegramError } from '@/services';
 import type { ParseMode, ReplyMarkup } from '@/types';
-import { preprocessMarkdown } from './preprocessor';
 
 const MAX_CONTENT_LENGTH = 4096;
 
@@ -123,7 +121,7 @@ export const sendFormattedMessage = async (
 
           if (sentMessageIdsInCurrentAttempt.length > 0) {
             Log.warn(`[${mode ?? '纯文本'}] 模式发送中断，开始清理 ${sentMessageIdsInCurrentAttempt.length} 条已发送的消息...`);
-            const deleteResult = await bot.deleteMessages(chatId, sentMessageIdsInCurrentAttempt);
+            const deleteResult = await bot.deleteMultipleMessages(chatId, sentMessageIdsInCurrentAttempt);
             if (deleteResult.ok) {
               Log.info('清理操作完成。');
             } else {

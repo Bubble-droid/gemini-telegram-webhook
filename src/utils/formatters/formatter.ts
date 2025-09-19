@@ -1,13 +1,12 @@
 // src/utils/formatters/formatter.ts
 
 import type { ParseMode } from '@/types';
-import { Parser, type AstNode } from './parser';
-import { HtmlGenerator, LegacyMarkdownGenerator, MarkdownV2Generator, Generator } from './generator';
+import { HtmlGenerator, LegacyMarkdownGenerator, MarkdownV2Generator, Generator, Parser, type AstNode } from '@/utils/formatters';
 
 /**
  * 协调解析器和生成器，将标准 Markdown 文本转换为 Telegram Bot API 支持的格式。
  */
-class Formatter {
+export class Formatter {
   private readonly htmlGenerator: HtmlGenerator;
   private readonly markdownV2Generator: MarkdownV2Generator;
   private readonly legacyMarkdownGenerator: LegacyMarkdownGenerator;
@@ -44,22 +43,4 @@ class Formatter {
         return this.legacyMarkdownGenerator;
     }
   }
-}
-
-export const formatter: Formatter = new Formatter();
-
-/**
- * [已废弃] 旧的单次格式化函数，仅用于测试或简单场景。
- * 发送长消息应使用新的 AST 工作流：formatter.parse() -> splitAstAndGenerateChunks()。
- * @param text - 原始 Markdown 文本。
- * @param parseMode - 目标格式。
- * @returns 格式化后的完整文本。
- */
-export function formatText(text: string, parseMode: ParseMode | null): string {
-  if (parseMode === null) {
-    return text; // 纯文本不处理
-  }
-  const ast = formatter.parse(text);
-  const generator = formatter.getGenerator(parseMode);
-  return generator.generate(ast);
 }

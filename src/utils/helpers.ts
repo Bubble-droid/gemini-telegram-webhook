@@ -24,7 +24,7 @@ const MARKDOWN_REGEX: MarkdownMarkRegex = {
   BLOCKQUOTE_LINE: /^(>>? .+(?:\n>>? .+)*)/gm,
 };
 
-class SimpleFormatter {
+export class SimpleFormatter {
   /**
    * 将标准 Markdown 文本格式化为 Telegram Bot API 的 HTML 格式。
    * 遵循用户自定义的输入规范：**粗体**, __下划线__, _斜体_, ~删除线~, ||剧透||, `行内代码`, ```代码块```, [链接文本](URL), > 引用块, >> 可展开引用块。
@@ -159,16 +159,6 @@ class SimpleFormatter {
     return processedText;
   };
 }
-
-const simpleFormatter: SimpleFormatter = new SimpleFormatter();
-
-export const toHtml = (markdownText: string): string => {
-  return simpleFormatter.toHtml(markdownText);
-};
-
-export const toMarkdownV2 = (markdownText: string): string => {
-  return simpleFormatter.toMarkdownV2(markdownText);
-};
 
 /**
  * 将时间格式化为 UTC+8 时间

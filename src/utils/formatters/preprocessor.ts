@@ -1,6 +1,6 @@
 // src/utils/formatters/preprocessor.ts
 
-import { tableFormatter } from './TableFormatter';
+import { tableFormatter } from '@/utils/formatters';
 
 /**
  * @class MarkdownUtils
@@ -140,7 +140,7 @@ class MarkdownUtils {
   }
 }
 
-export const markdownUtils: MarkdownUtils = new MarkdownUtils();
+const markdownUtils: MarkdownUtils = new MarkdownUtils();
 
 /**
  * 对原始 Markdown 文本应用所有预处理规则。

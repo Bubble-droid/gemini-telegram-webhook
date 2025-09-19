@@ -4,7 +4,7 @@
  * 封装了针对 Telegram 不同解析模式的文本转义方法。
  * 严格遵循 Telegram Bot API 文档中的转义规则。
  */
-class Escaper {
+export class Escaper {
   /**
    * 为 MarkdownV2 模式转义通用文本中的特殊字符。
    * @param text 要转义的字符串。
@@ -68,5 +68,3 @@ class Escaper {
     return text.replace(/([_*`[])/g, '\\$1');
   }
 }
-
-export const escaper: Escaper = new Escaper();

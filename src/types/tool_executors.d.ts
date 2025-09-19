@@ -1,6 +1,6 @@
 // src/types/tool_executors.d.ts
 
-import type * as Github from './github';
+import type * as Github from '@/types/github';
 
 export interface ToolExecArgs {
   chatId: number;

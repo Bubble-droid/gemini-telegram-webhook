@@ -5,7 +5,6 @@ dist/
 
 tree_and_files.md
 
-resources/*
-!resources/faq_data.json
+resources/
 
 draft/

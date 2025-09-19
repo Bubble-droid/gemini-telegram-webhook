@@ -14,7 +14,6 @@
     "server": "./dist/index.js"
   },
   "main": "./dist/index.js",
-  "module": "./dist/index.js",
   "exports": {
     ".": "./src/server.ts",
     "./package.json": "./package.json"
@@ -29,9 +28,14 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint --fix",
     "format": "prettier --write \"src/**/*.ts\"",
-    "push:github": "pnpm build:server && git add . && git commit -m 'Update' && git push"
+    "push:github": "pnpm build:server && git add . && git commit -m 'Update' && git push",
+    "convert:faq": "tsx workflows/convert_faq_data.ts",
+    "convert:all": "pnpm convert:faq",
+    "kv:put:faq": "pnpm convert:faq && wrangler kv key put \"faq_data\" --binding=\"DURABLE_RESOURCE\" --path=\"resources/faq_data.json\" --remote",
+    "kv:put:prompt": "wrangler kv key put \"system_prompt\" --binding=\"DURABLE_RESOURCE\" --path=\"resources/system_prompt.md\" --remote",
+    "kv:put:all": "pnpm kv:put:faq && pnpm kv:put:prompt"
   },
-  "packageManager": "pnpm@10.14.0",
+  "packageManager": "pnpm@10.17.0",
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
     "@google/genai": "^1.20.0",
@@ -58,7 +62,8 @@
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.44.0",
-    "vite": "^7.1.6"
+    "vite": "^7.1.6",
+    "wrangler": "^4.38.0"
   },
   "publishConfig": {
     "exports": {

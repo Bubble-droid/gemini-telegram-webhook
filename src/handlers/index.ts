@@ -6,7 +6,6 @@ import { FileHandler } from './files';
 import { CallbackQueryHandler } from './callback_query';
 
 export { handleUpdate } from './update';
-export { CallbackQueryHandler } from './callback_query';
 
 export const handleCallbackQuery = async (callbackQuery: CallbackQuery): Promise<void> => {
   const callback = new CallbackQueryHandler(callbackQuery);

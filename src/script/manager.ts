@@ -1,7 +1,6 @@
 // src/script/manager.ts
 
-import { storageService } from './storage';
-import { executionService } from './execution';
+import { storageService, executionService } from '@/script';
 import type { Message, ScriptExecutionResult } from '@/types';
 import { config, Log, ScriptError } from '@/services';
 import { kv } from '@/utils';
@@ -175,5 +174,3 @@ export class ScriptManager {
     }
   }
 }
-
-export const scriptManager: ScriptManager = new ScriptManager();

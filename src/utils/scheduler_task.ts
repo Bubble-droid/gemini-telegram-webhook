@@ -40,12 +40,10 @@ const scheduleTask = async <T>(action: Bot.ApiMethod, params: T, delayMs: number
 /**
  * 专用：延迟删除 Telegram 消息
  */
-const scheduleDeletion = (chatId: number | string, messageId: number, delayMs: number): Promise<void> => {
+export const scheduleDeletion = (chatId: number | string, messageId: number, delayMs: number): Promise<void> => {
   return scheduleTask<Bot.DeleteMessageParams>('deleteMessage', { chat_id: chatId, message_id: messageId }, delayMs);
 };
 
-const scheduleSend = (params: Bot.SendMessageParams, delayMs: number): Promise<void> => {
-  return scheduleTask<Bot.SendMessageParams>('sendMessage', params, delayMs);
+export const scheduleMultipleDeletion = (chatId: number | string, messageIds: number[], delayMs: number): Promise<void> => {
+  return scheduleTask<Bot.DeleteMessagesParams>('deleteMessages', { chat_id: chatId, message_ids: messageIds }, delayMs);
 };
-
-export { scheduleDeletion, scheduleSend };

@@ -4,7 +4,7 @@ import Cloudflare from 'cloudflare';
 import { Log, config, KvNamespaceError } from '@/services';
 import type { ValueAction, ValueBaseParams, ValueUpdateActionParams } from '@/types';
 
-class KvNamespace {
+export class KvNamespace {
   private callCloudflareApi = async <P, R>(action: ValueAction, baseParams: ValueBaseParams, actionParams?: P): Promise<R | void> => {
     const { cloudflareToken, cloudflareAccountId } = config.load();
     const { namespaceId, keyName } = baseParams;
@@ -128,5 +128,3 @@ class KvNamespace {
     }
   };
 }
-
-export const kv: KvNamespace = new KvNamespace();

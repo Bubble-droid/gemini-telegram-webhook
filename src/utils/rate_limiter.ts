@@ -1,7 +1,7 @@
 // src/utils/rate_limiter.ts
 
 import { config, Log } from '@/services';
-import { kv } from './KvNamespace';
+import { kv } from '@/utils';
 
 const DEFAULT_RETRY_SECONDS = 60;
 

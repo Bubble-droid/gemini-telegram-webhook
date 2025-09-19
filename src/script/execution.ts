@@ -83,5 +83,3 @@ export class ExecutionService {
     }
   }
 }
-
-export const executionService: ExecutionService = new ExecutionService();

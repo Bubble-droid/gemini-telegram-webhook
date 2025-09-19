@@ -62,6 +62,3 @@ export class StorageService {
     Log.info(`[StorageService] 脚本内容已删除, 标签: ${tag}`);
   }
 }
-
-// 导出一个单例，确保整个应用中只有一个存储服务实例
-export const storageService: StorageService = new StorageService();

@@ -1,9 +1,13 @@
 // src/services/index.ts
 
-export * from './BotConfig';
+export { config } from './ConfigLoader';
+import { TelegramBot } from './TelegramBot';
+
 export * from './ChatContexts';
 export * from './AppError';
 export * from './GeminiApi';
 export * from './Logger';
-export * from './TelegramBot';
+export { makeInlineKeyboard } from './TelegramBot';
 export * from './ToolExecutors';
+
+export const bot: TelegramBot = new TelegramBot();

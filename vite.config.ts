@@ -25,7 +25,7 @@ export default defineConfig({
     outDir: path.resolve(__dirname, 'dist'),
     emptyOutDir: true,
     sourcemap: true,
-    minify: true,
+    minify: false,
     rollupOptions: {
       input: path.resolve(__dirname, 'src/server.ts'),
       external: [...builtinModules, ...builtinModules.map((m) => `node:${m}`)],

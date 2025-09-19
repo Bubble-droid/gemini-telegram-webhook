@@ -554,6 +554,12 @@ export interface InlineQueryResultsButton {
 
 export type AnswerInlineQueryResult = boolean;
 
+export interface leaveChatParams {
+  chat_id: number | string;
+}
+
+export type leaveChatResult = boolean;
+
 export type ApiMethod =
   | 'sendMessage'
   | 'sendPhoto'
@@ -566,7 +572,8 @@ export type ApiMethod =
   | 'getFile'
   | 'getChatMember'
   | 'answerInlineQuery'
-  | 'answerCallbackQuery';
+  | 'answerCallbackQuery'
+  | 'leaveChat';
 
 interface SuccessResponse<T> {
   ok: true;

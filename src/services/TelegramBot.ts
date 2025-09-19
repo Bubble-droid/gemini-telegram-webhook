@@ -1,3 +1,5 @@
+// src/services/TelegramBot.ts
+
 import { config, TelegramError, Log } from '@/services';
 import { BotCommands } from '@/configs';
 import type { HttpMethod } from '@/types';
@@ -24,19 +26,28 @@ export class TelegramBot {
    * @param {P} body - 请求体参数
    * @returns {Promise<T>} API 响应对象
    */
-  private async sendRequest<P, T>(httpMethod: HttpMethod, apiMethod: Bot.ApiMethod, body: P, isFormData: boolean = false): Promise<T> {
+  private async sendRequest<P, T>(httpMethod: HttpMethod, apiMethod: Bot.ApiMethod, body: P | FormData, isFormData: boolean = false): Promise<T> {
     const url = `${this.botApiUrl}/${apiMethod}`;
+    let requestBody: string | FormData | undefined;
+    let headers: RequestInit['headers'] | undefined;
+
+    if (isFormData) {
+      if (!(body instanceof FormData)) {
+        throw new TelegramError("When 'isFormData' is true, the body must be an instance of FormData.");
+      }
+      requestBody = body;
+    } else {
+      requestBody = JSON.stringify(body);
+      headers = {
+        'Content-Type': 'application/json',
+      };
+    }
+
     try {
       const response = await fetch(url, {
         method: String(httpMethod).toUpperCase(),
-        ...(isFormData
-          ? {}
-          : {
-              headers: {
-                'Content-Type': 'application/json',
-              },
-            }),
-        body: isFormData ? (body as FormData) : JSON.stringify(body),
+        headers,
+        body: requestBody,
       });
 
       const parsed = (await response.json()) as Bot.ApiResponse<T>;
@@ -371,13 +382,13 @@ export class TelegramBot {
    * @param {number[]} messageIds - 消息ID列表
    * @returns {Promise<{ ok: boolean }>} 成功返回 `{ ok: true }`，失败返回 `{ ok: false }`。
    */
-  public async deleteMessages(chatId: number | string, messageIds: number[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  public async deleteMultipleMessages(chatId: number | string, messageIds: number[]): Promise<{ ok: true } | { ok: false; error: string }> {
     const payload: Bot.DeleteMessagesParams = {
       chat_id: chatId,
       message_ids: messageIds,
     };
     try {
-      await this.sendRequest<Bot.DeleteMessagesParams, Bot.DeleteMessageResult>('POST', 'deleteMessages', payload);
+      await this.sendRequest<Bot.DeleteMessagesParams, Bot.DeleteMessagesResult>('POST', 'deleteMessages', payload);
       Log.info('Telegram message deleted successfully.', { chatId, messageIds });
       return { ok: true };
     } catch (error: unknown) {
@@ -528,11 +539,27 @@ export class TelegramBot {
       return { ok: false, error: errorMessage };
     }
   }
+
+  public async leaveChat(chatId: number | string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const payload: Bot.leaveChatParams = {
+      chat_id: chatId,
+    };
+    try {
+      await this.sendRequest<Bot.leaveChatParams, Bot.leaveChatResult>('POST', 'leaveChat', payload);
+      Log.info('Bot left chat successfully.', { chatId });
+      return { ok: true };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
+      Log.error('Error leaving chat', {
+        err: errorMessage,
+        chatId,
+      });
+      return { ok: false, error: errorMessage };
+    }
+  }
 }
 
-export const bot: TelegramBot = new TelegramBot();
-
-export const REACTiON_ROW: Bot.InlineKeyboardButton[] = [
+const REACTiON_ROW: Bot.InlineKeyboardButton[] = [
   {
     text: '👍',
     callback_data: 'reaction_like',
@@ -543,14 +570,7 @@ export const REACTiON_ROW: Bot.InlineKeyboardButton[] = [
   },
 ];
 
-// const DELETE_ROW: Bot.InlineKeyboardButton[] = [
-//   {
-//     text: '🗑 删除消息',
-//     callback_data: 'delete_message_USER_ID',
-//   },
-// ];
-
-export const BASE_INLINE_KEYBOARD: Bot.InlineKeyboardButton[][] = [REACTiON_ROW];
+const BASE_INLINE_KEYBOARD: Bot.InlineKeyboardButton[][] = [REACTiON_ROW];
 
 export const makeInlineKeyboard = (userId: number): Bot.InlineKeyboardButton[][] => {
   return BASE_INLINE_KEYBOARD.map((row) =>

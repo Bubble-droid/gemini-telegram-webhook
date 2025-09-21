@@ -1,5 +1,3 @@
-import type { Message } from '../src/types/telegram';
-
 /**
  * @file httpClient.d.ts
  * @description 为脚本沙箱环境中注入的全局 `httpClient` 对象提供类型定义。
@@ -15,7 +13,7 @@ import type { Message } from '../src/types/telegram';
  */
 type FetchBody = string | Blob | ArrayBuffer | FormData | URLSearchParams;
 
-type ResponseType = 'json' | 'text' | 'arrayBuffer' | 'response';
+type HResponseType = 'json' | 'text' | 'arrayBuffer' | 'response';
 
 interface HttpError extends Error {
   readonly response: Response;
@@ -74,7 +72,7 @@ interface CustomRequestOptions {
    * 或直接传递 fetch API 支持的原始类型。
    */
   body?: CustomBody | FetchBody;
-  responseType?: ResponseType;
+  responseType?: HResponseType;
   timeout?: number;
   [key: string]: unknown;
 }
@@ -118,7 +116,7 @@ declare interface Utils {
 
 declare interface Options {
   param?: string;
-  message: Message;
+  message: Record<string, any>;
   utils: Utils;
 }
 

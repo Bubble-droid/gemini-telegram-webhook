@@ -102,32 +102,42 @@ export class NormalHandler {
     const faqDataResult = await kv.read<FaqItem[]>(this.durableResourceId, this.faqDataKeyName, 'json');
     if (!faqDataResult.success) return false;
 
-    // 步骤 2: 寻找第一个满足“包含”且不满足“排除”条件的 FAQ 条目
-    const matchedFaq = faqDataResult.data.find((faqItem) => {
+    // 步骤 2: 寻找第一个满足条件的 FAQ 条目
+    // console.log(`--- 开始为消息 "${this.messageText}" 匹配FA/Q ---`); // [调试日志]
+
+    const matchedFaq = faqDataResult.data.find((faqItem, index) => {
+      // --- [调试日志] 打印当前正在测试的规则 ---
+      // console.log(`[${index}] 正在测试规则:`, faqItem.keywordGroups[0]);
+
       // --- 包含逻辑检查 (Inclusion Check) ---
       const inclusionPattern = faqItem.keywordGroups.map((group) => `(${group.map((p) => `(?=.*${p})`).join('')})`).join('|');
-      const inclusionRegex = new RegExp(inclusionPattern, 'i');
+      const inclusionRegex = new RegExp(inclusionPattern, 'ims');
       const isMatch = inclusionRegex.test(this.messageText);
 
-      // 优化：如果连包含条件都不满足，直接跳过，无需检查排除条件
+      // --- [调试日志] 打印当前规则的匹配结果 ---
+      // console.log(`    --> 匹配结果 (isMatch): ${isMatch}`);
+
       if (!isMatch) {
         return false;
       }
 
       // --- 排除逻辑检查 (Exclusion Check) ---
-      // 检查是否存在有效的排除规则
       if (faqItem.excludeKeywords && faqItem.excludeKeywords.length > 0) {
         const exclusionPattern = faqItem.excludeKeywords.map((group) => `(${group.map((p) => `(?=.*${p})`).join('')})`).join('|');
-        const exclusionRegex = new RegExp(exclusionPattern, 'i');
+        const exclusionRegex = new RegExp(exclusionPattern, 'ims');
         const isExcluded = exclusionRegex.test(this.messageText);
 
-        // 如果命中了排除规则，则此 FAQ 条目不匹配
+        // --- [调试日志] 打印排除逻辑的结果 ---
+        // console.log(`    --> 排除结果 (isExcluded): ${isExcluded}`);
+
         if (isExcluded) {
           return false;
         }
       }
 
-      // 最终决定：满足包含条件，且没有命中任何排除规则
+      // 如果一个规则最终被确定为匹配，打印一条成功信息
+      // console.log(`🎉 成功匹配规则 #${index}！find() 循环终止。`);
+
       return true;
     });
 
@@ -138,7 +148,7 @@ export class NormalHandler {
       // 找到具体是哪一个 "与" 条件组 (group) 命中了
       const winningGroup = matchedFaq.keywordGroups.find((group) => {
         const groupPattern = group.map((p) => `(?=.*${p})`).join('');
-        return new RegExp(groupPattern, 'i').test(this.messageText);
+        return new RegExp(groupPattern, 'ims').test(this.messageText);
       });
 
       // 如果找到了获胜组，则提取其中每个模式匹配到的文本
@@ -146,7 +156,7 @@ export class NormalHandler {
         for (const pattern of winningGroup) {
           // 注意：这里我们为每个模式创建一个新的、简单的 RegExp 来提取文本
           // 因为 `(?=...)` 正向预查本身不消耗字符，无法用于捕获
-          const matchResult = this.messageText.match(new RegExp(pattern, 'i'));
+          const matchResult = this.messageText.match(new RegExp(pattern, 'ims'));
           if (matchResult) {
             // matchResult[0] 包含实际匹配到的文本
             matchedKeywords.push(matchResult[0]);

@@ -4691,16 +4691,16 @@ RECOGNITION_FAILED
     }
     const faqDataResult = await kv.read(this.durableResourceId, this.faqDataKeyName, "json");
     if (!faqDataResult.success) return false;
-    const matchedFaq = faqDataResult.data.find((faqItem) => {
+    const matchedFaq = faqDataResult.data.find((faqItem, index) => {
       const inclusionPattern = faqItem.keywordGroups.map((group) => `(${group.map((p) => `(?=.*${p})`).join("")})`).join("|");
-      const inclusionRegex = new RegExp(inclusionPattern, "i");
+      const inclusionRegex = new RegExp(inclusionPattern, "ims");
       const isMatch = inclusionRegex.test(this.messageText);
       if (!isMatch) {
         return false;
       }
       if (faqItem.excludeKeywords && faqItem.excludeKeywords.length > 0) {
         const exclusionPattern = faqItem.excludeKeywords.map((group) => `(${group.map((p) => `(?=.*${p})`).join("")})`).join("|");
-        const exclusionRegex = new RegExp(exclusionPattern, "i");
+        const exclusionRegex = new RegExp(exclusionPattern, "ims");
         const isExcluded = exclusionRegex.test(this.messageText);
         if (isExcluded) {
           return false;
@@ -4712,11 +4712,11 @@ RECOGNITION_FAILED
       const matchedKeywords = [];
       const winningGroup = matchedFaq.keywordGroups.find((group) => {
         const groupPattern = group.map((p) => `(?=.*${p})`).join("");
-        return new RegExp(groupPattern, "i").test(this.messageText);
+        return new RegExp(groupPattern, "ims").test(this.messageText);
       });
       if (winningGroup) {
         for (const pattern of winningGroup) {
-          const matchResult = this.messageText.match(new RegExp(pattern, "i"));
+          const matchResult = this.messageText.match(new RegExp(pattern, "ims"));
           if (matchResult) {
             matchedKeywords.push(matchResult[0]);
           }

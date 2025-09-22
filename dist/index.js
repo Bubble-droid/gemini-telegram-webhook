@@ -4610,6 +4610,42 @@ ${resTexts}
     }
   }
 }
+class FaqMatcher {
+  messageText;
+  faqData;
+  constructor(messageText, faqData) {
+    this.messageText = messageText;
+    this.faqData = faqData;
+  }
+  static testAndGroup(group, text) {
+    return group.every((pattern) => {
+      try {
+        return new RegExp(pattern, "ims").test(text);
+      } catch (err) {
+        Log.error(`无效的正则表达式模式: "${pattern}"`, { err });
+        return false;
+      }
+    });
+  }
+  findMatch() {
+    for (const faqItem of this.faqData) {
+      const winningGroup = faqItem.keywordGroups.find((group) => FaqMatcher.testAndGroup(group, this.messageText));
+      if (!winningGroup) {
+        continue;
+      }
+      let isExcluded = false;
+      if (faqItem.excludeKeywords && faqItem.excludeKeywords.length > 0) {
+        isExcluded = faqItem.excludeKeywords.some((group) => FaqMatcher.testAndGroup(group, this.messageText));
+      }
+      Log.info(`包含匹配: ${!!winningGroup}, 排除匹配: ${isExcluded}`);
+      if (isExcluded) {
+        continue;
+      }
+      return { matchedFaq: faqItem, winningGroup };
+    }
+    return null;
+  }
+}
 class NormalHandler {
   durableResourceId;
   faqDataKeyName;
@@ -4644,7 +4680,7 @@ class NormalHandler {
       parseMode: "HTML"
     });
     if (sentResult.ok) {
-      scheduleDeletion(this.chatId, sentResult.messageId, 5 * 60 * 1e3);
+      scheduleDeletion(this.chatId, sentResult.messageId, 10 * 60 * 1e3);
     }
   }
   async handleAskAlias() {
@@ -4691,43 +4727,15 @@ RECOGNITION_FAILED
     }
     const faqDataResult = await kv.read(this.durableResourceId, this.faqDataKeyName, "json");
     if (!faqDataResult.success) return false;
-    const matchedFaq = faqDataResult.data.find((faqItem, index) => {
-      const inclusionPattern = faqItem.keywordGroups.map((group) => `(${group.map((p) => `(?=.*${p})`).join("")})`).join("|");
-      const inclusionRegex = new RegExp(inclusionPattern, "ims");
-      const isMatch = inclusionRegex.test(this.messageText);
-      if (!isMatch) {
-        return false;
-      }
-      if (faqItem.excludeKeywords && faqItem.excludeKeywords.length > 0) {
-        const exclusionPattern = faqItem.excludeKeywords.map((group) => `(${group.map((p) => `(?=.*${p})`).join("")})`).join("|");
-        const exclusionRegex = new RegExp(exclusionPattern, "ims");
-        const isExcluded = exclusionRegex.test(this.messageText);
-        if (isExcluded) {
-          return false;
-        }
-      }
-      return true;
-    });
-    if (matchedFaq) {
-      const matchedKeywords = [];
-      const winningGroup = matchedFaq.keywordGroups.find((group) => {
-        const groupPattern = group.map((p) => `(?=.*${p})`).join("");
-        return new RegExp(groupPattern, "ims").test(this.messageText);
-      });
-      if (winningGroup) {
-        for (const pattern of winningGroup) {
-          const matchResult = this.messageText.match(new RegExp(pattern, "ims"));
-          if (matchResult) {
-            matchedKeywords.push(matchResult[0]);
-          }
-        }
-      }
-      Log.info("Found a matching FAQ item. Matched keywords:", {
+    const matcher = new FaqMatcher(this.messageText, faqDataResult.data);
+    const matchResult = matcher.findMatch();
+    if (matchResult) {
+      Log.info("Found a matching FAQ item. Matched keywords group:", {
         chatId: this.chatId,
         messageId: this.messageId,
-        keywords: matchedKeywords
+        keywords: matchResult.winningGroup
       });
-      await this.sendReply(matchedFaq.answer);
+      await this.sendReply(matchResult.matchedFaq.answer);
       return true;
     }
     return false;

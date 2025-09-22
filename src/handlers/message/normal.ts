@@ -8,6 +8,70 @@ import { handleOCR, kv, scheduleDeletion, toHtml } from '@/utils';
 import { handleFile } from '@/handlers';
 import type { FaqItem } from '@/types';
 
+class FaqMatcher {
+  private messageText: string;
+  private faqData: FaqItem[];
+
+  constructor(messageText: string, faqData: FaqItem[]) {
+    this.messageText = messageText;
+    this.faqData = faqData;
+  }
+
+  /**
+   * 检查单个 "AND" 条件组是否全部匹配消息文本。
+   * @param group - 一组代表 "AND" 条件的关键词（正则表达式字符串）。
+   * @returns 如果全部匹配则返回 true，否则返回 false。
+   */
+  private static testAndGroup(group: string[], text: string): boolean {
+    // 使用 Array.every() 可以确保 group 中的每个关键词都通过测试
+    return group.every((pattern) => {
+      try {
+        // 为每个模式创建一个独立的正则表达式进行测试
+        return new RegExp(pattern, 'ims').test(text);
+      } catch (err) {
+        // 如果模式无效，则记录错误并返回 false
+        Log.error(`无效的正则表达式模式: "${pattern}"`, { err });
+        return false;
+      }
+    });
+  }
+
+  /**
+   * 在 FAQ 数据中寻找第一个匹配消息的条目。
+   * @returns 返回匹配的 FaqItem 和命中的关键词组，否则返回 null。
+   */
+  public findMatch(): { matchedFaq: FaqItem; winningGroup: string[] } | null {
+    for (const faqItem of this.faqData) {
+      // 1. 检查包含规则 (Inclusion Check)
+      //    找到第一个满足其内部所有 "AND" 条件的 `group`
+      const winningGroup = faqItem.keywordGroups.find((group) => FaqMatcher.testAndGroup(group, this.messageText));
+
+      // 如果没有找到任何匹配的 "AND" 组，则继续测试下一个 FAQ 条目
+      if (!winningGroup) {
+        continue;
+      }
+
+      // 2. 检查排除规则 (Exclusion Check)
+      let isExcluded = false;
+      if (faqItem.excludeKeywords && faqItem.excludeKeywords.length > 0) {
+        // 只要有任何一个排除组匹配，就应该被排除
+        isExcluded = faqItem.excludeKeywords.some((group) => FaqMatcher.testAndGroup(group, this.messageText));
+      }
+
+      Log.info(`包含匹配: ${!!winningGroup}, 排除匹配: ${isExcluded}`);
+
+      // 如果被排除规则命中，则跳过此 FAQ 条目
+      if (isExcluded) {
+        continue;
+      }
+
+      return { matchedFaq: faqItem, winningGroup };
+    }
+
+    return null;
+  }
+}
+
 /**
  * @class NormalHandler
  * @description 处理接收到的 Telegram 普通消息（非提及、非命令）。
@@ -51,7 +115,7 @@ export class NormalHandler {
       parseMode: 'HTML',
     });
     if (sentResult.ok) {
-      scheduleDeletion(this.chatId, sentResult.messageId, 5 * 60 * 1_000);
+      scheduleDeletion(this.chatId, sentResult.messageId, 10 * 60 * 1_000);
     }
   }
 
@@ -102,80 +166,20 @@ export class NormalHandler {
     const faqDataResult = await kv.read<FaqItem[]>(this.durableResourceId, this.faqDataKeyName, 'json');
     if (!faqDataResult.success) return false;
 
-    // 步骤 2: 寻找第一个满足条件的 FAQ 条目
-    // console.log(`--- 开始为消息 "${this.messageText}" 匹配FA/Q ---`); // [调试日志]
+    const matcher = new FaqMatcher(this.messageText, faqDataResult.data);
+    const matchResult = matcher.findMatch();
 
-    const matchedFaq = faqDataResult.data.find((faqItem, index) => {
-      // --- [调试日志] 打印当前正在测试的规则 ---
-      // console.log(`[${index}] 正在测试规则:`, faqItem.keywordGroups[0]);
-
-      // --- 包含逻辑检查 (Inclusion Check) ---
-      const inclusionPattern = faqItem.keywordGroups.map((group) => `(${group.map((p) => `(?=.*${p})`).join('')})`).join('|');
-      const inclusionRegex = new RegExp(inclusionPattern, 'ims');
-      const isMatch = inclusionRegex.test(this.messageText);
-
-      // --- [调试日志] 打印当前规则的匹配结果 ---
-      // console.log(`    --> 匹配结果 (isMatch): ${isMatch}`);
-
-      if (!isMatch) {
-        return false;
-      }
-
-      // --- 排除逻辑检查 (Exclusion Check) ---
-      if (faqItem.excludeKeywords && faqItem.excludeKeywords.length > 0) {
-        const exclusionPattern = faqItem.excludeKeywords.map((group) => `(${group.map((p) => `(?=.*${p})`).join('')})`).join('|');
-        const exclusionRegex = new RegExp(exclusionPattern, 'ims');
-        const isExcluded = exclusionRegex.test(this.messageText);
-
-        // --- [调试日志] 打印排除逻辑的结果 ---
-        // console.log(`    --> 排除结果 (isExcluded): ${isExcluded}`);
-
-        if (isExcluded) {
-          return false;
-        }
-      }
-
-      // 如果一个规则最终被确定为匹配，打印一条成功信息
-      // console.log(`🎉 成功匹配规则 #${index}！find() 循环终止。`);
-
-      return true;
-    });
-
-    // 步骤 3: 如果找到了匹配项，则发送回复
-    if (matchedFaq) {
-      // --- [新增] 提取并记录命中的关键词 ---
-      const matchedKeywords: string[] = [];
-      // 找到具体是哪一个 "与" 条件组 (group) 命中了
-      const winningGroup = matchedFaq.keywordGroups.find((group) => {
-        const groupPattern = group.map((p) => `(?=.*${p})`).join('');
-        return new RegExp(groupPattern, 'ims').test(this.messageText);
-      });
-
-      // 如果找到了获胜组，则提取其中每个模式匹配到的文本
-      if (winningGroup) {
-        for (const pattern of winningGroup) {
-          // 注意：这里我们为每个模式创建一个新的、简单的 RegExp 来提取文本
-          // 因为 `(?=...)` 正向预查本身不消耗字符，无法用于捕获
-          const matchResult = this.messageText.match(new RegExp(pattern, 'ims'));
-          if (matchResult) {
-            // matchResult[0] 包含实际匹配到的文本
-            matchedKeywords.push(matchResult[0]);
-          }
-        }
-      }
-
-      Log.info('Found a matching FAQ item. Matched keywords:', {
+    if (matchResult) {
+      Log.info('Found a matching FAQ item. Matched keywords group:', {
         chatId: this.chatId,
         messageId: this.messageId,
-        keywords: matchedKeywords, // 输出实际命中的关键词数组
+        keywords: matchResult.winningGroup, // winningGroup 就是实际命中的关键词数组
       });
-      // 发送对应的答案
-      await this.sendReply(matchedFaq.answer);
-      // 返回 true，表示消息已被处理
+
+      await this.sendReply(matchResult.matchedFaq.answer);
       return true;
     }
 
-    // 如果没有找到匹配项，返回 false
     return false;
   }
 

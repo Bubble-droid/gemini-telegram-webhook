@@ -8,6 +8,11 @@ import { handleOCR, kv, scheduleDeletion, toHtml } from '@/utils';
 import { handleFile } from '@/handlers';
 import type { FaqItem } from '@/types';
 
+/**
+ * @class FaqMatcher
+ * @description 负责根据预设的 FAQ 规则匹配消息文本。
+ *              支持复杂的 "AND" "OR" 逻辑以及排除规则。
+ */
 class FaqMatcher {
   private messageText: string;
   private faqData: FaqItem[];
@@ -19,17 +24,17 @@ class FaqMatcher {
 
   /**
    * 检查单个 "AND" 条件组是否全部匹配消息文本。
+   * 仅用于需要布尔结果的场景（如排除规则）。
    * @param group - 一组代表 "AND" 条件的关键词（正则表达式字符串）。
+   * @param text - 待测试的文本。
    * @returns 如果全部匹配则返回 true，否则返回 false。
    */
   private static testAndGroup(group: string[], text: string): boolean {
     // 使用 Array.every() 可以确保 group 中的每个关键词都通过测试
     return group.every((pattern) => {
       try {
-        // 为每个模式创建一个独立的正则表达式进行测试
         return new RegExp(pattern, 'ims').test(text);
       } catch (err) {
-        // 如果模式无效，则记录错误并返回 false
         Log.error(`无效的正则表达式模式: "${pattern}"`, { err });
         return false;
       }
@@ -37,17 +42,55 @@ class FaqMatcher {
   }
 
   /**
-   * 在 FAQ 数据中寻找第一个匹配消息的条目。
-   * @returns 返回匹配的 FaqItem 和命中的关键词组，否则返回 null。
+   * 匹配 "AND" 条件组，并返回具体命中的文本片段。
+   * @param group - 一组代表 "AND" 条件的关键词（正则表达式字符串）。
+   * @param text - 待测试的文本。
+   * @returns 如果全部匹配，则返回一个包含所有匹配文本的数组；否则返回 null。
    */
-  public findMatch(): { matchedFaq: FaqItem; winningGroup: string[] } | null {
+  private static matchAndGroup(group: string[], text: string): string[] | null {
+    const matchedTexts: string[] = [];
+    for (const pattern of group) {
+      try {
+        const regex = new RegExp(pattern, 'ims');
+        const match = regex.exec(text); // 使用 exec() 获取匹配详情
+
+        if (match) {
+          matchedTexts.push(match[0]); // match[0] 是完整匹配的字符串
+        } else {
+          // "AND" 条件中，一旦有任何一个模式不匹配，则整个组匹配失败
+          return null;
+        }
+      } catch (err) {
+        Log.error(`无效的正则表达式模式: "${pattern}"`, { err });
+        return null;
+      }
+    }
+    // 如果循环正常结束，说明所有模式都已匹配
+    return matchedTexts;
+  }
+
+  /**
+   * 在 FAQ 数据中寻找第一个匹配消息的条目。
+   * @returns 返回匹配的 FaqItem、命中的关键词组以及具体命中的文本片段，否则返回 null。
+   */
+  public findMatch(): { matchedFaq: FaqItem; winningGroup: string[]; matchedTexts: string[] } | null {
     for (const faqItem of this.faqData) {
+      let winningGroup: string[] | null = null;
+      let matchedTexts: string[] | null = null;
+
       // 1. 检查包含规则 (Inclusion Check)
-      //    找到第一个满足其内部所有 "AND" 条件的 `group`
-      const winningGroup = faqItem.keywordGroups.find((group) => FaqMatcher.testAndGroup(group, this.messageText));
+      //    遍历所有关键词组，找到第一个完全匹配的组
+      for (const group of faqItem.keywordGroups) {
+        const currentMatches = FaqMatcher.matchAndGroup(group, this.messageText);
+        if (currentMatches) {
+          winningGroup = group;
+          matchedTexts = currentMatches;
+          break; // 已找到匹配的 "AND" 组，无需再检查此 FAQ 条目的其他组
+        }
+      }
 
       // 如果没有找到任何匹配的 "AND" 组，则继续测试下一个 FAQ 条目
-      if (!winningGroup) {
+      if (!winningGroup || !matchedTexts) {
         continue;
       }
 
@@ -58,16 +101,18 @@ class FaqMatcher {
         isExcluded = faqItem.excludeKeywords.some((group) => FaqMatcher.testAndGroup(group, this.messageText));
       }
 
-      Log.info(`包含匹配: ${!!winningGroup}, 排除匹配: ${isExcluded}`);
+      Log.info(`匹配检查: 包含匹配=${!!winningGroup}, 排除匹配=${isExcluded}`);
 
       // 如果被排除规则命中，则跳过此 FAQ 条目
       if (isExcluded) {
         continue;
       }
 
-      return { matchedFaq: faqItem, winningGroup };
+      // 成功找到一个未被排除的匹配项
+      return { matchedFaq: faqItem, winningGroup, matchedTexts };
     }
 
+    // 遍历完所有 FAQ 条目后仍未找到匹配项
     return null;
   }
 }
@@ -170,10 +215,11 @@ export class NormalHandler {
     const matchResult = matcher.findMatch();
 
     if (matchResult) {
-      Log.info('Found a matching FAQ item. Matched keywords group:', {
+      Log.info('发现匹配的 FAQ 条目。', {
         chatId: this.chatId,
         messageId: this.messageId,
-        keywords: matchResult.winningGroup, // winningGroup 就是实际命中的关键词数组
+        winningGroup: matchResult.winningGroup, // 命中的关键词规则组
+        matchedTexts: matchResult.matchedTexts, // 文本中实际命中的内容
       });
 
       await this.sendReply(matchResult.matchedFaq.answer);

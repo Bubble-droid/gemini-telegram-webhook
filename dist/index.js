@@ -4627,21 +4627,48 @@ class FaqMatcher {
       }
     });
   }
+  static matchAndGroup(group, text) {
+    const matchedTexts = [];
+    for (const pattern of group) {
+      try {
+        const regex = new RegExp(pattern, "ims");
+        const match = regex.exec(text);
+        if (match) {
+          matchedTexts.push(match[0]);
+        } else {
+          return null;
+        }
+      } catch (err) {
+        Log.error(`无效的正则表达式模式: "${pattern}"`, { err });
+        return null;
+      }
+    }
+    return matchedTexts;
+  }
   findMatch() {
     for (const faqItem of this.faqData) {
-      const winningGroup = faqItem.keywordGroups.find((group) => FaqMatcher.testAndGroup(group, this.messageText));
-      if (!winningGroup) {
+      let winningGroup = null;
+      let matchedTexts = null;
+      for (const group of faqItem.keywordGroups) {
+        const currentMatches = FaqMatcher.matchAndGroup(group, this.messageText);
+        if (currentMatches) {
+          winningGroup = group;
+          matchedTexts = currentMatches;
+          break;
+        }
+      }
+      if (!winningGroup || !matchedTexts) {
         continue;
       }
       let isExcluded = false;
       if (faqItem.excludeKeywords && faqItem.excludeKeywords.length > 0) {
         isExcluded = faqItem.excludeKeywords.some((group) => FaqMatcher.testAndGroup(group, this.messageText));
       }
-      Log.info(`包含匹配: ${!!winningGroup}, 排除匹配: ${isExcluded}`);
+      Log.info(`匹配检查: 包含匹配=${!!winningGroup}, 排除匹配=${isExcluded}`);
       if (isExcluded) {
         continue;
       }
-      return { matchedFaq: faqItem, winningGroup };
+      return { matchedFaq: faqItem, winningGroup, matchedTexts };
     }
     return null;
   }
@@ -4730,10 +4757,11 @@ RECOGNITION_FAILED
     const matcher = new FaqMatcher(this.messageText, faqDataResult.data);
     const matchResult = matcher.findMatch();
     if (matchResult) {
-      Log.info("Found a matching FAQ item. Matched keywords group:", {
+      Log.info("发现匹配的 FAQ 条目。", {
         chatId: this.chatId,
         messageId: this.messageId,
-        keywords: matchResult.winningGroup
+        winningGroup: matchResult.winningGroup,
+        matchedTexts: matchResult.matchedTexts
       });
       await this.sendReply(matchResult.matchedFaq.answer);
       return true;

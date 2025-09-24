@@ -52,18 +52,21 @@
   },
   {
     "keywordGroups": [
+      ["订阅(链接|地址)?", "([不没无]法?|不能|失败|出错|用不了|没反应)", "(识别|转换|解析|添加|导入)"],
+      ["订阅(链接|地址)?", "(自动)?(识别|转换|解析)", "([不没无]法?|不能|失败|出错|不了)"],
       ["订阅", "[没无](有)?|(不|没)显示|看不到", "流量(信息)?|用量|已用|上传|下载"],
       ["订阅", "(无法|不能|没法)更新|更新.*(不了|失败)"],
       ["节点|订阅", "不全|不完整|少(了)?|缺少|数量不对|没有了"],
       ["订阅", "只有|只显示|只包含", "(vmess|ss|trojan|旧|老)?节点"],
       ["订阅", "没有|不显示|缺少", "(hysteria|vless|tuic|anytls|hysteria2|新)?节点"],
-      ["为啥|为什么", "verge|nekobox|clashx|其他客户端", "有|正常|显示|全", "(我|这里|这个|gui).*(不全|没有|少)"],
-      ["subscription", "no traffic (info)?|not a valid|fail(ed)? to update"],
+      ["为啥|为什么|怎么|咋", "verge|nekobox|clashx|其他客户端", "有|正常|显示|全", "(我|这里|这个|gui).*(不全|没有|少)"],
+      ["(nekobox|verge|clash)", "(可以|正常|能用|行)", "gui.*([不没]行|[不没]能|[不没]法|用不了)"],
+      ["subscription", "no traffic (info)?|not a valid|fail(ed)? to update|doesn't work|can't (add|import|parse|recognize)"],
       ["subscription", "(nodes?|proxies) (incomplete|missing)|not all nodes shown"],
-      ["(it )?works in (verge|nekobox)", "but not here"]
+      ["(it )?works in (verge|nekobox)", "but not here|doesn't work here"]
     ],
-    "excludeKeywords": [["tun"]],
-    "answer": "**Q: 订阅更新失败、无流量信息或节点不完整/缺少？**\n\nA: 请严格按以下步骤操作：\n\n1.  **GUI.for.SingBox 必须执行此步骤**\n    前往 **插件中心**，安装 **节点转换** 插件。\n\n2.  **所有用户均需执行以下步骤**\n    *   前往 **订阅** 页面，找到目标订阅，点击其右上角的 **...** -> **编辑**。\n    *   在弹出窗口中，点击 **更多** 以展开高级选项。\n    *   向下滚动找到 **请求头**，点击 **+** 添加一项，并填写：\n        *   左侧 (Key): `User-Agent`\n        *   右侧 (Value): `Clash.Meta`\n    *   点击 **保存**，然后返回订阅页面更新该订阅即可。\n\n*   **通用检查**: 最后，确保当前网络环境，可以正常访问该订阅链接。"
+    "excludeKeywords": [["tun"], ["网(络|站|页)?"]],
+    "answer": "**Q: 订阅更新失败、无流量信息或节点不完整/缺少？**\n\nA: 请严格按以下步骤操作：\n\n1.  **GUI.for.SingBox 必须执行此步骤**\n    前往 **插件中心**，安装 **节点转换** 插件。\n\n2.  **所有客户端均需执行以下步骤**\n    *   前往 **订阅** 页面，找到目标订阅，点击其右上角的 **...** -> **编辑**。\n    *   在弹出窗口中，点击 **更多** 以展开高级选项。\n    *   向下滚动找到 **请求头**，点击 **+** 添加一项，并填写：\n        *   左侧 (Key): `User-Agent`\n        *   右侧 (Value): `Clash.Meta`\n    *   点击 **保存**，然后返回订阅页面更新该订阅即可。\n\n*   **通用检查**: 最后，确保当前的网络环境，可以正常访问该订阅链接。"
   },
   {
     "keywordGroups": [
@@ -76,7 +79,7 @@
   },
   {
     "keywordGroups": [
-      ["导入|添加|载入|放进去|(使)?用|应用|加载", "(自定义|自己|完整|(手)?(写|搓)(好)?|本地|订阅|远程).*配置(文件)?"],
+      ["导入|添加|载入|放进去|(使)?用|应用|加载", "(自定义|自己|完整|(手)?(写|搓)(好)?|本地|订阅(提供|(下|分)发)|远程).*?配置(文件)?"],
       ["import", "custom config|full config|apply|load"],
       ["how to", "import|load|use|apply", "(my|a) (custom|full|own) config(uration)?"]
     ],
@@ -198,7 +201,7 @@
       ["tun", "(一开|打开|启用).*(就)?", "没网|断网|上不了网"],
       ["tun", "打不开|无法访问", "网站|网页|github|google"],
       ["mac", "启动|运行|开", "内核|tun", "没网|断网|上不了网"],
-      ["tun", "(只|仅)能.*(tg|电报|telegram)", "(网页|网站|浏览器).*(打不开|没反应|用不了)"],
+      ["tun", "(只能|仅).*(tg|电报|telegram)", "(网页|网站|浏览器).*(打不开|没反应|用不了)"],
       ["tun", "(不能?|无法)?访问|访问不了", "网络|网页|网站"],
       ["tun", "(no|lost) (internet|connection)|can.?t connect|not working"],
       ["mac", "tun", "(no|lost) (internet|connection)|can.?t connect|not working"],

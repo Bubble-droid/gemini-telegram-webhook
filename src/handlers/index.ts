@@ -12,7 +12,7 @@ export const handleCallbackQuery = async (callbackQuery: CallbackQuery): Promise
   return await callback.process();
 };
 
-export const handleFile = async (message: Message): Promise<Blob | void> => {
+export const handleFile = async (message: Message): Promise<Blob | undefined> => {
   const file = new FileHandler(message);
   return await file.process();
 };

@@ -10,14 +10,13 @@
   {
     "keywordGroups": [
       ["GUI|客户端|程序|软件|exe|安装包", "杀(了)?|报毒|报(是)?病毒|隔离|删除|拦截|阻止|当(成|做)病毒"],
-      ["GUI|客户端|程序|软件|exe", "找不到了|没了|不见了|自动删除|打不开|一运行就没(了)?"],
+      ["GUI|客户端|程序|软件|exe", "找不到了|没了|不见了|自动删除|一运行就没(了)?"],
       ["(刚)?安装(完|好)|(解压|下载)(完|好)|一解压", "(文件|exe|程序)?", "就?没了|不见了|找不到了|自动消失"],
       ["GUI|客户端|程序|软件", "报(有)?毒|是(不是)?病毒|有木马|提示.*?风险|提示.*?威胁|发现威胁"],
       ["GUI|client|program|exe|installer", "antivirus|defender|firewall|security", "delete|quarantine|block|remove|flagged as|report as"],
       ["GUI|client|program|exe", "is a virus|trojan|malware|threat|risk"],
       ["(after|when) i (install|download|unzip)", "(it|the file|the exe) disappears|is gone|gets deleted"]
     ],
-    "excludeKeywords": [],
     "answer": "**Q: Windows 安全软件（如 Defender, 360, 火绒）报毒或查杀客户端怎么办？**\n\nA:\n这通常是安全软件的**误报**。由于 GUI 客户端需要获取**管理员权限**，其运行机制可能会触发一些安全软件的启发式扫描警报。GUI 客户端的所有代码均在 GitHub 开源，可供公开审查，不包含任何恶意代码。\n\n**解决方案：将 GUI 程序所在的整个文件夹添加到你安全软件的信任区、白名单或排除项中。**\n\n请根据你使用的安全软件，参考以下操作指引：\n\n**1. Windows Defender (Windows 10/11 自带)**\n*   打开 **设置** > **隐私和安全** > **Windows 安全中心**。\n*   点击 **病毒和威胁防护**。\n*   在“病毒和威胁防护”设置下，点击 **管理设置**。\n*   向下滚动到“排除项”，点击 **添加或删除排除项**。\n*   点击 **添加排除项**，选择 **文件夹**，然后将 GUI 客户端的整个文件夹添加进去。\n\n**2. 火绒安全**\n*   打开火绒主界面，点击 **防护中心**。\n*   找到并点击 **信任区**。\n*   点击左下角的 **添加文件** 或 **添加文件夹** 按钮，选择 GUI 客户端的整个文件夹添加即可。\n\n**3. 对于其他安全软件 (如 360, 腾讯管家等)**\n*   操作逻辑类似。请在软件的**设置**中寻找**信任区**、**白名单**、**排除列表**或类似的选项，并将 GUI 文件夹完整添加进去。\n\n**重要提示**: 添加排除后，如果文件已被隔离或删除，你需要**重新解压或安装客户端**到该受信任的文件夹中，即可正常使用。"
   },
   {
@@ -92,7 +91,11 @@
   },
   {
     "keywordGroups": [
-      ["导入|添加|载入|放进去|(使)?用|应用|加载", "(自定义|自己|完整|(手)?(写|搓)(好)?|本地|订阅(提供|(下|分)发)|远程).*?配置(文件)?"],
+      [
+        "(怎么|如何|咋|怎样)",
+        "导入|添加|载入|放进去|(使)?用|应用|加载",
+        "(自定义|自己|完整|(手)?(写|搓)(好)?|本地|订阅(提供|(下|分)发)|远程).*?配置(文件)?"
+      ],
       ["import", "custom config|full config|apply|load"],
       ["how to", "import|load|use|apply", "(my|a) (custom|full|own) config(uration)?"]
     ],
@@ -195,8 +198,8 @@
   },
   {
     "keywordGroups": [
-      ["linux", "授权", "[没无]反应|点不了|点了没用|按了没反应|无效"],
-      ["(授(予)?|给)(特)?权", "没(有)?(效果|反应)|点(了)?没用|无效"],
+      ["linux", "(授(予)?|给)?(特)?权(限)?", "[没无]反应|点不了|点了没用|按了没反应|无效"],
+      ["(授(予)?|给)?(特)?权(限)?", "没(有)?(效果|反应)|点(了)?没用|无效"],
       ["linux", "authorize button", "doesn.?t work|no response|nothing happens"]
     ],
     "answer": "**Q: Linux 点击授权按钮没反应？**\n\nA: Linux 上的授权操作依赖 `pkexec` 命令，需确保已安装提供此命令的软件包。"
@@ -210,21 +213,30 @@
   },
   {
     "keywordGroups": [
-      ["tun", "[没无]反应|([没无不]法?|不能|连不上|上不了|没).*网(络)?|断网"],
+      ["tun", "[没无]反应|([没无不]法?|不能|连不上|上不了|没).*网(络)?|断网|加载失败|无法加载|一直加载|不停转圈|请求超时"],
+      ["tun", "(打不开|无法访问|访问不了|进不去|加载不了|显示不了)", "(某个|这个|特定|所有)?(网站|网页|链接|google|github|youtube|bilibili)"],
+      ["tun", "网络(异常|问题|断了|坏了|用不了|好像有问题|炸了)"],
+      ["tun", "(一开|打开|启用|只要一开).*(就)?", "没网|断网|上不了网|加载不出来|网站打不开|应用没反应|图片刷不出"],
+      ["(关|关掉|禁用)了?tun", "(就)?(好|恢复|正常)了"],
+      ["tun", "(只能|仅|只有).*(tg|电报|telegram)", "(网页|网站|浏览器|其他|别的|剩下|剩余).*(打不开|没反应|用不了|加载不出来)"],
+      ["tun", "(有的|有些|部分)网站", "(可以|行|正常)", "(有的|另一些|其他的)", "(不行|打不开|加载失败)"],
+      ["tun", "国内.*(正常|可以|能打开)", "国外.*(不行|访问不了|打不开)"],
+      ["tun", "图片|视频|附件", "加载不(了|出来)|刷不出|显示不了"],
+      ["mac(os)?", "启动|运行|开", "内核|tun", "没网|断网|上不了网"],
       ["tun", "系统代理", "才|必须|要开|依赖|同时"],
-      ["tun", "断网|网络(异常|问题|断了)"],
-      ["tun", "(一开|打开|启用).*(就)?", "没网|断网|上不了网"],
-      ["tun", "打不开|无法访问", "网站|网页|github|google"],
-      ["mac", "启动|运行|开", "内核|tun", "没网|断网|上不了网"],
-      ["tun", "(只能|仅).*(tg|电报|telegram)", "(网页|网站|浏览器).*(打不开|没反应|用不了)"],
-      ["tun", "(不能?|无法)?访问|访问不了", "网络|网页|网站"],
-      ["tun", "(no|lost) (internet|connection)|can.?t connect|not working"],
-      ["mac", "tun", "(no|lost) (internet|connection)|can.?t connect|not working"],
-      ["enable tun", "lose internet|no network"],
-      ["tun", "(only|just) (tg|telegram) works", "(browser|website)s? (doesn.?t|not) work"]
+      [
+        "tun",
+        "(no|lost) (internet|connection)|can.?t connect|not working|stuck on loading|loading failed|won.?t load|endless spinning|request timed out"
+      ],
+      ["tun", "can.?t (open|access|load|get to|reach)", "(a|any|specific)? (website|page|site|google|github)"],
+      ["(when|after) (i )?(enable|turn on) tun", "(i )?(lose|lost) internet|no network|sites won.?t load|images fail to load"],
+      ["(it )?works (again|fine) after (i )?(disable|turn off) tun"],
+      ["tun", "(only|just) (tg|telegram) works", "(browsers?|websites?) (doesn.?t|not) work"],
+      ["with tun", "some websites work", "others don.?t"],
+      ["mac(os)?", "tun", "(no|lost) (internet|connection)|can.?t connect|not working"]
     ],
     "excludeKeywords": [["permission denied"], ["file not found"], ["(ssl|证书).*(错误|error)"]],
-    "answer": "**Q: TUN 模式启动后无法上网？**\n\nA: 请按以下顺序排查，方案覆盖 Windows, macOS 及 Linux：\n*   **方案 A (通用): 更换 TUN 堆栈模式**\n    在软件设置中尝试更换 **TUN 堆栈模式** (如 GVisor, System)。\n\n*   **方案 B (macOS 特定): 修改系统 DNS**\n    *   **原因**: sing-box 在 macOS 上不劫持发往局域网的 DNS 请求。\n    *   **解决方案**: 将你 Mac 的系统 DNS 修改为任意公共 DNS 服务器（例如 `8.8.8.8`）。\n\n*   **方案 C (Windows 特定): 检查防火墙**\n    检查 Windows 防火墙设置，确保 GUI 客户端及其内核程序未被阻止。\n\n*   **方案 D (通用 / IPv6 问题): 调整 IPv6 设置**\n    如果你的网络不支持 IPv6，请进行以下调整：\n    1.  **配置设置 -> 入站设置** -> `tun-in` -> 删除 IPv6 地址前缀，并启用 **严格路由**。\n    2.  **配置设置 -> DNS 设置 -> 通用** -> 将 **解析策略** 设为 `只使用 IPv4`。\n\n*   **方案 E (通用 / IP 冲突): 修改 IP 地址前缀**\n    前往 **配置设置 -> 入站设置** -> `tun-in`，尝试修改 **IP 地址前缀** 为一个冷门的私有网段，以避免与当前局域网或其他网络接口产生冲突。"
+    "answer": "**Q: TUN 模式启动后无法上网或网络异常？**\n\nA: 请按以下顺序排查，方案覆盖 Windows, macOS 及 Linux：\n*   **方案 A (通用): 更换 TUN 堆栈模式**\n    在软件设置中尝试更换 **TUN 堆栈模式** (如 GVisor, System)。\n\n*   **方案 B (macOS 特定): 修改系统 DNS**\n    *   **原因**: sing-box 在 macOS 上不劫持发往局域网的 DNS 请求。\n    *   **解决方案**: 将你 Mac 的系统 DNS 修改为任意公共 DNS 服务器（例如 `8.8.8.8`）。\n\n*   **方案 C (Windows 特定): 检查防火墙**\n    检查 Windows 防火墙设置，确保 GUI 客户端及其内核程序未被阻止。\n\n*   **方案 D (通用 / IPv6 问题): 调整 IPv6 设置**\n    如果你的网络不支持 IPv6，请进行以下调整：\n    1.  **配置设置 -> 入站设置** -> `tun-in` -> 删除 IPv6 地址前缀，并启用 **严格路由**。\n    2.  **配置设置 -> DNS 设置 -> 通用** -> 将 **解析策略** 设为 `只使用 IPv4`。\n\n*   **方案 E (通用 / IP 冲突): 修改 IP 地址前缀**\n    前往 **配置设置 -> 入站设置** -> `tun-in`，尝试修改 **IP 地址前缀** 为一个冷门的私有网段，以避免与当前局域网或其他网络接口产生冲突。"
   },
   {
     "keywordGroups": [

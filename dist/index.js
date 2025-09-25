@@ -249,7 +249,7 @@ class Recognizer {
   }
   async tesseractOCR() {
     try {
-      const worker = await createWorker(["eng", "chi_sim"]);
+      const worker = await createWorker(["eng", "chi_sim", "chi_tra"]);
       Log.info("Tesseract OCR 开始识别...");
       const { data } = await worker.recognize(`data:${this.mimeType};base64,${this.data}`);
       await worker.terminate();
@@ -3607,8 +3607,7 @@ const initLogger = (opts) => {
 };
 const serializeError = (err) => ({
   name: err.name,
-  message: err.message,
-  stack: err.stack
+  message: err.message
 });
 const Log = {
   info: (message, data) => {
@@ -4179,48 +4178,62 @@ const callCustomModels = async (model, modelConfig, contents) => {
   return candidate.content;
 };
 const bot = new TelegramBot();
-const SUPPORTED_MIME_TYPES = [
-  "text/html",
-  "text/css",
-  "text/csv",
-  "text/plain",
-  "text/markdown",
-  "application/json",
-  "application/yaml",
-  "application/javascript",
-  "application/x-shellscript",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-  "video/mp4",
-  "video/webm",
-  "video/mpeg"
-];
+const SUPPORTED_MIME_TYPE = {
+  APPLICATION_TYPES: ["json", "x-javascript", "pdf", "zip"],
+  IMAGE_TYPES: ["png", "jpeg", "webp", "heic", "heif"],
+  VIDEO_TYPES: ["mp4", "mpeg", "mov", "avi", "x-flvc", "mpg", "webm", "wmv", "3gpp"],
+  AUDIO_TYPES: ["wav", "mp3", "aiff", "aac", "ogg", "flac"]
+};
 const FILE_EXTENSION_MIME_MAP = {
   txt: "text/plain",
   html: "text/html",
   css: "text/css",
   csv: "text/csv",
   md: "text/markdown",
-  js: "application/javascript",
+  js: "text/javascript",
+  ts: "text/javascript",
+  jsx: "text/javascript",
+  tsx: "text/javascript",
   json: "application/json",
   yaml: "application/yaml",
   yml: "application/yaml",
   sh: "application/x-shellscript",
+  py: "text/plain",
+  java: "text/plain",
+  c: "text/plain",
+  cpp: "text/plain",
+  cs: "text/plain",
+  go: "text/plain",
+  php: "text/plain",
+  sql: "text/plain",
+  xml: "application/xml",
   png: "image/png",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   webp: "image/webp",
+  heic: "image/heic",
+  heif: "image/heif",
   gif: "image/gif",
   mp4: "video/mp4",
   webm: "video/webm",
-  mpeg: "video/mpeg"
+  mpeg: "video/mpeg",
+  mov: "video/mov",
+  avi: "video/avi",
+  mpg: "video/mpg",
+  "3gpp": "video/3gpp",
+  wmv: "video/x-ms-wmv",
+  "x-flv": "video/x-flv",
+  mp3: "audio/mp3",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  aac: "audio/aac",
+  flac: "audio/flac",
+  aiff: "audio/aiff"
 };
 const getTelegramFileUrl = async (fileId, botToken) => {
   const result = await bot.getFile(fileId);
-  if (!result.ok) {
-    throw new AppError(`Failed to get file path for file_id: ${fileId}`, "TELEGRAM_API_ERROR");
+  if (!result.ok || !result.data.file_path) {
+    throw new AppError(`获取文件路径失败: ${fileId}`, "TELEGRAM_API_ERROR");
   }
   return `https://api.telegram.org/file/bot${botToken}/${result.data.file_path}`;
 };
@@ -4228,24 +4241,16 @@ const downloadFileAsArrayBuffer = async (url) => {
   try {
     const response = await fetch(url);
     if (!response.ok) {
-      throw new AppError(`Failed to download file: ${response.statusText} (${response.status})`);
+      throw new AppError(`文件下载失败: ${response.statusText} (${response.status})`);
     }
     const arrayBuffer = await response.arrayBuffer();
     const fileSizeInBytes = arrayBuffer.byteLength;
-    let displaySize;
-    let displayUnit;
-    if (fileSizeInBytes >= 1024 * 1024) {
-      displaySize = (fileSizeInBytes / (1024 * 1024)).toFixed(2);
-      displayUnit = "MB";
-    } else {
-      displaySize = (fileSizeInBytes / 1024).toFixed(2);
-      displayUnit = "KB";
-    }
-    Log.info(`Successfully downloaded file. Size: ${displaySize} ${displayUnit}`);
+    const displaySize = fileSizeInBytes >= 1024 * 1024 ? `${(fileSizeInBytes / (1024 * 1024)).toFixed(2)} MB` : `${(fileSizeInBytes / 1024).toFixed(2)} KB`;
+    Log.info(`文件下载成功. 大小: ${displaySize}`);
     return arrayBuffer;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    Log.error(`Error downloading file from ${url}:`);
+    Log.error(`从 ${url} 下载文件时出错:`);
     throw new AppError(errorMessage, "FILE_DOWNLOAD_ERROR");
   }
 };
@@ -4255,12 +4260,11 @@ const downloadAndEncodeFile = async (fileId, botToken, mimeType) => {
   const base64Data = Buffer.from(arrayBuffer).toString("base64");
   return { data: base64Data, mimeType };
 };
-const isBinaryApplicationMime = (mime, opts) => {
-  const defaultToBinary = opts?.defaultToBinary ?? true;
-  if (!mime || typeof mime !== "string") return defaultToBinary;
+const isBinaryApplicationMime = (mime) => {
+  if (!mime || typeof mime !== "string") return true;
   const clean = mime.split(";")[0].trim().toLowerCase();
   if (!clean.startsWith("application/")) {
-    return defaultToBinary;
+    return true;
   }
   const subtype = clean.slice("application/".length);
   const textSet = /* @__PURE__ */ new Set([
@@ -4301,13 +4305,12 @@ const isBinaryApplicationMime = (mime, opts) => {
   if (textSet.has(subtype)) return false;
   if (binarySet.has(subtype)) return true;
   if (subtype.includes("+")) {
-    const parts = subtype.split("+");
-    const suffix = parts[parts.length - 1];
-    if (["json", "xml", "javascript", "ecmascript", "xhtml+xml"].includes(suffix)) return false;
-    if (["zip", "gzip", "tar", "pdf", "wasm", "octet-stream", "x-xz", "x-bzip2"].includes(suffix)) return true;
+    const suffix = subtype.split("+").pop();
+    if (suffix && ["json", "xml", "javascript", "ecmascript", "xhtml+xml"].includes(suffix)) return false;
+    if (suffix && ["zip", "gzip", "tar", "pdf", "wasm", "octet-stream"].includes(suffix)) return true;
   }
   if (subtype.startsWith("vnd.")) return true;
-  return defaultToBinary;
+  return true;
 };
 class FileHandler {
   message;
@@ -4315,11 +4318,15 @@ class FileHandler {
   document;
   photo;
   video;
+  audio;
+  voice;
   constructor(message) {
-    const { document, photo, video } = message;
+    const { document, photo, video, audio, voice } = message;
     this.document = document;
     this.photo = photo?.[photo.length - 1];
     this.video = video;
+    this.audio = audio;
+    this.voice = voice;
     this.message = message;
     this.botToken = config.load().botToken;
     Log.info("Handling file", { chatId: this.message.chat.id, messageId: this.message.message_id });
@@ -4329,48 +4336,84 @@ class FileHandler {
     return downloadAndEncodeFile(file_id, this.botToken, "image/jpeg");
   }
   async handleVideo(video) {
-    const { file_id } = video;
-    return downloadAndEncodeFile(file_id, this.botToken, "video/mp4");
+    const { file_id, mime_type } = video;
+    const finalMimeType = mime_type && SUPPORTED_MIME_TYPE.VIDEO_TYPES.includes(mime_type.split("/")[1]) ? mime_type : "video/mp4";
+    return downloadAndEncodeFile(file_id, this.botToken, finalMimeType);
+  }
+  async handleAudio(audioSource, defaultMimeType) {
+    const { file_id, mime_type } = audioSource;
+    const finalMimeType = mime_type && SUPPORTED_MIME_TYPE.AUDIO_TYPES.includes(mime_type.split("/")[1]) ? mime_type : defaultMimeType;
+    return downloadAndEncodeFile(file_id, this.botToken, finalMimeType);
   }
   async handleDocument(document) {
     const { file_id, mime_type, file_name } = document;
     let determinedMimeType = mime_type;
-    if (!determinedMimeType && file_name) {
+    if (file_name) {
       const ext = path.extname(file_name).toLowerCase().replace(".", "");
       if (ext && FILE_EXTENSION_MIME_MAP[ext]) {
         determinedMimeType = FILE_EXTENSION_MIME_MAP[ext];
         Log.info(`通过文件后缀 "${ext}" 确定 MIME 类型为 "${determinedMimeType}"`);
       }
     }
-    let finalMimeType = determinedMimeType;
-    if (!determinedMimeType || !SUPPORTED_MIME_TYPES.includes(String(determinedMimeType))) {
-      if (determinedMimeType?.startsWith("text/")) {
-        finalMimeType = "text/plain";
-      } else if (determinedMimeType?.startsWith("application/") && !isBinaryApplicationMime(determinedMimeType, { defaultToBinary: true })) {
-        finalMimeType = "text/plain";
-      } else if (determinedMimeType?.startsWith("image/")) {
-        finalMimeType = "image/jpeg";
-      } else if (determinedMimeType?.startsWith("video/")) {
-        finalMimeType = "video/mp4";
-      } else {
-        throw new AppError(`不支持的文件类型: ${determinedMimeType || file_name || "未知"}`, "FILE_TYPE_NOT_SUPPORTED");
-      }
+    if (!determinedMimeType) {
+      throw new AppError(`无法确定文件类型: ${file_name || "未知文件名"}`, "FILE_TYPE_NOT_SUPPORTED");
     }
-    return downloadAndEncodeFile(file_id, this.botToken, finalMimeType || "application/octet-stream");
+    if (determinedMimeType === "image/gif") {
+      Log.info("检测到 GIF 文件，将作为 video/mp4 类型处理");
+      return downloadAndEncodeFile(file_id, this.botToken, "video/mp4");
+    }
+    const [mainType, subType] = determinedMimeType.split("/");
+    let finalMimeType;
+    switch (mainType) {
+      case "text":
+        finalMimeType = determinedMimeType;
+        break;
+      case "application":
+        if (SUPPORTED_MIME_TYPE.APPLICATION_TYPES.includes(subType)) {
+          finalMimeType = determinedMimeType;
+        } else if (!isBinaryApplicationMime(determinedMimeType)) {
+          Log.info(`将无法直接处理的 application 类型 "${determinedMimeType}" 作为 text/plain 处理`);
+          finalMimeType = "text/plain";
+        }
+        break;
+      case "image":
+        if (SUPPORTED_MIME_TYPE.IMAGE_TYPES.includes(subType)) {
+          finalMimeType = determinedMimeType;
+        } else {
+          finalMimeType = "image/jpeg";
+        }
+        break;
+      case "video":
+        if (SUPPORTED_MIME_TYPE.VIDEO_TYPES.includes(subType)) {
+          finalMimeType = determinedMimeType;
+        } else {
+          finalMimeType = "video/mp4";
+        }
+        break;
+      case "audio":
+        if (SUPPORTED_MIME_TYPE.AUDIO_TYPES.includes(subType)) {
+          finalMimeType = determinedMimeType;
+        } else {
+          finalMimeType = "audio/mp3";
+        }
+        break;
+    }
+    if (!finalMimeType) {
+      throw new AppError(`不支持的文件类型: ${determinedMimeType || "未知文件类型"}`, "FILE_TYPE_NOT_SUPPORTED");
+    }
+    return downloadAndEncodeFile(file_id, this.botToken, finalMimeType);
   }
   async process() {
-    if (this.photo) {
-      return this.handleImage(this.photo);
-    } else if (this.document) {
-      return this.handleDocument(this.document);
-    } else if (this.video) {
-      return this.handleVideo(this.video);
-    }
-    return;
+    if (this.photo) return this.handleImage(this.photo);
+    if (this.video) return this.handleVideo(this.video);
+    if (this.audio) return this.handleAudio(this.audio, "audio/mp3");
+    if (this.voice) return this.handleAudio(this.voice, "audio/ogg");
+    if (this.document) return this.handleDocument(this.document);
+    return void 0;
   }
 }
 const isContainsFile = (message) => {
-  return message ? message.document || message.photo || message.video ? true : false : false;
+  return message ? message.document || message.photo || message.video || message.audio || message.voice ? true : false : false;
 };
 const extractMessageParts = async (message, botName) => {
   const parts = [];
@@ -4737,19 +4780,17 @@ class NormalHandler {
     return this.handleGenericCommandAlias(commandAlias, clean);
   }
   async handleKeywordReply() {
-    if (this.photo || this.document?.mime_type?.startsWith("image/")) {
+    if (this.photo || this.document?.mime_type?.startsWith("image/") && !this.document.mime_type.endsWith("gif")) {
       const fileData = await handleFile(this.message).catch(() => null);
       if (fileData) {
         const recognizedText = await handleOCR(fileData);
-        this.messageText += recognizedText ? `
+        if (recognizedText) {
+          this.messageText += `
 
 <image>
 ${recognizedText}
-</image>` : `
-
-<image>
-RECOGNITION_FAILED
 </image>`;
+        }
       }
     }
     const faqDataResult = await kv.read(this.durableResourceId, this.faqDataKeyName, "json");

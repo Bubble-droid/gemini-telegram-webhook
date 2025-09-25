@@ -13,7 +13,7 @@ import { handleFile } from '@/handlers';
  * @returns {boolean} - 如果消息包含文件，返回 true，否则返回 false
  */
 const isContainsFile = (message: Message | undefined): boolean => {
-  return message ? (message.document || message.photo || message.video ? true : false) : false;
+  return message ? (message.document || message.photo || message.video || message.audio || message.voice ? true : false) : false;
 };
 
 /**

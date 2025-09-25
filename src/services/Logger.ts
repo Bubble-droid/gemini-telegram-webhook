@@ -88,7 +88,6 @@ const initLogger = (opts?: { loggerLevel?: LoggerLevel; minLevel?: number }): vo
 const serializeError = (err: Error): SerializableError => ({
   name: err.name,
   message: err.message,
-  stack: err.stack,
 });
 
 /**

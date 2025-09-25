@@ -115,7 +115,7 @@ export class Recognizer {
 
   private async tesseractOCR(): Promise<string | null> {
     try {
-      const worker = await createWorker(['eng', 'chi_sim']);
+      const worker = await createWorker(['eng', 'chi_sim', 'chi_tra']);
       Log.info('Tesseract OCR 开始识别...');
       const { data } = await worker.recognize(`data:${this.mimeType};base64,${this.data}`);
       await worker.terminate();

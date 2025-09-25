@@ -54,10 +54,12 @@ export interface Message {
   text?: string;
   entities?: MessageEntity[];
   link_preview_options?: LinkPreviewOptions;
+  audio?: Audio;
   document?: Document;
   photo?: PhotoSize[];
   sticker?: Sticker;
   video?: Video;
+  voice?: Voice;
   caption?: string;
   caption_entities?: MessageEntity[];
   show_caption_above_media?: true;
@@ -147,6 +149,18 @@ export interface LinkPreviewOptions {
   show_above_text?: boolean;
 }
 
+export interface Audio {
+  file_id: string;
+  file_unique_id: string;
+  duration: number;
+  performer?: string;
+  title?: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+  thumb?: PhotoSize;
+}
+
 export interface Document {
   file_id: string;
   file_unique_id: string;
@@ -192,6 +206,14 @@ export interface Video {
   cover?: PhotoSize[];
   start_timestamp?: number;
   file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+}
+
+export interface Voice {
+  file_id: string;
+  file_unique_id: string;
+  duration: number;
   mime_type?: string;
   file_size?: number;
 }

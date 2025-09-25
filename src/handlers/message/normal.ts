@@ -200,11 +200,13 @@ export class NormalHandler {
    */
   private async handleKeywordReply(): Promise<boolean> {
     // 步骤 1: (可选) 如果消息包含图片，执行 OCR 并将识别文本附加到消息中
-    if (this.photo || this.document?.mime_type?.startsWith('image/')) {
+    if (this.photo || (this.document?.mime_type?.startsWith('image/') && !this.document.mime_type.endsWith('gif'))) {
       const fileData = await handleFile(this.message).catch(() => null);
       if (fileData) {
         const recognizedText = await handleOCR(fileData);
-        this.messageText += recognizedText ? `\n\n<image>\n${recognizedText}\n</image>` : `\n\n<image>\nRECOGNITION_FAILED\n</image>`;
+        if (recognizedText) {
+          this.messageText += `\n\n<image>\n${recognizedText}\n</image>`;
+        }
       }
     }
 

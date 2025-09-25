@@ -27,7 +27,7 @@ A: 请按以下顺序排查：
       // 模式一：直接描述 -> [主体] 被 [安全软件] [执行了负面操作]
       ['GUI|客户端|程序|软件|exe|安装包', '杀(了)?|报毒|报(是)?病毒|隔离|删除|拦截|阻止|当(成|做)病毒'],
       // 模式二：描述症状 -> [主体] [消失/无法运行] 并提及 [安全软件]
-      ['GUI|客户端|程序|软件|exe', '找不到了|没了|不见了|自动删除|打不开|一运行就没(了)?'],
+      ['GUI|客户端|程序|软件|exe', '找不到了|没了|不见了|自动删除|一运行就没(了)?'],
       // 模式三：描述安装/解压后的症状 (未明确提及安全软件，但行为高度吻合)
       ['(刚)?安装(完|好)|(解压|下载)(完|好)|一解压', '(文件|exe|程序)?', '就?没了|不见了|找不到了|自动消失'],
       // 模式四：描述安全软件的提示
@@ -37,7 +37,6 @@ A: 请按以下顺序排查：
       ['GUI|client|program|exe', 'is a virus|trojan|malware|threat|risk'],
       ['(after|when) i (install|download|unzip)', '(it|the file|the exe) disappears|is gone|gets deleted'],
     ],
-    excludeKeywords: [],
     answer: `**Q: Windows 安全软件（如 Defender, 360, 火绒）报毒或查杀客户端怎么办？**
 
 A:
@@ -193,7 +192,11 @@ A:
   // ⚙️ B.2.3 配置与导入 (Configuration & Import)
   {
     keywordGroups: [
-      ['导入|添加|载入|放进去|(使)?用|应用|加载', '(自定义|自己|完整|(手)?(写|搓)(好)?|本地|订阅(提供|(下|分)发)|远程).*?配置(文件)?'],
+      [
+        '(怎么|如何|咋|怎样)',
+        '导入|添加|载入|放进去|(使)?用|应用|加载',
+        '(自定义|自己|完整|(手)?(写|搓)(好)?|本地|订阅(提供|(下|分)发)|远程).*?配置(文件)?',
+      ],
 
       ['import', 'custom config|full config|apply|load'],
       ['how to', 'import|load|use|apply', '(my|a) (custom|full|own) config(uration)?'],
@@ -614,8 +617,8 @@ A:
   },
   {
     keywordGroups: [
-      ['linux', '授权', '[没无]反应|点不了|点了没用|按了没反应|无效'],
-      ['(授(予)?|给)(特)?权', '没(有)?(效果|反应)|点(了)?没用|无效'],
+      ['linux', '(授(予)?|给)?(特)?权(限)?', '[没无]反应|点不了|点了没用|按了没反应|无效'],
+      ['(授(予)?|给)?(特)?权(限)?', '没(有)?(效果|反应)|点(了)?没用|无效'],
       // --- 新增英文关键词 ---
       ['linux', 'authorize button', 'doesn.?t work|no response|nothing happens'],
     ],
@@ -640,28 +643,80 @@ A:
   },
   {
     keywordGroups: [
-      // 通用关键词
-      ['tun', '[没无]反应|([没无不]法?|不能|连不上|上不了|没).*网(络)?|断网'],
-      ['tun', '系统代理', '才|必须|要开|依赖|同时'],
-      ['tun', '断网|网络(异常|问题|断了)'],
-      ['tun', '(一开|打开|启用).*(就)?', '没网|断网|上不了网'],
-      ['tun', '打不开|无法访问', '网站|网页|github|google'],
-      ['mac', '启动|运行|开', '内核|tun', '没网|断网|上不了网'],
-      ['tun', '(只能|仅).*(tg|电报|telegram)', '(网页|网站|浏览器).*(打不开|没反应|用不了)'],
-      ['tun', '(不能?|无法)?访问|访问不了', '网络|网页|网站'],
-      // 英文关键词
-      ['tun', '(no|lost) (internet|connection)|can.?t connect|not working'],
-      ['mac', 'tun', '(no|lost) (internet|connection)|can.?t connect|not working'],
-      ['enable tun', 'lose internet|no network'],
-      ['tun', '(only|just) (tg|telegram) works', '(browser|website)s? (doesn.?t|not) work'],
+      // 模式一：【直接故障】描述开启 TUN 后的直接负面结果
+      [
+        'tun',
+        // 核心故障词汇：涵盖了“硬断网”和“软故障”
+        '[没无]反应|([没无不]法?|不能|连不上|上不了|没).*网(络)?|断网|加载失败|无法加载|一直加载|不停转圈|请求超时',
+      ],
+      // --- 新增：精准匹配“打不开某个网站”的场景 ---
+      ['tun', '(打不开|无法访问|访问不了|进不去|加载不了|显示不了)', '(某个|这个|特定|所有)?(网站|网页|链接|google|github|youtube|bilibili)'],
+      [
+        'tun',
+        '网络(异常|问题|断了|坏了|用不了|好像有问题|炸了)', // 更口语化的网络问题描述
+      ],
+
+      // 模式二：【因果关系】明确指出开启/关闭 TUN 导致了状态变化
+      [
+        'tun',
+        '(一开|打开|启用|只要一开).*(就)?', // 强调“一...就...”的因果
+        '没网|断网|上不了网|加载不出来|网站打不开|应用没反应|图片刷不出',
+      ],
+      [
+        // 这是一个非常重要的反向验证模式，能极高精度地定位问题
+        '(关|关掉|禁用)了?tun',
+        '(就)?(好|恢复|正常)了',
+      ],
+
+      // 模式三：【局部/特殊故障】描述更具体的、非全局性的网络问题
+      ['tun', '(只能|仅|只有).*(tg|电报|telegram)', '(网页|网站|浏览器|其他|别的|剩下|剩余).*(打不开|没反应|用不了|加载不出来)'],
+      [
+        'tun',
+        '(有的|有些|部分)网站', // 部分网站可用，部分不可用
+        '(可以|行|正常)',
+        '(有的|另一些|其他的)',
+        '(不行|打不开|加载失败)',
+      ],
+      [
+        'tun',
+        '国内.*(正常|可以|能打开)', // 国内外访问策略问题
+        '国外.*(不行|访问不了|打不开)',
+      ],
+      [
+        'tun',
+        '图片|视频|附件', // 针对特定媒体内容加载失败
+        '加载不(了|出来)|刷不出|显示不了',
+      ],
+
+      // 模式四：【特定平台】明确提及操作系统
+      ['mac(os)?', '启动|运行|开', '内核|tun', '没网|断网|上不了网'],
+
+      // 模式五：【依赖性问题】
+      [
+        'tun',
+        '系统代理',
+        '才|必须|要开|依赖|同时', // 描述 TUN 和系统代理的依赖关系问题
+      ],
+
+      // --- 英文关键词 ---
+      // 模式一：直接故障
+      [
+        'tun',
+        '(no|lost) (internet|connection)|can.?t connect|not working|stuck on loading|loading failed|won.?t load|endless spinning|request timed out',
+      ],
+      // --- 新增：英文版“打不开网站” ---
+      ['tun', 'can.?t (open|access|load|get to|reach)', '(a|any|specific)? (website|page|site|google|github)'],
+      // 模式二：因果关系
+      ['(when|after) (i )?(enable|turn on) tun', '(i )?(lose|lost) internet|no network|sites won.?t load|images fail to load'],
+      ['(it )?works (again|fine) after (i )?(disable|turn off) tun'],
+      // 模式三：局部故障
+      ['tun', '(only|just) (tg|telegram) works', '(browsers?|websites?) (doesn.?t|not) work'],
+      ['with tun', 'some websites work', 'others don.?t'],
+      // 模式四：特定平台
+      ['mac(os)?', 'tun', '(no|lost) (internet|connection)|can.?t connect|not working'],
     ],
-    excludeKeywords: [
-      // 注意：这里不再排除 macos
-      ['permission denied'], // 排除权限问题
-      ['file not found'], // 排除文件找不到问题
-      ['(ssl|证书).*(错误|error)'], // 排除 SSL 证书问题
-    ],
-    answer: `**Q: TUN 模式启动后无法上网？**
+    excludeKeywords: [['permission denied'], ['file not found'], ['(ssl|证书).*(错误|error)']],
+    answer: `**Q: TUN 模式启动后无法上网或网络异常？**
 
 A: 请按以下顺序排查，方案覆盖 Windows, macOS 及 Linux：
 *   **方案 A (通用): 更换 TUN 堆栈模式**

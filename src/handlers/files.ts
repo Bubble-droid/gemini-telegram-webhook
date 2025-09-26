@@ -24,14 +24,20 @@ const FILE_EXTENSION_MIME_MAP: Record<string, string> = {
   // 文本与代码
   txt: 'text/plain',
   html: 'text/html',
+  htm: 'text/html',
+  vue: 'text/html',
   css: 'text/css',
+  less: 'text/css',
   csv: 'text/csv',
   md: 'text/markdown',
+  mdx: 'text/markdown',
   js: 'text/javascript',
   ts: 'text/javascript',
   jsx: 'text/javascript',
   tsx: 'text/javascript',
   json: 'application/json',
+  jsonc: 'application/json',
+  json5: 'application/json',
   yaml: 'application/yaml',
   yml: 'application/yaml',
   sh: 'application/x-shellscript',
@@ -43,7 +49,7 @@ const FILE_EXTENSION_MIME_MAP: Record<string, string> = {
   go: 'text/plain',
   php: 'text/plain',
   sql: 'text/plain',
-  xml: 'application/xml', // XML 是一种 application 类型
+  xml: 'application/xml',
 
   // 图片
   png: 'image/png',

@@ -5,7 +5,7 @@ import { createWorker } from "tesseract.js";
 import "node:crypto";
 import * as lame from "@breezystack/lamejs";
 import { Logger } from "tslog";
-import { Type, Behavior, HarmBlockThreshold, HarmCategory, FunctionCallingConfigMode, GoogleGenAI } from "@google/genai";
+import { Type, Behavior, HarmBlockThreshold, HarmCategory, FunctionCallingConfigMode, GoogleGenAI, ApiError } from "@google/genai";
 import { VM } from "vm2";
 import Cloudflare from "cloudflare";
 import * as path from "path";
@@ -1224,16 +1224,6 @@ const rotateArray = (arr, steps = 1, direction = "left") => {
   }
   return arr.slice(actualSteps).concat(arr.slice(0, actualSteps));
 };
-const sampleByShuffle = (arr, k = 3) => {
-  if (k <= 0) return [];
-  if (k >= arr.length) return arr.slice();
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a.slice(0, k);
-};
 const shortenString = (input) => {
   const MAX = 4096;
   const HEAD = 2040;
@@ -1772,22 +1762,12 @@ const BaseCommands = [
         inline_keyboard: [
           [
             {
-              text: `群组 👍 ${totalReactions.success ? totalReactions.data.like || 0 : 0}`,
+              text: `群组 👍 ${totalReactions.success ? totalReactions.data.like : 0}`,
               callback_data: "PLACEHOLDER"
             },
             {
-              text: `群组 👎 ${totalReactions.success ? totalReactions.data.dislike || 0 : 0}`,
+              text: `群组 👎 ${totalReactions.success ? totalReactions.data.dislike : 0}`,
               callback_data: "PLACEHOLDER"
-            }
-          ],
-          [
-            {
-              text: "🖼️ 生成图片",
-              switch_inline_query_current_chat: "请生成一幅图像：IMAGE_GENERATION_PROMPT"
-            },
-            {
-              text: "🗣️ 生成语音",
-              switch_inline_query_current_chat: "请生成一段语音：SPEECH_GENERATION_PROMPT"
             }
           ],
           [
@@ -1891,7 +1871,7 @@ const BaseCommands = [
       };
       let clearingResult;
       if (isCallback) {
-        clearingResult = await bot.editMessageText(chatId, messageId, clearingText, { replyMarkup: backReplyMarkup });
+        clearingResult = await bot.editMessageText(chatId, messageId, clearingText);
       } else {
         clearingResult = await bot.sendMessage(chatId, clearingText, { replyToMessageId: messageId });
       }
@@ -1919,27 +1899,6 @@ const BaseCommands = [
         (tool) => `* **${tool.name}**
     ${[...tool.description].length > 40 ? `${tool.description?.slice(0, 40)}...` : tool.description}`
       ).join("\n").trim() || "";
-      const randomTools = sampleByShuffle(toolFunctions, 4);
-      const keyboard1 = randomTools.slice(0, 2).map((tool) => ({
-        text: `🛠 ${tool.name}`,
-        callback_data: `tool_demo_${tool.name}_${userId}`
-      }));
-      const keyboard2 = randomTools.slice(2, 4).map((tool) => ({
-        text: `🛠 ${tool.name}`,
-        callback_data: `tool_demo_${tool.name}_${userId}`
-      }));
-      const replyMarkup = {
-        inline_keyboard: [
-          [
-            {
-              text: "✋ 工具演示",
-              switch_inline_query_current_chat: `请简单演示下 TOOL_NAME 工具`
-            }
-          ],
-          keyboard1,
-          keyboard2
-        ]
-      };
       const toolsText = `🛠 我可以使用以下工具：
 
 ${toolList}`;
@@ -1947,7 +1906,6 @@ ${toolList}`;
       if (isCallback) {
         const backReplyMarkup = {
           inline_keyboard: [
-            ...replyMarkup.inline_keyboard,
             [
               {
                 text: "⬅️ Go Back",
@@ -1963,8 +1921,7 @@ ${toolList}`;
       } else {
         toolsResult = await bot.sendMessage(chatId, toHtml(toolsText), {
           replyToMessageId: messageId,
-          parseMode: "HTML",
-          replyMarkup
+          parseMode: "HTML"
         });
       }
       if (toolsResult.ok) {
@@ -2022,7 +1979,7 @@ const GenerateCommands = [
         return;
       }
       let synthMessageId = void 0;
-      const synthResult = await bot.sendMessage(chatId, `🎙 Synthesizing...`, { replyToMessageId: messageId });
+      const synthResult = await bot.sendMessage(chatId, `🎙️ Synthesizing...`, { replyToMessageId: messageId });
       if (synthResult.ok) {
         synthMessageId = synthResult.messageId;
       }
@@ -2199,7 +2156,7 @@ ${result.error}
         parseMode: "HTML"
       });
       if (sentMsg.ok) {
-        scheduleDeletion(chatId, sentMsg.messageId, 30 * 6e4);
+        scheduleDeletion(chatId, sentMsg.messageId, 5 * 6e4);
       }
     }
   }
@@ -3255,7 +3212,7 @@ class GeminiApi {
         const response = await this._callGeminiApi(context);
         return response;
       } catch (error) {
-        const err = error instanceof GeminiError ? error : new GeminiError(String(error), "API_CLIENT_ERROR", context.metrics.hasToolThoughts);
+        const err = error instanceof ApiError ? error : new GeminiError(String(error), "API_CLIENT_ERROR", context.metrics.hasToolThoughts);
         Log.error(`Gemini API 客户端或网络错误 (尝试 ${attempt + 1}/${this.MAX_CLIENT_ERROR_RETRIES}):`, { err });
         if (attempt < this.MAX_CLIENT_ERROR_RETRIES) {
           const delay = Math.floor(this.BASE_RETRY_DELAY_MS * Math.pow(2, attempt + 1) * (0.8 + Math.random() * 0.4));
@@ -4187,14 +4144,20 @@ const SUPPORTED_MIME_TYPE = {
 const FILE_EXTENSION_MIME_MAP = {
   txt: "text/plain",
   html: "text/html",
+  htm: "text/html",
+  vue: "text/html",
   css: "text/css",
+  less: "text/css",
   csv: "text/csv",
   md: "text/markdown",
+  mdx: "text/markdown",
   js: "text/javascript",
   ts: "text/javascript",
   jsx: "text/javascript",
   tsx: "text/javascript",
   json: "application/json",
+  jsonc: "application/json",
+  json5: "application/json",
   yaml: "application/yaml",
   yml: "application/yaml",
   sh: "application/x-shellscript",
@@ -4750,7 +4713,7 @@ class NormalHandler {
       parseMode: "HTML"
     });
     if (sentResult.ok) {
-      scheduleDeletion(this.chatId, sentResult.messageId, 10 * 60 * 1e3);
+      scheduleDeletion(this.chatId, sentResult.messageId, 5 * 60 * 1e3);
     }
   }
   async handleAskAlias() {

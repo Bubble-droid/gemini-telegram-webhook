@@ -160,7 +160,7 @@ export class NormalHandler {
       parseMode: 'HTML',
     });
     if (sentResult.ok) {
-      scheduleDeletion(this.chatId, sentResult.messageId, 10 * 60 * 1_000);
+      scheduleDeletion(this.chatId, sentResult.messageId, 5 * 60 * 1_000);
     }
   }
 

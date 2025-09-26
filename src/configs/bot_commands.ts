@@ -2,9 +2,8 @@
 
 import { config, bot, contexts, Log, ToolExecutors, TelegramError, KvNamespaceError, ScriptError } from '@/services';
 import { geminiTools } from '@/configs';
-import { scheduleDeletion, sleep, kv, sampleByShuffle, toHtml } from '@/utils';
-import type { BotCommandAction, InlineKeyboardButton, Message, ReplyMarkup, ToolExecArgs } from '@/types';
-import type { FunctionDeclaration } from '@google/genai';
+import { scheduleDeletion, sleep, kv, toHtml } from '@/utils';
+import type { BotCommandAction, Message, ReplyMarkup, ToolExecArgs } from '@/types';
 import { scriptManager } from '@/script';
 
 const BaseCommands: BotCommandAction[] = [
@@ -29,22 +28,12 @@ const BaseCommands: BotCommandAction[] = [
         inline_keyboard: [
           [
             {
-              text: `群组 👍 ${totalReactions.success ? totalReactions.data.like || 0 : 0}`,
+              text: `群组 👍 ${totalReactions.success ? totalReactions.data.like : 0}`,
               callback_data: 'PLACEHOLDER',
             },
             {
-              text: `群组 👎 ${totalReactions.success ? totalReactions.data.dislike || 0 : 0}`,
+              text: `群组 👎 ${totalReactions.success ? totalReactions.data.dislike : 0}`,
               callback_data: 'PLACEHOLDER',
-            },
-          ],
-          [
-            {
-              text: '🖼️ 生成图片',
-              switch_inline_query_current_chat: '请生成一幅图像：IMAGE_GENERATION_PROMPT',
-            },
-            {
-              text: '🗣️ 生成语音',
-              switch_inline_query_current_chat: '请生成一段语音：SPEECH_GENERATION_PROMPT',
             },
           ],
           [
@@ -149,7 +138,7 @@ const BaseCommands: BotCommandAction[] = [
       };
       let clearingResult;
       if (isCallback) {
-        clearingResult = await bot.editMessageText(chatId, messageId, clearingText, { replyMarkup: backReplyMarkup });
+        clearingResult = await bot.editMessageText(chatId, messageId, clearingText);
       } else {
         clearingResult = await bot.sendMessage(chatId, clearingText, { replyToMessageId: messageId });
       }
@@ -181,29 +170,6 @@ const BaseCommands: BotCommandAction[] = [
           )
           .join('\n')
           .trim() || '';
-      const randomTools = sampleByShuffle<FunctionDeclaration>(toolFunctions, 4);
-
-      const keyboard1: InlineKeyboardButton[] = randomTools.slice(0, 2).map((tool) => ({
-        text: `🛠 ${tool.name}`,
-        callback_data: `tool_demo_${tool.name}_${userId}`,
-      }));
-      const keyboard2: InlineKeyboardButton[] = randomTools.slice(2, 4).map((tool) => ({
-        text: `🛠 ${tool.name}`,
-        callback_data: `tool_demo_${tool.name}_${userId}`,
-      }));
-
-      const replyMarkup: ReplyMarkup = {
-        inline_keyboard: [
-          [
-            {
-              text: '✋ 工具演示',
-              switch_inline_query_current_chat: `请简单演示下 TOOL_NAME 工具`,
-            },
-          ],
-          keyboard1,
-          keyboard2,
-        ],
-      };
 
       const toolsText = `🛠 我可以使用以下工具：\n\n${toolList}`;
 
@@ -211,7 +177,6 @@ const BaseCommands: BotCommandAction[] = [
       if (isCallback) {
         const backReplyMarkup: ReplyMarkup = {
           inline_keyboard: [
-            ...replyMarkup.inline_keyboard,
             [
               {
                 text: '⬅️ Go Back',
@@ -228,7 +193,6 @@ const BaseCommands: BotCommandAction[] = [
         toolsResult = await bot.sendMessage(chatId, toHtml(toolsText), {
           replyToMessageId: messageId,
           parseMode: 'HTML',
-          replyMarkup,
         });
       }
       if (toolsResult.ok) {
@@ -287,7 +251,7 @@ const GenerateCommands: BotCommandAction[] = [
         return;
       }
       let synthMessageId: number | undefined = undefined;
-      const synthResult = await bot.sendMessage(chatId, `🎙 Synthesizing...`, { replyToMessageId: messageId });
+      const synthResult = await bot.sendMessage(chatId, `🎙️ Synthesizing...`, { replyToMessageId: messageId });
       if (synthResult.ok) {
         synthMessageId = synthResult.messageId;
       }
@@ -481,7 +445,7 @@ ${result.error}
         parseMode: 'HTML',
       });
       if (sentMsg.ok) {
-        scheduleDeletion(chatId, sentMsg.messageId, 30 * 60_000);
+        scheduleDeletion(chatId, sentMsg.messageId, 5 * 60_000);
       }
     },
   },

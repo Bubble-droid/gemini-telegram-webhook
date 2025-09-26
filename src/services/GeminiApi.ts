@@ -1,6 +1,6 @@
 // src/services/this.ts
 
-import { GoogleGenAI, FunctionCallingConfigMode, HarmCategory, HarmBlockThreshold } from '@google/genai';
+import { GoogleGenAI, FunctionCallingConfigMode, HarmCategory, HarmBlockThreshold, ApiError } from '@google/genai';
 import type { Content, GenerateContentConfig, GenerateContentResponse, Part, SafetySetting } from '@google/genai';
 import { config, GeminiError, KvNamespaceError, Log, bot, ToolExecutors } from '@/services';
 import { geminiTools } from '@/configs';
@@ -106,7 +106,7 @@ export class GeminiApi {
    * 执行 Gemini API 调用（不包含重试逻辑，仅负责调用和指标更新）。
    * @param {ApiCallContext} context - API 调用上下文。
    * @returns {Promise<GenerateContentResponse>} Gemini API 的原始响应。
-   * @throws {Error} 如果 API 调用失败，将抛出原始错误。
+   * @throws {ApiError} 如果 API 调用失败，将抛出原始错误。
    */
   private async _callGeminiApi(context: ApiCallContext): Promise<GenerateContentResponse> {
     Log.info(
@@ -154,7 +154,7 @@ export class GeminiApi {
         const response = await this._callGeminiApi(context);
         return response; // 成功获取响应，返回
       } catch (error: unknown) {
-        const err = error instanceof GeminiError ? error : new GeminiError(String(error), 'API_CLIENT_ERROR', context.metrics.hasToolThoughts);
+        const err = error instanceof ApiError ? error : new GeminiError(String(error), 'API_CLIENT_ERROR', context.metrics.hasToolThoughts);
         Log.error(`Gemini API 客户端或网络错误 (尝试 ${attempt + 1}/${this.MAX_CLIENT_ERROR_RETRIES}):`, { err });
 
         if (attempt < this.MAX_CLIENT_ERROR_RETRIES) {

@@ -222,6 +222,9 @@ class Recognizer {
     const model = "gemini-2.5-flash-lite";
     const config2 = {
       temperature: 0.3,
+      thinkingConfig: {
+        thinkingBudget: -1
+      },
       systemInstruction: [{ text: OCR_PROMPT }]
     };
     const contents = [
@@ -4138,7 +4141,7 @@ const bot = new TelegramBot();
 const SUPPORTED_MIME_TYPE = {
   APPLICATION_TYPES: ["json", "x-javascript", "pdf", "zip"],
   IMAGE_TYPES: ["png", "jpeg", "webp", "heic", "heif"],
-  VIDEO_TYPES: ["mp4", "mpeg", "mov", "avi", "x-flvc", "mpg", "webm", "wmv", "3gpp"],
+  VIDEO_TYPES: ["mp4", "mpeg", "mov", "avi", "x-flv", "mpg", "webm", "wmv", "3gpp"],
   AUDIO_TYPES: ["wav", "mp3", "aiff", "aac", "ogg", "flac"]
 };
 const FILE_EXTENSION_MIME_MAP = {
@@ -4178,20 +4181,21 @@ const FILE_EXTENSION_MIME_MAP = {
   heif: "image/heif",
   gif: "image/gif",
   mp4: "video/mp4",
-  webm: "video/webm",
   mpeg: "video/mpeg",
   mov: "video/mov",
   avi: "video/avi",
-  mpg: "video/mpg",
-  "3gpp": "video/3gpp",
-  wmv: "video/x-ms-wmv",
+  flv: "video/x-flv",
   "x-flv": "video/x-flv",
-  mp3: "audio/mp3",
+  mpg: "video/mpg",
+  webm: "video/webm",
+  wmv: "video/wmv",
+  "3gpp": "video/3gpp",
   wav: "audio/wav",
-  ogg: "audio/ogg",
+  mp3: "audio/mp3",
+  aiff: "audio/aiff",
   aac: "audio/aac",
-  flac: "audio/flac",
-  aiff: "audio/aiff"
+  ogg: "audio/ogg",
+  flac: "audio/flac"
 };
 const getTelegramFileUrl = async (fileId, botToken) => {
   const result = await bot.getFile(fileId);
@@ -4919,7 +4923,7 @@ class CallbackQueryHandler {
   chatId;
   messageId;
   date;
-  replyMarkup;
+  InlinedKeyboard;
   constructor(callbackQuery) {
     if (!callbackQuery.message || !callbackQuery.data) {
       Log.info("Invalid callback query", { queryId: callbackQuery.id });
@@ -4933,7 +4937,7 @@ class CallbackQueryHandler {
     this.messageId = message_id;
     this.date = date;
     this.data = data;
-    this.replyMarkup = reply_markup?.inline_keyboard;
+    this.InlinedKeyboard = reply_markup?.inline_keyboard;
     this.message = { ...message, message_id: reply_to_message?.message_id || this.messageId, from };
     Log.info("Handling callback query", { chatId: this.chatId, messageId: this.messageId, userId: this.userId, data: this.data });
   }
@@ -4981,18 +4985,18 @@ class CallbackQueryHandler {
     const { rateLimitId, durableResourceId } = config.load();
     const reaction = this.data.split("_")[1];
     const keyName = `reacted_${this.chatId}_${this.messageId}`;
-    const readResult = await kv.read(rateLimitId, keyName, "json");
-    const reactedUsers = readResult.success ? [...readResult.data] : [];
+    const reactedRes = await kv.read(rateLimitId, keyName, "json");
+    const reactedUsers = reactedRes.success ? [...reactedRes.data] : [];
     if (reactedUsers.includes(this.userId)) {
-      bot.answerCallbackQuery(this.queryId, {
+      await bot.answerCallbackQuery(this.queryId, {
         callbackText: "你已做出过反应"
       });
       return;
     }
-    bot.answerCallbackQuery(this.queryId, { callbackText: "反应成功" });
+    await bot.answerCallbackQuery(this.queryId, { callbackText: "反应成功" });
     reactedUsers.push(this.userId);
     await kv.write(rateLimitId, keyName, JSON.stringify(reactedUsers), { expiration_ttl: 48 * 60 * 60 });
-    const newInlineKeyboard = JSON.parse(JSON.stringify(this.replyMarkup));
+    const newInlineKeyboard = JSON.parse(JSON.stringify(this.InlinedKeyboard));
     let keyboardUpdated = false;
     for (const row of newInlineKeyboard) {
       for (const button of row) {

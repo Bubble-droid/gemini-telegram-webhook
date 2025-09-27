@@ -13,7 +13,7 @@ import * as path from 'path';
 const SUPPORTED_MIME_TYPE = {
   APPLICATION_TYPES: ['json', 'x-javascript', 'pdf', 'zip'],
   IMAGE_TYPES: ['png', 'jpeg', 'webp', 'heic', 'heif'],
-  VIDEO_TYPES: ['mp4', 'mpeg', 'mov', 'avi', 'x-flvc', 'mpg', 'webm', 'wmv', '3gpp'],
+  VIDEO_TYPES: ['mp4', 'mpeg', 'mov', 'avi', 'x-flv', 'mpg', 'webm', 'wmv', '3gpp'],
   AUDIO_TYPES: ['wav', 'mp3', 'aiff', 'aac', 'ogg', 'flac'],
 };
 
@@ -62,22 +62,23 @@ const FILE_EXTENSION_MIME_MAP: Record<string, string> = {
 
   // 视频
   mp4: 'video/mp4',
-  webm: 'video/webm',
   mpeg: 'video/mpeg',
   mov: 'video/mov',
   avi: 'video/avi',
-  mpg: 'video/mpg',
-  '3gpp': 'video/3gpp',
-  wmv: 'video/x-ms-wmv',
+  flv: 'video/x-flv',
   'x-flv': 'video/x-flv',
+  mpg: 'video/mpg',
+  webm: 'video/webm',
+  wmv: 'video/wmv',
+  '3gpp': 'video/3gpp',
 
   // 音频
-  mp3: 'audio/mp3',
   wav: 'audio/wav',
-  ogg: 'audio/ogg',
-  aac: 'audio/aac',
-  flac: 'audio/flac',
+  mp3: 'audio/mp3',
   aiff: 'audio/aiff',
+  aac: 'audio/aac',
+  ogg: 'audio/ogg',
+  flac: 'audio/flac',
 };
 
 /**

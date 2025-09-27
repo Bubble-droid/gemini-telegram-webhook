@@ -14,7 +14,7 @@ export class CallbackQueryHandler {
   private chatId: number;
   private messageId: number;
   private date: number;
-  private replyMarkup: InlineKeyboardButton[][] | undefined;
+  private InlinedKeyboard: InlineKeyboardButton[][] | undefined;
 
   constructor(callbackQuery: CallbackQuery) {
     if (!callbackQuery.message || !callbackQuery.data) {
@@ -31,7 +31,7 @@ export class CallbackQueryHandler {
     this.messageId = message_id;
     this.date = date;
     this.data = data;
-    this.replyMarkup = reply_markup?.inline_keyboard;
+    this.InlinedKeyboard = reply_markup?.inline_keyboard;
 
     this.message = { ...message, message_id: reply_to_message?.message_id || this.messageId, from };
 
@@ -85,22 +85,22 @@ export class CallbackQueryHandler {
     const { rateLimitId, durableResourceId } = config.load();
     const reaction = this.data.split('_')[1];
     const keyName = `reacted_${this.chatId}_${this.messageId}`;
-    const readResult = await kv.read<number[]>(rateLimitId, keyName, 'json');
+    const reactedRes = await kv.read<number[]>(rateLimitId, keyName, 'json');
 
-    const reactedUsers = readResult.success ? [...readResult.data] : [];
+    const reactedUsers = reactedRes.success ? [...reactedRes.data] : [];
 
     if (reactedUsers.includes(this.userId)) {
-      bot.answerCallbackQuery(this.queryId, {
+      await bot.answerCallbackQuery(this.queryId, {
         callbackText: '你已做出过反应',
       });
       return;
     }
 
-    bot.answerCallbackQuery(this.queryId, { callbackText: '反应成功' });
+    await bot.answerCallbackQuery(this.queryId, { callbackText: '反应成功' });
     reactedUsers.push(this.userId);
     await kv.write(rateLimitId, keyName, JSON.stringify(reactedUsers), { expiration_ttl: 48 * 60 * 60 });
 
-    const newInlineKeyboard: InlineKeyboardButton[][] = JSON.parse(JSON.stringify(this.replyMarkup));
+    const newInlineKeyboard: InlineKeyboardButton[][] = JSON.parse(JSON.stringify(this.InlinedKeyboard));
 
     let keyboardUpdated = false;
     for (const row of newInlineKeyboard) {

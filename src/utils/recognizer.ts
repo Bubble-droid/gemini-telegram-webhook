@@ -83,6 +83,9 @@ export class Recognizer {
     const model = 'gemini-2.5-flash-lite';
     const config: GenerateContentConfig = {
       temperature: 0.3,
+      thinkingConfig: {
+        thinkingBudget: -1,
+      },
       systemInstruction: [{ text: OCR_PROMPT }],
     };
     const contents: Content[] = [

@@ -11,7 +11,7 @@ import * as path from 'path';
  * 其他类型仅接受明确列出的子类型。
  */
 const SUPPORTED_MIME_TYPE = {
-  APPLICATION_TYPES: ['json', 'x-javascript', 'pdf', 'zip'],
+  APPLICATION_TYPES: ['pdf'],
   IMAGE_TYPES: ['png', 'jpeg', 'webp', 'heic', 'heif'],
   VIDEO_TYPES: ['mp4', 'mpeg', 'mov', 'avi', 'x-flv', 'mpg', 'webm', 'wmv', '3gpp'],
   AUDIO_TYPES: ['wav', 'mp3', 'aiff', 'aac', 'ogg', 'flac'],
@@ -49,7 +49,7 @@ const FILE_EXTENSION_MIME_MAP: Record<string, string> = {
   go: 'text/plain',
   php: 'text/plain',
   sql: 'text/plain',
-  xml: 'application/xml',
+  xml: 'text/xml',
 
   // 图片
   png: 'image/png',

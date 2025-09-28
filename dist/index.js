@@ -3148,6 +3148,7 @@ class GeminiApi {
     safetySettings: GEMINI_SAFETY_SETTINGS
   };
   startProcessTime;
+  NON_RETRY_ERRORS = ["An internal error has occurred", "Unsupported MIME type"];
   constructor(chatParams) {
     const { maxApiCallRounds, durableResourceId, systemPromptKeyName, modelName, modelTemperature } = config.load();
     this.maxApiCallRounds = maxApiCallRounds;
@@ -3216,6 +3217,12 @@ class GeminiApi {
         return response;
       } catch (error) {
         const err = error instanceof ApiError ? error : new GeminiError(String(error), "API_CLIENT_ERROR", context.metrics.hasToolThoughts);
+        const isNonRetry = this.NON_RETRY_ERRORS.some((msg) => err.message.includes(msg));
+        if (isNonRetry) {
+          throw new GeminiError(`Gemini API 客户端错误。
+
+${err}`, "NON_RETRY_ERROR", context.metrics.hasToolThoughts);
+        }
         Log.error(`Gemini API 客户端或网络错误 (尝试 ${attempt + 1}/${this.MAX_CLIENT_ERROR_RETRIES}):`, { err });
         if (attempt < this.MAX_CLIENT_ERROR_RETRIES) {
           const delay = Math.floor(this.BASE_RETRY_DELAY_MS * Math.pow(2, attempt + 1) * (0.8 + Math.random() * 0.4));
@@ -4139,7 +4146,7 @@ const callCustomModels = async (model, modelConfig, contents) => {
 };
 const bot = new TelegramBot();
 const SUPPORTED_MIME_TYPE = {
-  APPLICATION_TYPES: ["json", "x-javascript", "pdf", "zip"],
+  APPLICATION_TYPES: ["pdf"],
   IMAGE_TYPES: ["png", "jpeg", "webp", "heic", "heif"],
   VIDEO_TYPES: ["mp4", "mpeg", "mov", "avi", "x-flv", "mpg", "webm", "wmv", "3gpp"],
   AUDIO_TYPES: ["wav", "mp3", "aiff", "aac", "ogg", "flac"]
@@ -4172,7 +4179,7 @@ const FILE_EXTENSION_MIME_MAP = {
   go: "text/plain",
   php: "text/plain",
   sql: "text/plain",
-  xml: "application/xml",
+  xml: "text/xml",
   png: "image/png",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",

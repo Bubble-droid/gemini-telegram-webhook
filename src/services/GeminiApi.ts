@@ -46,6 +46,7 @@ export class GeminiApi {
     safetySettings: GEMINI_SAFETY_SETTINGS,
   };
   private readonly startProcessTime: bigint;
+  private readonly NON_RETRY_ERRORS = ['An internal error has occurred', 'Unsupported MIME type'];
 
   constructor(chatParams: ChatParams) {
     const { maxApiCallRounds, durableResourceId, systemPromptKeyName, modelName, modelTemperature } = config.load();
@@ -155,6 +156,10 @@ export class GeminiApi {
         return response; // 成功获取响应，返回
       } catch (error: unknown) {
         const err = error instanceof ApiError ? error : new GeminiError(String(error), 'API_CLIENT_ERROR', context.metrics.hasToolThoughts);
+        const isNonRetry = this.NON_RETRY_ERRORS.some((msg) => err.message.includes(msg));
+        if (isNonRetry) {
+          throw new GeminiError(`Gemini API 客户端错误。\n\n${err}`, 'NON_RETRY_ERROR', context.metrics.hasToolThoughts);
+        }
         Log.error(`Gemini API 客户端或网络错误 (尝试 ${attempt + 1}/${this.MAX_CLIENT_ERROR_RETRIES}):`, { err });
 
         if (attempt < this.MAX_CLIENT_ERROR_RETRIES) {

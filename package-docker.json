@@ -5,11 +5,11 @@
   "main": "./dist/index.js",
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
-    "@google/genai": "^1.19.0",
+    "@google/genai": "^1.21.0",
     "cloudflare": "^4.5.0",
-    "fastify": "^5.6.0",
+    "fastify": "^5.6.1",
     "tesseract.js": "^6.0.1",
-    "tslog": "^4.9.3",
+    "tslog": "^4.10.0",
     "vm2": "^3.9.19"
   }
 }

@@ -396,9 +396,11 @@
             *   **如何导入自定义配置文件 (本地/远程)**:
                 *   **说明**: GUI.for.Cores 本身不直接支持导入完整的配置文件，这么设计是为了维持 GUI 操作的稳定性和一致性。但你可以通过以下特定功能，间接实现加载自定义配置的目的：
                 *   **GUI.for.Clash**: 在添加订阅时，将你的完整配置文件托管在一个可访问的 URL 上（或存放在本地文件中），然后像添加普通订阅一样添加它。关键在于，必须启用 **“使用订阅内的策略组和分流规则”** 选项。这样，客户端会优先采用你文件中的 `proxies`, `proxy-groups`, 和 `rules` 部分。
-                *   **GUI.for.SingBox**: 使用 **配置脚本** 功能。这是一个高级功能，允许你通过编写 JavaScript 代码来动态修改生成的 sing-box 配置。你可以将完整配置文件通过脚本注入到最终配置中。
-                    1.  首先需要新建一个配置，右键点击该配置，选择 **混入和脚本**，弹出的窗口中点击 **脚本操作**。
-                    2.  将以下脚本代码 **复制并粘贴** 到脚本编辑框中，将其中的变量值修改为正确的文件路径或 URL。
+                *   **GUI.for.SingBox**: 
+                    *   如果你需要将配置完整迁移到 GUI 中，并通过 GUI 来管理配置，请至 **插件中心** 安装 **导入 sing-box 配置** 插件，点击 **运行**，然后按照指引操作。
+                    *   如果你只想简单的通过自定义配置来运行，请使用 **配置脚本** 功能。这是一个高级功能，允许你通过编写 JavaScript 代码来动态修改生成的 sing-box 配置。你可以将完整配置文件通过脚本注入到最终配置中。最终配置中。
+                      1.  首先需要新建一个配置，右键点击该配置，选择 **混入和脚本**，弹出的窗口中点击 **脚本操作**。
+                      2.  将以下脚本代码 **复制并粘贴** 到脚本编辑框中，将其中的变量值修改为正确的文件路径或 URL。
                       *   **导入本地文件**:
                         ```javascript
                         const onGenerate = async (config) => {
@@ -436,8 +438,13 @@
                           // 从远程 URL 读取并解析 sing-box 配置
                           // 此方法需要远程订阅或者配置文件支持 sing-box 的原生格式
                           const configFileUrl = 'https://example.com/config.json';
-                          const { body } = await Plugins.HttpGet(configFileUrl, {
-                            'User-Agent': 'sing-box',
+                          const { body } = await Plugins.Requests({
+                              method: 'GET',
+                              url: configFileUrl,
+                              headers: { 
+                                'User-Agent': 'sing-box' 
+                              },
+                              autoTransformBody: false
                           });
                           const _config = JSON.parse(body);
                           // 对配置做出修改

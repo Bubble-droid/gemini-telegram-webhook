@@ -14,13 +14,13 @@
     "start": "node --enable-source-maps --env-file=.env dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --fix",
-    "format": "prettier --write src/",
-    "push:github": "pnpm build:server && git add . && git commit -m 'Update' && git push",
+    "format:src": "prettier --write src/",
+    "push:github": "pnpm run build:server && pnpm run format:src && git add . && git commit -m 'Update' && git push",
     "convert:faq": "tsx workflows/convert_faq_data.ts && prettier --write resources/faq_data.json",
-    "convert:all": "pnpm convert:faq",
-    "kv:put:faq": "pnpm convert:faq && wrangler kv key put 'faq_data' --binding='DURABLE_RESOURCE' --path='resources/faq_data.json' --remote",
+    "convert:all": "pnpm run convert:faq",
+    "kv:put:faq": "pnpm run convert:faq && wrangler kv key put 'faq_data' --binding='DURABLE_RESOURCE' --path='resources/faq_data.json' --remote",
     "kv:put:prompt": "wrangler kv key put 'system_prompt' --binding='DURABLE_RESOURCE' --path='resources/system_prompt.md' --remote",
-    "kv:put:all": "pnpm kv:put:faq && pnpm kv:put:prompt"
+    "kv:put:all": "pnpm run kv:put:faq && pnpm kv:put:prompt"
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",

@@ -33,15 +33,6 @@ class AppError extends Error {
   }
 }
 
-export class ScriptError extends AppError {
-  constructor(
-    public message: string,
-    public code?: string,
-  ) {
-    super(message, code || 'SCRIPT_HANDLE_ERROR');
-  }
-}
-
 /**
  * @class GeminiError
  * @extends AppError

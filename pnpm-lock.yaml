@@ -26,9 +26,6 @@ importers:
       tslog:
         specifier: ^4.10.2
         version: 4.10.2
-      vm2:
-        specifier: ^3.9.19
-        version: 3.9.19
     devDependencies:
       '@eslint/js':
         specifier: ^9.37.0
@@ -905,10 +902,6 @@ packages:
 
   acorn-walk@8.3.2:
     resolution: {integrity: sha512-cjkyv4OtNCIeqhHrfS81QWXoCBPExR/J62oyEqepVw8WaQeSqpW2uhuLPh1m9eWhDuOo/jUXVTlifvesOWp/4A==}
-    engines: {node: '>=0.4.0'}
-
-  acorn-walk@8.3.4:
-    resolution: {integrity: sha512-ueEepnujpqee2o5aIYnvHU6C0A42MNdsIDeqy5BydrkuC5R1ZuUFnm27EeFJGoEHJQgn3uleRvmTXaJgfXbt4g==}
     engines: {node: '>=0.4.0'}
 
   acorn@8.14.0:
@@ -1883,12 +1876,6 @@ packages:
       yaml:
         optional: true
 
-  vm2@3.9.19:
-    resolution: {integrity: sha512-J637XF0DHDMV57R6JyVsTak7nIL8gy5KH4r1HiwWLf/4GBbb5MKL5y7LpmF4A8E2nR6XmzpmMFQ7V7ppPTmUQg==}
-    engines: {node: '>=6.0'}
-    deprecated: The library contains critical security issues and should not be used for production! The maintenance of the project has been discontinued. Consider migrating your code to isolated-vm.
-    hasBin: true
-
   wasm-feature-detect@1.8.0:
     resolution: {integrity: sha512-zksaLKM2fVlnB5jQQDqKXXwYHLQUVH9es+5TOOHwGOVJOCeRBCiPjwSg+3tN2AdTCzjgli4jijCH290kXb/zWQ==}
 
@@ -2578,10 +2565,6 @@ snapshots:
       acorn: 8.15.0
 
   acorn-walk@8.3.2: {}
-
-  acorn-walk@8.3.4:
-    dependencies:
-      acorn: 8.15.0
 
   acorn@8.14.0: {}
 
@@ -3605,11 +3588,6 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.5.1
       tsx: 4.20.6
-
-  vm2@3.9.19:
-    dependencies:
-      acorn: 8.15.0
-      acorn-walk: 8.3.4
 
   wasm-feature-detect@1.8.0: {}
 

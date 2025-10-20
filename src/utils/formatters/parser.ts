@@ -104,23 +104,16 @@ export class Parser {
   };
 
   private parseInlineCode(): AstNode | null {
-    // 使用 `^` 确保匹配从当前位置开始
     const match = /^`([^`]+?)`/.exec(this.text.substring(this.pos));
     if (!match) return null;
-
-    // 关键修复：使用 match[0].length (匹配到的完整字符串长度) 来推进位置，match[1] 作为内容
     this.pos += match[0].length;
     return { type: 'inline_code', content: match[1] };
   }
 
   private parseCodeBlock(): AstNode | null {
-    // 关键修复：使用更健壮的正则表达式，并正确处理捕获组
     const match = /^```(\w*)\n([\s\S]+?)\n```/.exec(this.text.substring(this.pos));
     if (!match) return null;
-
-    // 关键修复：使用 match[0].length 来推进位置
     this.pos += match[0].length;
-    // match[1] 是语言, match[2] 是内容
     return { type: 'code_block', lang: match[1] || undefined, content: match[2] };
   }
 
@@ -148,22 +141,87 @@ export class Parser {
     return { type: 'link', href, children };
   }
 
+  /**
+   * 主引用块解析器，遵循“最具体优先”原则。
+   * 优先尝试解析可展开引用块 (>>)，如果失败，再尝试解析普通引用块 (>).
+   */
   private parseBlockquote(): AstNode | null {
-    const match = /^(>>? .+(?:\n>>? .*)*)/m.exec(this.text.substring(this.pos));
-    if (!match) return null;
+    return this._parseBlockquoteOfType('>>') || this._parseBlockquoteOfType('>');
+  }
 
-    const fullMatchText = match[0];
-    // 关键修复：使用 match[0].length 来推进位置
-    this.pos += fullMatchText.length;
+  /**
+   * [核心重构] 辅助方法，用于解析特定类型的连续多行引用块。
+   * @param marker - 要匹配的标记符 ('>' 或 '>>')。
+   */
+  private _parseBlockquoteOfType(marker: '>' | '>>'): AstNode | null {
+    const startPos = this.pos;
 
-    // 关键修复：在 match[0] (字符串)上调用方法，而不是在 match (数组)上
-    const isExpandable = fullMatchText.startsWith('>>');
-    const innerContent = fullMatchText.replace(/^(>>?)\s?/gm, '');
+    // 1. 严格的行首检查
+    if (startPos > 0 && this.text[startPos - 1] !== '\n') {
+      return null;
+    }
 
+    const isSimpleQuote = marker === '>';
+    const isExpandableQuote = marker === '>>';
+
+    // 2. 区分 '>' 和 '>>' 的严格检查
+    if (isSimpleQuote && this.text.substring(startPos).startsWith('>>')) {
+      // 如果我们正在寻找'>'，但实际上遇到了'>>'，则此解析器应失败，
+      // 以便让更具体的 '>>' 解析器接管。
+      return null;
+    }
+    if (!this.text.substring(startPos).startsWith(marker)) {
+      return null;
+    }
+
+    const lines: string[] = [];
+    let currentPos = startPos;
+
+    // 3. 逐行消耗与合并
+    while (currentPos < this.text.length) {
+      // 检查当前行是否是行首
+      if (currentPos > 0 && this.text[currentPos - 1] !== '\n') {
+        break; // 不是新行的开始，块结束
+      }
+
+      // 再次进行严格检查，确保行标记正确
+      const lineStartsWithDouble = this.text.substring(currentPos).startsWith('>>');
+      if (isExpandableQuote && !lineStartsWithDouble) {
+        break; // 正在寻找'>>'，但当前行不是，块结束
+      }
+      if (isSimpleQuote && lineStartsWithDouble) {
+        break; // 正在寻找'>'，但遇到了'>>'，块结束
+      }
+      if (!this.text.substring(currentPos).startsWith(marker)) {
+        break; // 标记不匹配，块结束
+      }
+
+      // 寻找行尾
+      const endOfLine = this.text.indexOf('\n', currentPos);
+      const lineEndPos = endOfLine === -1 ? this.text.length : endOfLine;
+
+      // 提取内容（移除标记和紧随其后的空格）
+      const contentStartPos = currentPos + marker.length + (this.text[currentPos + marker.length] === ' ' ? 1 : 0);
+      lines.push(this.text.substring(contentStartPos, lineEndPos));
+
+      // 移动到下一行的开头
+      currentPos = lineEndPos + 1;
+    }
+
+    if (lines.length === 0) {
+      this.pos = startPos; // 回溯
+      return null;
+    }
+
+    // 4. 【关键】一次性推进主解析器的位置
+    this.pos = currentPos;
+
+    // 5. 递归解析合并后的内容
+    const innerContent = lines.join('\n');
     const innerParser = new Parser(innerContent);
     const children = innerParser.parse().children || [];
 
-    return { type: 'blockquote', expandable: isExpandable, children };
+    return { type: 'blockquote', expandable: isExpandableQuote, children };
   }
 
   private parseText(endCondition: (pos: number) => boolean): AstNode | null {

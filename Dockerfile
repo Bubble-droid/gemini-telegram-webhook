@@ -3,7 +3,7 @@ FROM node:current-bookworm-slim AS build
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
-RUN corepack disable && npm install -g pnpm@latest
+RUN npm install -g pnpm@latest
 
 WORKDIR /app
 COPY . /app

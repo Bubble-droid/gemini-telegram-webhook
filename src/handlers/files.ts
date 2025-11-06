@@ -100,9 +100,9 @@ const getTelegramFileUrl = async (fileId: string, botToken: string): Promise<str
  * @param {string} url - 要下载的文件的 URL
  * @returns {Promise<ArrayBuffer>} 解析为已下载 Blob 的 Promise
  */
-const downloadFileAsArrayBuffer = async (url: string): Promise<ArrayBuffer> => {
+export const downloadFileAsArrayBuffer = async (url: string): Promise<{ data: ArrayBuffer; fileName: string; mimeType: string }> => {
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, { method: 'GET', redirect: 'follow' });
     if (!response.ok) {
       throw new AppError(`文件下载失败: ${response.statusText} (${response.status})`);
     }
@@ -112,12 +112,36 @@ const downloadFileAsArrayBuffer = async (url: string): Promise<ArrayBuffer> => {
       fileSizeInBytes >= 1024 * 1024 ? `${(fileSizeInBytes / (1024 * 1024)).toFixed(2)} MB` : `${(fileSizeInBytes / 1024).toFixed(2)} KB`;
 
     Log.info(`文件下载成功. 大小: ${displaySize}`);
-    return arrayBuffer;
+    const mimeType = response.headers.get('content-type') || 'application/octet-stream';
+    let fileName = 'downloaded-file';
+    const contentDisposition = response.headers.get('content-disposition');
+    if (contentDisposition) {
+      const extractedFileName = getFileName(contentDisposition);
+      if (extractedFileName) fileName = extractedFileName;
+    } else {
+      const urlPath = new URL(url).pathname;
+      const lastPart = urlPath.split('/').pop();
+      if (lastPart) fileName = lastPart;
+    }
+    return { data: arrayBuffer, fileName, mimeType };
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     Log.error(`从 ${url} 下载文件时出错:`);
     throw new AppError(errorMessage, 'FILE_DOWNLOAD_ERROR');
   }
+};
+
+const getFileName = (contentDisposition: string): string | null => {
+  if (!contentDisposition) {
+    return null;
+  }
+  const regex = /filename="([^"]+)"|filename=([^;]+)/;
+  const match = contentDisposition.match(regex);
+  if (!match) {
+    return null;
+  }
+  const filename = match[1] || match[2];
+  return filename ? filename.trim() : null;
 };
 
 /**
@@ -130,7 +154,7 @@ const downloadFileAsArrayBuffer = async (url: string): Promise<ArrayBuffer> => {
 const downloadAndEncodeFile = async (fileId: string, botToken: string, mimeType: string): Promise<Blob> => {
   const fileUrl = await getTelegramFileUrl(fileId, botToken);
   const arrayBuffer = await downloadFileAsArrayBuffer(fileUrl);
-  const base64Data = Buffer.from(arrayBuffer).toString('base64');
+  const base64Data = Buffer.from(arrayBuffer.data).toString('base64');
   return { data: base64Data, mimeType };
 };
 

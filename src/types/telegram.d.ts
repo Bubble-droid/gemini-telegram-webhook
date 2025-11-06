@@ -218,7 +218,7 @@ export interface Voice {
   file_size?: number;
 }
 
-export interface File {
+export interface TFile {
   file_id: string;
   file_unique_id: string;
   file_size?: number;
@@ -384,7 +384,7 @@ export type SendMessageResult = Message;
 
 export interface SendPhotoParams {
   chat_id: number | string;
-  photo: Buffer;
+  photo: File;
   caption?: string;
   parse_mode?: ParseMode;
   caption_entities?: MessageEntity[];
@@ -399,7 +399,7 @@ export type SendPhotoResult = Message;
 
 export interface SendVoiceParams {
   chat_id: number | string;
-  voice: Buffer;
+  voice: File;
   caption?: string;
   parse_mode?: ParseMode;
   caption_entities?: MessageEntity[];
@@ -410,6 +410,20 @@ export interface SendVoiceParams {
 }
 
 export type SendVoiceResult = Message;
+
+export interface SendDocumentParams {
+  chat_id: number | string;
+  document: File;
+  caption?: string;
+  parse_mode?: ParseMode;
+  caption_entities?: MessageEntity[];
+  disable_content_type_detection?: boolean;
+  protect_content?: boolean;
+  reply_parameters?: ReplyParameters;
+  reply_markup?: string;
+}
+
+export type SendDocumentResult = Message;
 
 // 基本字段
 type EditMessageTextParamsBase = {
@@ -504,7 +518,7 @@ export interface GetFileParams {
   file_id: string;
 }
 
-export type GetFileResult = File;
+export type GetFileResult = TFile;
 
 export interface GetChatMemberParams {
   chat_id: number | string;
@@ -586,6 +600,7 @@ export type ApiMethod =
   | 'sendMessage'
   | 'sendPhoto'
   | 'sendVoice'
+  | 'sendDocument'
   | 'editMessageText'
   | 'editMessageReplyMarkup'
   | 'deleteMessage'

@@ -166,7 +166,7 @@ export class TelegramBot {
    */
   public async sendPhoto(
     chatId: number | string,
-    photoBuffer: Buffer,
+    photoFile: File,
     options?: {
       caption?: string;
       replyToMessageId?: number;
@@ -176,7 +176,7 @@ export class TelegramBot {
     const shorten = `<blockquote expandable>${escaper.html(shortenString(String(options?.caption)))}</blockquote>`;
     const payload: Bot.SendPhotoParams = {
       chat_id: chatId,
-      photo: photoBuffer,
+      photo: photoFile,
       caption: shorten,
       parse_mode: 'HTML',
       show_caption_above_media: true,
@@ -188,10 +188,9 @@ export class TelegramBot {
         : undefined,
       reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : undefined,
     };
-    const photoBlob = new Blob([payload.photo], { type: 'image/png' });
     const formData = new FormData();
     formData.append('chat_id', payload.chat_id);
-    formData.append('photo', photoBlob, `gemini_gen_img.png`);
+    formData.append('photo', payload.photo);
     formData.append('caption', payload.caption);
     formData.append('parse_mode', payload.parse_mode);
     formData.append('show_caption_above_media', String(payload.show_caption_above_media));
@@ -223,7 +222,7 @@ export class TelegramBot {
 
   public async sendVoice(
     chatId: number | string,
-    voiceBuffer: Buffer,
+    voiceFile: File,
     options?: {
       caption?: string;
       replyToMessageId?: number;
@@ -232,7 +231,7 @@ export class TelegramBot {
   ): Promise<{ ok: true; messageId: number } | { ok: false; error: string }> {
     const payload: Bot.SendVoiceParams = {
       chat_id: chatId,
-      voice: voiceBuffer,
+      voice: voiceFile,
       caption: options?.caption,
       reply_parameters: options?.replyToMessageId
         ? {
@@ -242,10 +241,9 @@ export class TelegramBot {
         : undefined,
       reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : undefined,
     };
-    const voiceBlob = new Blob([payload.voice], { type: 'audio/mpeg' });
     const formData = new FormData();
     formData.append('chat_id', payload.chat_id);
-    formData.append('voice', voiceBlob, `gemini_gen_voice.mp3`);
+    formData.append('voice', payload.voice);
     if (payload.caption) formData.append('caption', payload.caption);
     formData.append('reply_parameters', JSON.stringify(payload.reply_parameters));
     formData.append('reply_markup', payload.reply_markup);
@@ -262,6 +260,59 @@ export class TelegramBot {
     } catch (error: unknown) {
       const errorMessage = error instanceof TelegramError ? error.message : String(error);
       Log.error('Error sending Telegram voice message', {
+        err: errorMessage,
+        chatId,
+      });
+      return {
+        ok: false,
+        error: errorMessage,
+      };
+    }
+  }
+
+  public async sendDocument(
+    chatId: number | string,
+    documentFile: File,
+    options?: {
+      caption?: string;
+      replyToMessageId?: number;
+      replyMarkup?: Bot.ReplyMarkup;
+    },
+  ): Promise<{ ok: true; messageId: number } | { ok: false; error: string }> {
+    const payload: Bot.SendDocumentParams = {
+      chat_id: chatId,
+      document: documentFile,
+      caption: options?.caption,
+      parse_mode: 'HTML',
+      reply_parameters: options?.replyToMessageId
+        ? {
+            message_id: options.replyToMessageId,
+            allow_sending_without_reply: true,
+          }
+        : undefined,
+      reply_markup: options?.replyMarkup ? JSON.stringify(options.replyMarkup) : undefined,
+    };
+    const formData = new FormData();
+    formData.append('chat_id', payload.chat_id);
+    formData.append('document', payload.document);
+    if (payload.caption) formData.append('caption', payload.caption);
+    formData.append('parse_mode', payload.parse_mode);
+    formData.append('reply_parameters', JSON.stringify(payload.reply_parameters));
+    if (payload.reply_markup) formData.append('reply_markup', payload.reply_markup);
+
+    try {
+      const result = await this.sendRequest<FormData, Bot.SendDocumentResult>('POST', 'sendDocument', formData, true);
+      Log.info('Telegram document message sent successfully.', {
+        chatId,
+        messageId: result.message_id,
+      });
+      return {
+        ok: true,
+        messageId: result.message_id,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof TelegramError ? error.message : String(error);
+      Log.error('Error sending Telegram document message', {
         err: errorMessage,
         chatId,
       });
@@ -433,9 +484,9 @@ export class TelegramBot {
   /**
    * 获取文件信息，包括文件路径。
    * @param {string} fileId - 文件的唯一 ID。
-   * @returns {Promise<{ ok: true; data: Bot.File } | { ok: false; error: string }>} 文件信息对象，如果获取失败则返回 `undefined`。
+   * @returns {Promise<{ ok: true; data: Bot.TFile} | { ok: false; error: string }>} 文件信息对象，如果获取失败则返回 `undefined`。
    */
-  public async getFile(fileId: string): Promise<{ ok: true; data: Bot.File } | { ok: false; error: string }> {
+  public async getFile(fileId: string): Promise<{ ok: true; data: Bot.TFile } | { ok: false; error: string }> {
     Log.info(`Getting file info for file_id: ${fileId}`);
     try {
       const result = await this.sendRequest<Bot.GetFileParams, Bot.GetFileResult>('POST', 'getFile', {

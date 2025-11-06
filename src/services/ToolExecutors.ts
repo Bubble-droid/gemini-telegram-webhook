@@ -1,5 +1,6 @@
 // src/configs/tool_executors.ts
 
+import { downloadFileAsArrayBuffer } from '@/handlers';
 import {
   GeminiError,
   Log,
@@ -27,8 +28,9 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
   searchFilesInRepo: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.SearchFilesInRepoResult>> => {
     Log.info('执行工具: searchFilesInRepo, 参数:', { args });
     const { keyword, owner, repo, branch = 'main' } = args;
-    const urlPath: string = `search/code`;
-    const queryParams: string = `q=${encodeURIComponent(keyword)}+repo:${owner}/${repo}+in:file`;
+    const urlPath: string = `/search/code`;
+    const qValue = `${keyword} repo:${owner}/${repo} in:file,path`;
+    const queryParams = new URLSearchParams({ q: qValue, per_page: '100' });
     const result = await makeGitHubApiRequest<Github.GitHubSearchResult<Github.GitHubCodeSearchItem>>({
       method: 'GET',
       urlPath,
@@ -53,8 +55,9 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
   searchCommitsInRepo: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.SearchCommitsInRepoResult>> => {
     Log.info('执行工具: searchCommitsInRepo, 参数:', { args });
     const { keyword, owner, repo } = args;
-    const urlPath: string = `search/commits`;
-    const queryParams: string = `q=${encodeURIComponent(keyword)}+repo:${owner}/${repo}`;
+    const urlPath: string = `/search/commits`;
+    const qValue = `${keyword} repo:${owner}/${repo}`;
+    const queryParams = new URLSearchParams({ q: qValue, per_page: '100' });
     const result = await makeGitHubApiRequest<Github.GitHubSearchResult<Github.GitHubCommitSearchItem>>({
       method: 'GET',
       urlPath,
@@ -85,9 +88,10 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
    */
   searchIssuesInRepo: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.SearchIssuesInRepoResult>> => {
     Log.info('执行工具: searchIssuesInRepo, 参数:', { args });
-    const { keyword, owner, repo, state = 'open' } = args;
-    const urlPath = `search/issues`;
-    const queryParams = `q=${encodeURIComponent(keyword)}+repo:${owner}/${repo}+state:${state}+is:issue`;
+    const { keyword, owner, repo, type = 'issue', state = 'open' } = args;
+    const urlPath = `/search/issues`;
+    const qValue = `${keyword} repo:${owner}/${repo} type:${type} state:${state}`;
+    const queryParams = new URLSearchParams({ q: qValue, per_page: '100' });
     const result = await makeGitHubApiRequest<Github.GitHubSearchResult<Github.GitHubIssueSearchItem>>({
       method: 'GET',
       urlPath,
@@ -123,9 +127,10 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
    */
   searchReposInGlobal: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.SearchReposInGlobalResult>> => {
     Log.info('执行工具: searchReposInGlobal, 参数:', { args });
-    const { keyword, qualifier } = args;
-    const urlPath: string = `search/repositories`;
-    const queryParams: string = `q=${encodeURIComponent(keyword)}+in:${qualifier}`;
+    const { keyword, qualifier = 'name,description,readme' } = args;
+    const urlPath: string = `/search/repositories`;
+    const qValue = `${keyword} in:${qualifier}`;
+    const queryParams = new URLSearchParams({ q: qValue, per_page: '100' });
     const result = await makeGitHubApiRequest<Github.GitHubSearchResult<Github.GitHubRepository>>({
       method: 'GET',
       urlPath,
@@ -165,8 +170,9 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
   searchIssuesInGlobal: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.SearchIssuesInGlobalResult>> => {
     Log.info('执行工具: searchIssuesInGlobal, 参数:', { args });
     const { keyword, state = 'open' } = args;
-    const urlPath = `search/issues`;
-    const queryParams = `q=${encodeURIComponent(keyword)}+state:${state}+is:issue`;
+    const urlPath = `/search/issues`;
+    const qValue = `${keyword} type:issue state:${state}`;
+    const queryParams = new URLSearchParams({ q: qValue, per_page: '100' });
     const result = await makeGitHubApiRequest<Github.GitHubSearchResult<Github.GitHubIssueSearchItem>>({
       method: 'GET',
       urlPath,
@@ -202,7 +208,7 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
   listRepoTree: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.ListRepoTreeResult>> => {
     Log.info('执行工具: listRepoTree, 参数:', { args });
     const { owner, repo, branch = 'main' } = args;
-    const branchUrlPath = `repos/${owner}/${repo}/branches/${branch}`;
+    const branchUrlPath = `/repos/${owner}/${repo}/branches/${branch}`;
     const branchResult = await makeGitHubApiRequest<Github.GitHubBranch>({
       method: 'GET',
       urlPath: branchUrlPath,
@@ -212,8 +218,8 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
     }
     const treeSha = branchResult.data.commit.sha;
     Log.info(`获取到分支 ${branch} 的 tree SHA: ${treeSha}`);
-    const treeUrlPath = `repos/${owner}/${repo}/git/trees/${treeSha}`;
-    const queryParams = `recursive=1`;
+    const treeUrlPath = `/repos/${owner}/${repo}/git/trees/${treeSha}`;
+    const queryParams = new URLSearchParams({ recursive: 'true' });
     const treeResult = await makeGitHubApiRequest<Github.GitHubTreeResponse>({
       method: 'GET',
       urlPath: treeUrlPath,
@@ -248,8 +254,8 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
 
     // 确保 path 不以斜杠开头，如果 path 为空则不需要处理
     const cleanedPath = path.startsWith('/') ? path.substring(1) : path;
-    const urlPath = `repos/${owner}/${repo}/contents/${cleanedPath}`;
-    const queryParams = `ref=${branch}`;
+    const urlPath = `/repos/${owner}/${repo}/contents/${cleanedPath}`;
+    const queryParams = new URLSearchParams({ ref: branch });
     const result = await makeGitHubApiRequest<Array<Github.GitHubContentItem>>({
       method: 'GET',
       urlPath,
@@ -277,9 +283,9 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
    */
   listRepoCommits: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.ListRepoCommitsResult>> => {
     Log.info('执行工具: listRepoCommits, 参数:', { args });
-    const { owner, repo, per_page = 20, page = 1 } = args;
-    const urlPath = `repos/${owner}/${repo}/commits`;
-    const queryParams = `per_page=${per_page}&page=${page}`;
+    const { owner, repo, per_page = 20 } = args;
+    const urlPath = `/repos/${owner}/${repo}/commits`;
+    const queryParams = new URLSearchParams({ per_page: String(per_page) });
     const result = await makeGitHubApiRequest<Array<Github.GitHubCommitDetails>>({
       method: 'GET',
       urlPath,
@@ -309,9 +315,9 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
    */
   listRepoReleases: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.ListRepoReleasesResult>> => {
     Log.info('执行工具: listRepoReleases, 参数:', { args });
-    const { owner, repo, per_page = 10, page = 1 } = args;
-    const urlPath = `repos/${owner}/${repo}/releases`;
-    const queryParams = `per_page=${per_page}&page=${page}`;
+    const { owner, repo, per_page = 10 } = args;
+    const urlPath = `/repos/${owner}/${repo}/releases`;
+    const queryParams = new URLSearchParams({ per_page: String(per_page) });
     const result = await makeGitHubApiRequest<Array<Github.GitHubRelease>>({
       method: 'GET',
       urlPath,
@@ -347,8 +353,9 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
   listRepoBranches: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.ListRepoBranchesResult>> => {
     Log.info('执行工具: listRepoBranches, 参数:', { args });
     const { owner, repo } = args;
-    const urlPath: string = `repos/${owner}/${repo}/branches`;
-    const result = await makeGitHubApiRequest<Array<Github.GitHubBranch>>({ method: 'GET', urlPath });
+    const urlPath: string = `/repos/${owner}/${repo}/branches`;
+    const queryParams = new URLSearchParams({ per_page: '100' });
+    const result = await makeGitHubApiRequest<Array<Github.GitHubBranch>>({ method: 'GET', urlPath, queryParams });
     if (result.success) {
       const branches: Tool.ListRepoBranchesResult['branches'] = result.data.map((item) => ({
         name: item.name,
@@ -433,8 +440,9 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
   getCommitDetails: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.GetCommitDetailsResult>> => {
     Log.info('执行工具: getCommitDetails, 参数:', { args });
     const { owner, repo, commit_sha } = args;
-    const urlPath = `repos/${owner}/${repo}/commits/${commit_sha}`;
-    const result = await makeGitHubApiRequest<Github.GitHubCommitDetails>({ method: 'GET', urlPath });
+    const urlPath = `/repos/${owner}/${repo}/commits/${commit_sha}`;
+    const queryParams = new URLSearchParams({ per_page: '100' });
+    const result = await makeGitHubApiRequest<Github.GitHubCommitDetails>({ method: 'GET', urlPath, queryParams });
     if (result.success) {
       const data = result.data;
       const commitDetails: Tool.GetCommitDetailsResult['commitDetails'] = {
@@ -474,10 +482,12 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
   getIssueComments: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.GetIssueCommentsResult>> => {
     Log.info('执行工具: getIssueComments, 参数:', { args });
     const { owner, repo, issue_number } = args;
-    const urlPath = `repos/${owner}/${repo}/issues/${issue_number}/comments`;
+    const urlPath = `/repos/${owner}/${repo}/issues/${issue_number}/comments`;
+    const queryParams = new URLSearchParams({ per_page: '100' });
     const result = await makeGitHubApiRequest<Array<Github.GitHubIssueComment>>({
       method: 'GET',
       urlPath,
+      queryParams,
     });
     if (result.success) {
       const comments: Tool.GetIssueCommentsResult['comments'] = result.data.map((item) => ({
@@ -504,8 +514,8 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
    */
   getReleaseDetails: async (args: Tool.ToolExecArgs): Promise<Tool.ToolExecResponse<Tool.GetReleaseDetailsResult>> => {
     Log.info('执行工具: getReleaseDetails, 参数:', { args });
-    const { owner, repo, release_id, tag_name } = args;
-    const urlPath = `repos/${owner}/${repo}/releases/${release_id ? release_id : `tags/${tag_name}`}`;
+    const { owner, repo, release_id } = args;
+    const urlPath = `/repos/${owner}/${repo}/releases/${release_id}`;
     const releaseResult = await makeGitHubApiRequest<Github.GitHubRelease>({
       method: 'GET',
       urlPath,
@@ -534,7 +544,7 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
         updated_at: asset.updated_at,
       })),
     };
-    Log.info(`getReleaseDetails 工具执行完毕，获取到发布版本 ${release_id || tag_name} 的详细信息。`);
+    Log.info(`getReleaseDetails 工具执行完毕，获取到发布版本 ${release_id} 的详细信息。`);
     return { success: true, data: { releaseDetails } };
   },
 
@@ -549,6 +559,25 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
     const currentTime = formatTime(Date.now());
     Log.info('getCurrentTime 工具执行完毕，当前时间:', { currentTime });
     return { success: true, data: { currentTime } };
+  },
+
+  getFileAndUpload: async (args) => {
+    Log.info('执行工具: getFileAndUpload，参数:', { args });
+    const { chatId, userMessageId, fileUrl } = args;
+    try {
+      const buffer = await downloadFileAsArrayBuffer(fileUrl);
+      const blob = new Blob([buffer.data], { type: buffer.mimeType });
+      const downloadFile = new File([blob], buffer.fileName, { type: buffer.mimeType, lastModified: Date.now() });
+      const result = await bot.sendDocument(chatId, downloadFile, { replyToMessageId: userMessageId });
+      if (!result.ok) {
+        return { success: false, error: `Error replying document message, ${result.error}` };
+      }
+      scheduleDeletion(chatId, result.messageId, 24 * 60 * 60 * 1000);
+      return { success: true, data: 'File download and reply message successfully.' };
+    } catch (err: unknown) {
+      const errorMessage = err instanceof GeminiError ? err.message : String(err);
+      return { success: false, error: errorMessage };
+    }
   },
 
   generateImage: async (args) => {
@@ -573,7 +602,8 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
       const replyMarkup: ReplyMarkup = {
         inline_keyboard: makeInlineKeyboard(userId),
       };
-      const result = await bot.sendPhoto(chatId, imageBuffer, { caption: resTexts, replyToMessageId: userMessageId, replyMarkup });
+      const imageFile = new File([imageBuffer], `gemini-gen-img.png`, { type: 'image/png', lastModified: Date.now() });
+      const result = await bot.sendPhoto(chatId, imageFile, { caption: resTexts, replyToMessageId: userMessageId, replyMarkup });
       if (!result.ok) {
         return { success: false, error: `Error replying image message, ${result.error}` };
       }
@@ -610,7 +640,8 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
       const replyMarkup: ReplyMarkup = {
         inline_keyboard: makeInlineKeyboard(userId),
       };
-      const result = await bot.sendVoice(chatId, mp3AudioBuffer, { replyToMessageId: userMessageId, replyMarkup });
+      const voiceFile = new File([mp3AudioBuffer], `gemini-gen-voice.mp3`, { type: 'audio/mpeg', lastModified: Date.now() });
+      const result = await bot.sendVoice(chatId, voiceFile, { replyToMessageId: userMessageId, replyMarkup });
       if (!result.ok) {
         return { success: false, error: `Error replying speech message, ${result.error}` };
       }

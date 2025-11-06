@@ -9,6 +9,8 @@ tree_and_files.md
 
 resources/_gemini_api_keys.json
 
+workflows/test.ts
+
 # Logs
 logs
 *.log

@@ -6,7 +6,7 @@ import { Type, Behavior } from '@google/genai';
 const functionForSearch: FunctionDeclaration[] = [
   {
     name: 'searchFilesInRepo',
-    description: '根据关键词在指定的 GitHub 仓库、分支和特定路径下搜索文件内容，以获取相关文件路径。',
+    description: '根据关键词在指定的 GitHub 仓库搜索文件，以获取相关文件路径。',
     behavior: Behavior.BLOCKING,
     parameters: {
       type: Type.OBJECT,
@@ -14,7 +14,7 @@ const functionForSearch: FunctionDeclaration[] = [
       properties: {
         keyword: {
           type: Type.STRING,
-          description: '用于搜索文件内容的关键词，多个关键词请用 AND 或 OR 分隔，例如 "路由 AND 拦截"。',
+          description: '用于搜索文件内容的关键词，多个关键词请用 AND 或 OR 分隔，例如 "route AND reject"。',
         },
         owner: {
           type: Type.STRING,
@@ -42,7 +42,7 @@ const functionForSearch: FunctionDeclaration[] = [
       properties: {
         keyword: {
           type: Type.STRING,
-          description: '用于搜索提交消息内容的关键词，多个关键词请用 AND 或 OR 分隔，例如 "fix AND bug"。',
+          description: '用于搜索提交消息内容的关键词。',
         },
         owner: {
           type: Type.STRING,
@@ -58,7 +58,7 @@ const functionForSearch: FunctionDeclaration[] = [
   },
   {
     name: 'searchIssuesInRepo',
-    description: '根据关键词在指定的 GitHub 仓库内搜索 Issue，并可根据状态返回匹配的 Issue 列表。',
+    description: '根据关键词在指定的 GitHub 仓库内搜索 Issue 或 Pull Request，并可根据状态返回匹配的 Issue 列表。',
     behavior: Behavior.BLOCKING,
     parameters: {
       type: Type.OBJECT,
@@ -66,7 +66,7 @@ const functionForSearch: FunctionDeclaration[] = [
       properties: {
         keyword: {
           type: Type.STRING,
-          description: '用于搜索 Issue 内容和标题的关键词，多个关键词请用 AND 或 OR 分隔，例如 "tun AND error"。',
+          description: '用于搜索 Issue 内容和标题的关键词。',
         },
         owner: {
           type: Type.STRING,
@@ -76,14 +76,20 @@ const functionForSearch: FunctionDeclaration[] = [
           type: Type.STRING,
           description: 'GitHub 仓库名称，例如 "sing-box"。',
         },
+        type: {
+          type: Type.STRING,
+          description: 'Issue 或 Pull Request 的类型，可以是 "issue" 或 "pr"，默认为 "issue"。',
+          default: 'issue',
+          enum: ['issue', 'pr'],
+        },
         state: {
           type: Type.STRING,
-          description: 'Issue 的状态，可以是 "open"（开放）、"closed"（关闭），默认为 "open"。',
+          description: 'Issue 的状态，可以是 "open"、"closed"，默认为 "open"。',
           default: 'open',
           enum: ['open', 'closed'],
         },
       },
-      required: ['keyword', 'owner', 'repo'],
+      required: ['keyword', 'owner', 'repo', 'type'],
     },
   },
   {
@@ -102,7 +108,7 @@ const functionForSearch: FunctionDeclaration[] = [
           type: Type.STRING,
           description:
             '搜索范围，可以是 "name"（仓库名称）、"description"（仓库描述）、"readme"（README 文件内容）。多个值用逗号分隔，例如 "name,description"。',
-          default: 'name,description',
+          default: 'name,description,readme',
           enum: ['name', 'description', 'readme'],
         },
       },
@@ -119,11 +125,11 @@ const functionForSearch: FunctionDeclaration[] = [
       properties: {
         keyword: {
           type: Type.STRING,
-          description: '用于搜索 Issue 内容和标题的关键词，多个关键词请用 AND 或 OR 分隔，例如 "gvisor AND performance"。',
+          description: '用于搜索 Issue 内容和标题的关键词。',
         },
         state: {
           type: Type.STRING,
-          description: 'Issue 的状态，可以是 "open"（开放）、"closed"（关闭），默认为 "open"。',
+          description: 'Issue 的状态，可以是 "open"、"closed"，默认为 "open"。',
           default: 'open',
           enum: ['open', 'closed'],
         },
@@ -155,7 +161,7 @@ const functionForList: FunctionDeclaration[] = [
           description: '要查询的仓库分支，默认为仓库默认分支（如 main 或 master）。',
         },
       },
-      required: ['owner', 'repo'],
+      required: ['owner', 'repo', 'branch'],
     },
   },
   {
@@ -210,14 +216,8 @@ const functionForList: FunctionDeclaration[] = [
           minimum: 1,
           maximum: 100,
         },
-        page: {
-          type: Type.NUMBER,
-          description: '页码，默认为 1。',
-          default: 1,
-          minimum: 1,
-        },
       },
-      required: ['owner', 'repo'],
+      required: ['owner', 'repo', 'per_page'],
     },
   },
   {
@@ -243,14 +243,8 @@ const functionForList: FunctionDeclaration[] = [
           minimum: 1,
           maximum: 100,
         },
-        page: {
-          type: Type.NUMBER,
-          description: '页码，默认为 1。',
-          default: 1,
-          minimum: 1,
-        },
       },
-      required: ['owner', 'repo'],
+      required: ['owner', 'repo', 'per_page'],
     },
   },
   {
@@ -365,23 +359,32 @@ const functionForGet: FunctionDeclaration[] = [
         },
         release_id: {
           type: Type.NUMBER,
-          description: '发布版本的 ID，例如 227541695。如果提供，将优先使用此 ID。',
-          nullable: true,
-        },
-        tag_name: {
-          type: Type.STRING,
-          description: '发布版本的标签名称，例如 "rolling-release-alpha"。如果未提供 release_id 或其查询失败，将尝试使用此标签名称。',
-
-          nullable: true,
+          description: '发布版本的 ID，例如 227541695。',
         },
       },
-      required: ['owner', 'repo'],
+      required: ['owner', 'repo', 'release_id'],
     },
   },
   {
     name: 'getCurrentTime',
     description: '获取当前 UTC+8 时间并格式化字符串。',
     behavior: Behavior.BLOCKING,
+  },
+  {
+    name: 'getFileAndUpload',
+    description: '从指定链接下载文件并上传给用户。',
+    behavior: Behavior.BLOCKING,
+    parameters: {
+      type: Type.OBJECT,
+      title: 'Get File And Upload Parameters',
+      properties: {
+        fileUrl: {
+          type: Type.STRING,
+          description: '文件下载链接',
+        },
+      },
+      required: ['fileUrl'],
+    },
   },
 ];
 

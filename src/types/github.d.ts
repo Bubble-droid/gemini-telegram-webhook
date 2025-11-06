@@ -1,9 +1,11 @@
 // src/types/github.d.ts
 
+import type { HttpMethod } from '@/types';
+
 export interface ApiRequestOptions {
   method: HttpMethod;
   urlPath: string;
-  queryParams?: string;
+  queryParams?: URLSearchParams;
 }
 
 /**

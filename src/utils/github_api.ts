@@ -11,7 +11,9 @@ import { config, Log } from '@/services';
 const makeGitHubApiRequest = async <T>(options: Github.ApiRequestOptions): Promise<Github.ApiResponse<T>> => {
   const { githubToken } = config.load();
   const { method, urlPath, queryParams } = options;
-  const apiUrl: string = `https://api.github.com/${urlPath}${queryParams ? `?${queryParams}` : ''}`;
+  const apiUrl = new URL('https://api.github.com');
+  apiUrl.pathname = urlPath;
+  if (queryParams) apiUrl.search = queryParams.toString();
   Log.info(`尝试通过 GitHub API 请求: ${apiUrl}`);
   try {
     const response = await fetch(apiUrl, {
@@ -21,6 +23,7 @@ const makeGitHubApiRequest = async <T>(options: Github.ApiRequestOptions): Promi
         Authorization: `Bearer ${githubToken}`,
         'User-Agent': 'Gemini-Telegram-Bot', // GitHub API 要求 User-Agent
       },
+      redirect: 'follow',
     });
     if (!response.ok) {
       const errorText = await response.text();
@@ -51,7 +54,8 @@ const makeGitHubApiRequest = async <T>(options: Github.ApiRequestOptions): Promi
 const makeRawFileRequest = async (rawPath: string): Promise<Github.ApiResponse<string>> => {
   Log.info(`尝试获取原始文件内容: ${rawPath}`);
   const { githubToken } = config.load();
-  const rawUrl = `https://raw.githubusercontent.com/${rawPath}`;
+  const rawUrl = new URL(`https://raw.githubusercontent.com`);
+  rawUrl.pathname = `/${rawPath}`;
   try {
     const response = await fetch(rawUrl, {
       method: 'GET',
@@ -59,6 +63,7 @@ const makeRawFileRequest = async (rawPath: string): Promise<Github.ApiResponse<s
         Authorization: `Bearer ${githubToken}`,
         'User-Agent': 'Gemini-Telegram-Bot',
       },
+      redirect: 'follow',
     });
 
     if (!response.ok) {

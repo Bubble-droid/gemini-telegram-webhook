@@ -1,24 +1,16 @@
 {
+  "$schema": "https://v6.gh-proxy.com/https://github.com/jiang-zhexin/typebox/releases/latest/download/schema.json",
   "log": {
     "level": "error",
     "timestamp": true
   },
   "dns": {
     "servers": [
-      {
-        "tag": "dns-google",
-        "type": "https",
-        "server": "dns.google",
-        "server_port": 443,
-        "path": "/dns-query",
-        "domain_resolver": "dns-hosts"
-      },
+      { "type": "local", "tag": "dns-local" },
       {
         "tag": "dns-cloudflare",
         "type": "https",
-        "server": "one.one.one.one",
-        "server_port": 443,
-        "path": "/dns-query",
+        "server": "cloudflare-dns.com",
         "detour": "Proxy",
         "domain_resolver": "dns-hosts"
       },
@@ -26,22 +18,18 @@
         "tag": "dns-hosts",
         "type": "hosts",
         "predefined": {
-          "dns.google": ["8.8.4.4", "8.8.8.8"],
-          "one.one.one.one": ["1.0.0.1", "1.1.1.1"]
+          "cloudflare-dns.com": ["104.16.248.249", "104.16.249.249"]
         }
       }
     ],
     "rules": [
       {
-        "query_type": "HTTPS",
-        "action": "reject"
+        "query_type": [64, 65],
+        "action": "predefined",
+        "rcode": "NOTIMP"
       },
-      {
-        "action": "route",
-        "server": "dns-cloudflare"
-      }
+      { "action": "route", "server": "dns-cloudflare" }
     ],
-    "final": "dns-cloudflare",
     "strategy": "prefer_ipv6",
     "independent_cache": true
   },
@@ -50,6 +38,7 @@
       "type": "wireguard",
       "tag": "WARP-1",
       "address": ["172.16.0.2/32", "2606:4700:110:8dc5:553b:6747:e0b3:cbe4/128"],
+      "listen_port": 20003,
       "private_key": "EMCsxRS1HQUiPfoEj/Agj/NA24FDeXcEl3WPyTKW4EM=",
       "peers": [
         {
@@ -65,6 +54,7 @@
       "type": "wireguard",
       "tag": "WARP-2",
       "address": ["172.16.0.2/32", "2606:4700:110:8114:b8cf:70a9:e5ca:b603/128"],
+      "listen_port": 20004,
       "private_key": "OKrBqGEV9BxQY3Z7SsMod8BCKDt+87X1T68KX0U9KV0=",
       "peers": [
         {
@@ -80,6 +70,7 @@
       "type": "wireguard",
       "tag": "WARP-3",
       "address": ["172.16.0.2/32", "2606:4700:110:80ab:fff8:3aa0:24e5:ac66/128"],
+      "listen_port": 20005,
       "private_key": "uEoctg+RAQu/UhI0KIrER/++USOY9QMgHYmuzp3IVHE=",
       "peers": [
         {
@@ -95,6 +86,7 @@
       "type": "wireguard",
       "tag": "WARP-4",
       "address": ["172.16.0.2/32", "2606:4700:110:86f4:1f04:37f8:8300:da24/128"],
+      "listen_port": 20006,
       "private_key": "cLmkOD/SqF+AuRXMfISTzecX34Je0TtOPwaFpeWKi0w=",
       "peers": [
         {
@@ -108,12 +100,6 @@
     }
   ],
   "inbounds": [
-    {
-      "type": "direct",
-      "tag": "dns-in",
-      "listen": "127.0.0.1",
-      "listen_port": 53
-    },
     {
       "type": "mixed",
       "tag": "mixed-in",
@@ -135,9 +121,9 @@
     {
       "type": "urltest",
       "tag": "Auto-WARP",
-      "url": "https://cp.cloudflare.com/generate_204",
+      "url": "https://cp.cloudflare.com",
       "interval": "3m",
-      "tolerance": 50,
+      "tolerance": 30,
       "interrupt_exist_connections": true,
       "outbounds": ["WARP-1", "WARP-2", "WARP-3", "WARP-4"]
     }
@@ -145,36 +131,21 @@
   "route": {
     "rules": [
       {
-        "action": "resolve",
-        "strategy": "prefer_ipv6"
-      },
-      {
         "action": "sniff",
-        "sniffer": ["http", "tls", "quic", "dns"]
+        "sniffer": ["http", "tls", "quic"]
       },
       {
-        "type": "logical",
-        "mode": "or",
-        "rules": [
-          {
-            "port": 53
-          },
-          {
-            "protocol": "dns"
-          }
-        ],
-        "action": "hijack-dns"
+        "action": "resolve"
       },
       {
         "action": "route",
         "outbound": "Proxy"
       }
     ],
-    "final": "Proxy",
+    "auto_detect_interface": true,
     "default_domain_resolver": {
-      "server": "dns-google",
-      "strategy": "prefer_ipv6",
-      "disable_cache": true
+      "server": "dns-local",
+      "strategy": "ipv4_only"
     }
   },
   "experimental": {

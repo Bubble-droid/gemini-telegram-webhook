@@ -10,17 +10,17 @@ export interface ToolExecArgs {
   qualifier: string;
   owner: string;
   repo: string;
-  path?: string;
-  branch?: string;
-  state?: string;
-  per_page?: number;
-  page?: number;
-  commit_sha?: string;
-  issue_number?: number;
-  release_id?: number;
-  tag_name?: string;
+  path: string;
+  branch: string;
+  type: string;
+  state: string;
+  per_page: number;
+  commit_sha: string;
+  issue_number: number;
+  release_id: number;
   filePaths: string[];
-  prompt?: string;
+  prompt: string;
+  fileUrl: string;
 }
 
 /**
@@ -212,6 +212,7 @@ export interface GetCurrentTimeResult {
 
 export type GenerateImageResult = string;
 export type GenerateSpeechResult = string;
+export type GetFileAndUploadResult = string;
 
 export interface ToolExecutorsType {
   searchFilesInRepo: (args: ToolExecArgs) => Promise<ToolExecResponse<SearchFilesInRepoResult>>;
@@ -229,6 +230,7 @@ export interface ToolExecutorsType {
   getReleaseDetails: (args: ToolExecArgs) => Promise<ToolExecResponse<GetReleaseDetailsResult>>;
   getCommitDetails: (args: ToolExecArgs) => Promise<ToolExecResponse<GetCommitDetailsResult>>;
   getCurrentTime: () => ToolExecResponse<GetCurrentTimeResult>;
+  getFileAndUpload: (args: ToolExecArgs) => Promise<ToolExecResponse<GetFileAndUploadResult>>;
   generateImage: (args: ToolExecArgs) => Promise<ToolExecResponse<GenerateImageResult>>;
   generateSpeech: (args: ToolExecArgs) => Promise<ToolExecResponse<GenerateSpeechResult>>;
 }

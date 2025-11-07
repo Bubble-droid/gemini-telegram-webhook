@@ -1,7 +1,7 @@
 // src/services/this.ts
 
 import { GoogleGenAI, FunctionCallingConfigMode, HarmCategory, HarmBlockThreshold, ApiError } from '@google/genai';
-import type { Content, GenerateContentConfig, GenerateContentResponse, Part, SafetySetting } from '@google/genai';
+import type { Candidate, Content, GenerateContentConfig, GenerateContentResponse, Part, SafetySetting } from '@google/genai';
 import { config, GeminiError, KvNamespaceError, Log, bot, ToolExecutors } from '@/services';
 import { geminiTools } from '@/configs';
 import { kv, rotateArray, shortenString, sleep } from '@/utils';
@@ -24,7 +24,8 @@ export class GeminiApi {
   // 定义最大无效回复和客户端错误重试次数，以及基础重试延迟
   private readonly MAX_EMPTY_REPLY_RETRIES: number = 3;
   private readonly MAX_CLIENT_ERROR_RETRIES: number = 3;
-  private readonly BASE_RETRY_DELAY_MS: number = 10_000; // 10 秒
+  private readonly BASE_RETRY_DELAY_MS: number = 20_000; // 10 秒
+  private readonly apiRequestRateLimit = 20_000;
   private readonly maxApiCallRounds: number;
   private readonly durableResourceId: string;
   private readonly systemPromptKeyName: string;
@@ -46,7 +47,7 @@ export class GeminiApi {
     safetySettings: GEMINI_SAFETY_SETTINGS,
   };
   private readonly startProcessTime: bigint;
-  private readonly NON_RETRY_ERRORS = ['An internal error has occurred', 'Unsupported MIME type'];
+  private readonly NON_RETRY_ERRORS = ['Unsupported MIME type'];
 
   constructor(chatParams: ChatParams) {
     const { maxApiCallRounds, durableResourceId, systemPromptKeyName, modelName, modelTemperature } = config.load();
@@ -166,7 +167,7 @@ export class GeminiApi {
           const delay = Math.floor(this.BASE_RETRY_DELAY_MS * Math.pow(2, attempt + 1) * (0.8 + Math.random() * 0.4));
           context.metrics.errorRetryCount++; // 递增客户端错误重试计数
           // 注意：这里没有重置 errorRetryCount，它会持续累积
-          const errorRetryText = `Gemini API 客户端错误，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${attempt + 1} 次重试...`;
+          const errorRetryText = `Gemini API 客户端错误，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${attempt + 1} 次重试...\n\n${err}`;
           if (context.lastRetryMessageId) {
             await bot.editMessageText(this.chatId, context.lastRetryMessageId, errorRetryText);
           } else {
@@ -184,7 +185,7 @@ export class GeminiApi {
             context.lastRetryMessageId = undefined;
           }
           throw new GeminiError(
-            `Gemini API 客户端错误，已达最大重试次数 (${this.MAX_CLIENT_ERROR_RETRIES})。\n\n${err}`,
+            `Gemini API 客户端错误，已达最大重试次数 (${this.MAX_CLIENT_ERROR_RETRIES})，请稍后再重新提问。\n\n${err}`,
             'MAX_API_CLIENT_RETRIES_REACHED',
             context.metrics.hasToolThoughts,
           );
@@ -348,16 +349,28 @@ export class GeminiApi {
         throw error as GeminiError;
       }
 
-      let candidate = response.candidates?.[0]; // 此时 response 保证已赋值
+      let candidate: Candidate | undefined = response.candidates?.[0]; // 此时 response 保证已赋值
 
       // 3. 内部循环：处理无效回复重试
       let currentEmptyReplyAttempt = 0;
-      while (!candidate || !candidate.content || !candidate.content.parts) {
+      // [核心修改] 扩展了无效回复的判断逻辑
+      const isResponseEffectivelyEmpty = (c?: Candidate): boolean => {
+        // 检查1：原始的空回复检查（candidate 或其内容、parts 不存在）
+        if (!c?.content?.parts || c.content.parts.length === 0) {
+          return true;
+        }
+        // 检查2：新增强的检查，判断 parts 是否仅包含 thought，而没有实际的 functionCall 或用户可见的 text
+        // 一个有效的 part 是：一个工具调用，或者一个非 thought 的文本
+        const hasValidPart = c.content.parts.some((part) => part.functionCall || (part.text && !part.thought));
+        return !hasValidPart;
+      };
+
+      while (isResponseEffectivelyEmpty(candidate)) {
         if (currentEmptyReplyAttempt < this.MAX_EMPTY_REPLY_RETRIES) {
           const delay = Math.floor(this.BASE_RETRY_DELAY_MS * Math.pow(2, currentEmptyReplyAttempt + 1) * (0.8 + Math.random() * 0.4));
           context.metrics.emptyReplyRetryCount++; // 递增全局无效回复重试计数
           currentEmptyReplyAttempt++; // 递增当前无效回复重试的局部计数
-          const emptyReplyRetryText = `Gemini API 响应为空，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${currentEmptyReplyAttempt} 次重试...`;
+          const emptyReplyRetryText = `Gemini API 响应为空或无效，将在 ${Math.floor(delay / 1000)} 秒后，进行第 ${currentEmptyReplyAttempt} 次重试...`;
           if (context.lastRetryMessageId) {
             await bot.editMessageText(this.chatId, context.lastRetryMessageId, emptyReplyRetryText);
           } else {
@@ -367,10 +380,9 @@ export class GeminiApi {
             }
           }
           await sleep(delay);
-          Log.warn(
-            `Gemini API 返回结果不包含有效的 candidate 或 content，尝试重试 (无效回复重试 ${currentEmptyReplyAttempt}/${this.MAX_EMPTY_REPLY_RETRIES})。`,
-            { response },
-          );
+          Log.warn(`Gemini API 返回结果为空或无效，尝试重试 (无效回复重试 ${currentEmptyReplyAttempt}/${this.MAX_EMPTY_REPLY_RETRIES})。`, {
+            response,
+          });
 
           // 重新尝试调用 API，获取有效响应
           try {
@@ -385,7 +397,7 @@ export class GeminiApi {
             await bot.deleteMessage(this.chatId, context.lastRetryMessageId);
             context.lastRetryMessageId = undefined;
           }
-          const errorMsg = `Gemini API 未返回有效结果，已达最大无效回复重试次数 (${this.MAX_EMPTY_REPLY_RETRIES})，请稍后再重新提问。`;
+          const errorMsg = `Gemini API 未返回有效结果，已达最大重试次数 (${this.MAX_EMPTY_REPLY_RETRIES})，请稍后再重新提问。`;
           Log.error(errorMsg);
           throw new GeminiError(errorMsg, 'MAX_EMPTY_REPLY_RETRIES_REACHED', context.metrics.hasToolThoughts);
         }
@@ -403,7 +415,7 @@ export class GeminiApi {
       currentEmptyReplyAttempt = 0;
       context.metrics.apiCallSuccessCount++;
 
-      const parts: Part[] = candidate.content.parts;
+      const parts: Part[] = candidate!.content!.parts || [];
       const functionCalls = parts.filter((part) => part.functionCall);
 
       // 4. 将模型的原始响应（包括文本和工具调用）添加到对话历史
@@ -437,7 +449,7 @@ export class GeminiApi {
         }
       } else {
         // 6. 没有工具调用，提取最终的文本回复
-        const textParts = parts.filter((part) => part.text);
+        const textParts = parts.filter((part) => part.text && !part.thought);
 
         if (textParts.length > 0) {
           Log.info(`Gemini API 请求成功，返回文本响应。`);
@@ -445,8 +457,8 @@ export class GeminiApi {
           return this._buildSuccessResponse(context, textParts);
         } else {
           // 7. 既没有工具调用也没有文本回复
-          Log.warn('Gemini API 返回非工具调用响应，但没有文本内容或其他可处理的 parts。', { response });
-          const finishReason = candidate.finishReason;
+          Log.warn('Gemini API 返回非工具调用响应，但没有可供显示的文本内容。', { response });
+          const finishReason = candidate!.finishReason;
           // 返回一个包含提示的响应
           return {
             response: {
@@ -461,6 +473,7 @@ export class GeminiApi {
           };
         }
       }
+      await sleep(this.apiRequestRateLimit);
     }
 
     // 如果循环次数达到上限，仍然没有最终回复，抛出错误

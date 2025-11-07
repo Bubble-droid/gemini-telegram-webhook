@@ -563,12 +563,15 @@ export const ToolExecutors: Tool.ToolExecutorsType = {
 
   getFileAndUpload: async (args) => {
     Log.info('执行工具: getFileAndUpload，参数:', { args });
-    const { chatId, userMessageId, fileUrl } = args;
+    const { chatId, userId, userMessageId, fileUrl } = args;
     try {
       const buffer = await downloadFileAsArrayBuffer(fileUrl);
       const blob = new Blob([buffer.data], { type: buffer.mimeType });
       const downloadFile = new File([blob], buffer.fileName, { type: buffer.mimeType, lastModified: Date.now() });
-      const result = await bot.sendDocument(chatId, downloadFile, { replyToMessageId: userMessageId });
+      const replyMarkup: ReplyMarkup = {
+        inline_keyboard: makeInlineKeyboard(userId),
+      };
+      const result = await bot.sendDocument(chatId, downloadFile, { replyToMessageId: userMessageId, replyMarkup });
       if (!result.ok) {
         return { success: false, error: `Error replying document message, ${result.error}` };
       }

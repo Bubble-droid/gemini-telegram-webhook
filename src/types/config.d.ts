@@ -43,6 +43,7 @@ export interface Env {
   TELEGRAM_BOT_USERNAME: string; // 机器人的用户名，例如 "YourBot"
   TELEGRAM_BOT_ADMIN_ID: string; // 管理员的 Telegram 用户 ID
   ALLOWED_USAGE_GROUPS: string; // 允许使用机器人的群组 ID 列表，逗号分隔
+  KEYWORD_REPLY_EXCLUDE_USERS: string;
 }
 
 /**
@@ -87,6 +88,7 @@ export interface Config {
   botName: string; // 机器人的用户名，例如 "YourBot"
   adminId: number; // 管理员的 Telegram 用户 ID，已解析为 number
   allowGroups: number[]; // 允许使用机器人的群组 ID 列表，已解析为 string[]
+  excludeUsers: number[];
 }
 
 export type { LoggerLevel };

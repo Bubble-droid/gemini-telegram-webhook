@@ -82,7 +82,7 @@ export class Recognizer {
   private async geminiOCR(): Promise<string | null> {
     const model = 'gemini-2.5-flash-lite';
     const config: GenerateContentConfig = {
-      temperature: 0.3,
+      temperature: 0,
       thinkingConfig: {
         thinkingBudget: -1,
       },

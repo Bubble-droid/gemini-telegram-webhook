@@ -127,6 +127,7 @@ export class NormalHandler {
   private readonly durableResourceId: string;
   private readonly faqDataKeyName: string;
   private readonly botName: string;
+  private readonly excludeUsers: number[];
   private readonly message: Bot.Message;
   private readonly chatId: number;
   private readonly userId: number;
@@ -137,10 +138,11 @@ export class NormalHandler {
   private messageText: string;
 
   constructor(message: Bot.Message) {
-    const { durableResourceId, botName } = config.load();
+    const { durableResourceId, botName, excludeUsers } = config.load();
     this.durableResourceId = durableResourceId;
     this.faqDataKeyName = 'faq_data';
     this.botName = botName;
+    this.excludeUsers = excludeUsers;
     const { message_id, chat, from, reply_to_message, photo, document, text, caption } = message;
     this.message = message;
     this.chatId = chat.id;
@@ -199,6 +201,10 @@ export class NormalHandler {
    * @returns {Promise<boolean>} 如果进行了关键词回复，则返回 true，否则返回 false。
    */
   private async handleKeywordReply(): Promise<boolean> {
+    if (this.excludeUsers.includes(this.userId)) {
+      return false;
+    }
+
     // 步骤 1: (可选) 如果消息包含图片，执行 OCR 并将识别文本附加到消息中
     if (this.photo || (this.document?.mime_type?.startsWith('image/') && !this.document.mime_type.endsWith('gif'))) {
       const fileData = await handleFile(this.message).catch(() => null);

@@ -183,7 +183,8 @@ class ConfigLoader {
     const botName: string = ENV.TELEGRAM_BOT_USERNAME;
     const adminId: number = Number(ENV.TELEGRAM_BOT_ADMIN_ID);
 
-    const allowGroups: number[] = ENV.ALLOWED_USAGE_GROUPS.split(',').map((s) => Number(s.trim())) || [];
+    const allowGroups = ENV.ALLOWED_USAGE_GROUPS.split(',').map((s) => Number(s.trim())) || [];
+    const excludeUsers = ENV.KEYWORD_REPLY_EXCLUDE_USERS.split(',').map((s) => Number(s.trim())) || [];
 
     // 返回一个完整的、类型安全的配置对象
     return {
@@ -215,6 +216,7 @@ class ConfigLoader {
       botName,
       adminId,
       allowGroups,
+      excludeUsers,
     };
   };
 }

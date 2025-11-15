@@ -26,6 +26,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "workflows/**/*.ts", "workflows/**/*.d.ts"],
-  "exclude": ["node_modules", "dist", "draft"]
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "workflows/**/*.ts", "workflows/**/*.d.ts", "draft/**/*.ts", "draft/**/*.d.ts"],
+  "exclude": ["node_modules", "dist"]
 }

@@ -41,28 +41,8 @@ const BaseCommands: BotCommandAction[] = [
               callback_data: `cmd_clear_${userId}`,
             },
             {
-              text: '🛠 模型工具',
-              callback_data: `cmd_tools_${userId}`,
-            },
-          ],
-          [
-            {
-              text: '📓 使用指南',
-              url: 'https://gui-for-cores.github.io/zh/guide',
-            },
-            {
               text: '❓ 常见问题',
               callback_data: `cmd_faq_${userId}`,
-            },
-          ],
-          [
-            {
-              text: '📢 通知频道',
-              url: 'https://t.me/GUI_for_Cores_Channel',
-            },
-            {
-              text: '📄 项目地址',
-              url: 'https://github.com/GUI-for-Cores',
             },
           ],
         ],
@@ -156,7 +136,7 @@ const BaseCommands: BotCommandAction[] = [
   },
   {
     name: 'tools',
-    description: '模型可用工具',
+    description: '模型的函数工具',
     action: async (chatId, userId, messageId, options = {}) => {
       Log.info('Executing tools command.');
       const { isCallback = false } = options;

@@ -131,10 +131,6 @@ export const handleNewMember = async (message: Message): Promise<void> => {
               callback_data: `cmd_faq_${newMember.id}`,
             },
           ],
-          [
-            { text: '📢 通知频道', url: 'https://t.me/GUI_for_Cores_Channel' },
-            { text: '📄 项目地址', url: 'https://github.com/GUI-for-Cores' },
-          ],
         ],
       };
       const welcomeResult = await bot.sendMessage(chat.id, toHtml(replaceText), {

@@ -1,6 +1,6 @@
 // src/types/gemini.d.ts
 
-import type { Content } from '@google/genai';
+import type { Content, GenerateContentConfig } from '@google/genai';
 
 export interface ChatParams {
   chatId: number;

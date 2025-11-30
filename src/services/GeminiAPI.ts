@@ -75,7 +75,7 @@ export class GeminiAPI {
    * 计算重试延迟 (指数退避 + 随机抖动)
    */
   private calculateDelay(attempt: number): number {
-    return Math.floor(this.BASE_RETRY_DELAY_MS * Math.pow(1, attempt) * (0.8 + Math.random() * 0.4));
+    return Math.floor(this.BASE_RETRY_DELAY_MS * Math.pow(2, attempt) * (0.8 + Math.random() * 0.4));
   }
 
   private simplifyContentsInLogger(contents: Content[]): Content[] {
@@ -159,12 +159,14 @@ export class GeminiAPI {
         }
 
         // 3. 执行重试流程
-        retryCount++; // 消耗一次重试机会
+
         const delay = this.calculateDelay(retryCount);
 
         // 区分错误类型用于日志或显示，但处理逻辑一致
         const isValidationError = errorMsg.includes('Response validation failed');
         const reason = isValidationError ? '模型响应无效 (空回复/仅思考)' : `API/网络错误: ${errorMsg}`;
+
+        retryCount++; // 消耗一次重试机会
 
         logger.warn(`GeminiAPI: Error detected. Retrying (${retryCount}/${this.MAX_RETRIES}). Reason: ${reason}`);
 

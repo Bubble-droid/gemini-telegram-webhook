@@ -11,7 +11,7 @@
         "tag": "dns-cloudflare",
         "type": "https",
         "server": "cloudflare-dns.com",
-        "detour": "Proxy",
+        "detour": "WARP",
         "domain_resolver": "dns-hosts"
       },
       {

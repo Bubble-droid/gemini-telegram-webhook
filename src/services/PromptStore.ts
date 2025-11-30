@@ -1,0 +1,105 @@
+// src/services/PromptStore.ts
+
+import { logger } from '@/services'; // 假设您的 logger 服务路径
+import * as fs from 'fs';
+import * as path from 'path';
+
+// 定义支持的提示词文件名（不含后缀），利用 TypeScript 字面量类型提供自动补全
+export type PromptKey = 'assistant' | 'github_toolset' | 'native_tools' | 'rag_system';
+
+/**
+ * @class PromptStore
+ * @description 本地提示词仓库管理器。
+ *              负责在启动时加载 src/configs/prompts 下的 .md 文件，并提供获取和格式化方法。
+ */
+class PromptStore {
+  // 缓存存储：Key 是文件名，Value 是文件内容
+  private prompts: Map<string, string> = new Map();
+
+  // 提示词文件夹的绝对路径
+  private readonly PROMPT_DIR = '/data/prompts';
+
+  constructor() {
+    this.loadAllPrompts();
+  }
+
+  /**
+   * 加载所有预设的提示词文件到内存
+   * @private
+   */
+  private loadAllPrompts(): void {
+    // 这里列出你需要加载的文件名列表
+    // 也可以改为 fs.readdirSync 自动扫描，但显式列出更安全、更类型友好
+    const keys: PromptKey[] = ['assistant', 'github_toolset', 'native_tools', 'rag_system'];
+
+    keys.forEach((key) => {
+      try {
+        const filePath = path.join(this.PROMPT_DIR, `${key}.md`);
+
+        // 检查文件是否存在
+        if (!fs.existsSync(filePath)) {
+          logger.warn(`Prompt file not found: ${filePath}`);
+          return;
+        }
+
+        // 同步读取，确保应用启动就绪前数据已加载
+        const content = fs.readFileSync(filePath, 'utf-8');
+
+        // 简单的预处理（如去除首尾空白）
+        this.prompts.set(key, content.trim());
+
+        logger.info(`Loaded prompt: ${key} (${content.length} chars)`);
+      } catch (err) {
+        logger.error(`Failed to load prompt: ${key}`, { err });
+      }
+    });
+  }
+
+  /**
+   * 获取原始提示词内容
+   * @param key - 提示词键名 (文件名)
+   */
+  public get(key: PromptKey): string {
+    const content = this.prompts.get(key);
+    if (!content) {
+      logger.error(`Attempted to access missing prompt: ${key}`);
+      return ''; // 或者返回一个安全的默认值
+    }
+    return content;
+  }
+
+  /**
+   * 获取提示词并进行动态变量替换
+   * @param key - 提示词键名
+   * @param variables - 需要替换的变量对象，例如 { time: '2023-01-01', model: 'Gemini' }
+   * @example
+   * // 假设 system.md 中有: "Current time is {{time}}."
+   * promptStore.format('system', { time: new Date().toISOString() })
+   */
+  public format(key: PromptKey, variables: Record<string, string>): string {
+    let content = this.get(key);
+
+    if (!content) return '';
+
+    // 简单的模板引擎：将 {{key}} 替换为 value
+    Object.entries(variables).forEach(([varKey, varValue]) => {
+      // 创建正则，全局替换 {{varKey}}
+      const regex = new RegExp(`{{${varKey}}}`, 'g');
+      content = content.replace(regex, varValue);
+    });
+
+    return content;
+  }
+
+  /**
+   * 重新加载提示词 (用于不重启服务更新提示词)
+   */
+  public reload(): void {
+    logger.info('Reloading all prompts...');
+    this.prompts.clear();
+    this.loadAllPrompts();
+  }
+}
+
+// 导出单例
+export const promptStore = new PromptStore();

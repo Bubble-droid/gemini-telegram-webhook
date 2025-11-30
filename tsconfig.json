@@ -1,31 +1,33 @@
 {
-  "$schema": "https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/tsconfig.json",
+  "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
     "baseUrl": "./",
     "target": "esnext",
     "module": "esnext",
+    "moduleResolution": "bundler",
     "lib": ["esnext"],
-    "outDir": "./dist",
+
+    // 严格模式
     "strict": true,
     "noUnusedLocals": true,
-    "declaration": true,
-    "declarationMap": true,
-    "isolatedDeclarations": true,
-    "emitDeclarationOnly": true,
-    "verbatimModuleSyntax": true,
+    "noUnusedParameters": true,
+
+    // 互操作性
     "esModuleInterop": true,
-    "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "noEmit": true,
-    "moduleResolution": "node",
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
     "resolveJsonModule": true,
-    "sourceMap": true,
     "isolatedModules": true,
-    "types": ["node"],
+
+    "noEmit": true,
+
+    // 路径别名
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    "types": ["node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "workflows/**/*.ts", "workflows/**/*.d.ts", "draft/**/*.ts", "draft/**/*.d.ts"],
+  "include": ["src", "vite.config.ts", "eslint.config.js"],
   "exclude": ["node_modules", "dist"]
 }

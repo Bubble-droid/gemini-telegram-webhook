@@ -1,38 +1,29 @@
 // eslint.config.js
-
+import eslintConfigPrettier from 'eslint-config-prettier';
+import { defineConfig } from 'eslint/config';
 import globals from 'globals';
-import pluginJs from '@eslint/js';
 import tseslint from 'typescript-eslint';
-import prettierPlugin from 'eslint-plugin-prettier';
-import prettierConfig from 'eslint-config-prettier';
 
-import { defineConfig, globalIgnores } from 'eslint/config';
-
-export default defineConfig([
-  globalIgnores(['node_modules/*', 'dist/*', 'script-example/*', 'draft/*']),
-  pluginJs.configs.recommended,
-  ...tseslint.configs.recommended,
+export default defineConfig(
+  {
+    ignores: ['node_modules', 'dist'],
+  },
+  // 基础配置
+  tseslint.configs.recommended,
   {
     files: ['src/**/*.ts', 'src/**/*.d.ts'],
     languageOptions: {
       globals: {
         ...globals.node,
       },
-      parser: tseslint.parser,
       parserOptions: {
-        ecmaVersion: 'latest',
-        sourceType: 'module',
         project: './tsconfig.json',
+        tsconfigRootDir: import.meta.dirname,
       },
     },
-    plugins: {
-      '@typescript-eslint': tseslint.plugin,
-      prettier: prettierPlugin,
-    },
-
     rules: {
+      // 自定义规则
       '@typescript-eslint/require-await': 'off',
-      'no-unused-vars': 'off',
       '@typescript-eslint/no-empty-function': 'warn',
       '@typescript-eslint/no-var-requires': 'error',
       '@typescript-eslint/no-unused-vars': [
@@ -43,9 +34,8 @@ export default defineConfig([
           caughtErrorsIgnorePattern: '^_',
         },
       ],
-      ...prettierConfig.rules,
-      'prettier/prettier': 'error',
     },
   },
-]);
-
+  // 关闭所有与格式化冲突的 ESLint 规则
+  eslintConfigPrettier,
+);

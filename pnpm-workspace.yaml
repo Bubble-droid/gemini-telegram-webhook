@@ -1,0 +1,2 @@
+overrides:
+  mcp-local-rag: link:../../../.local/share/pnpm/global/5/node_modules/mcp-local-rag

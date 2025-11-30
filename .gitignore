@@ -1,15 +1,10 @@
 # .gitignore
-
+.roo/
+.vscode/
 *.code-workspace
-
 draft/
 
-export_tree_and_files.sh
-tree_and_files.md
-
-resources/_gemini_api_keys.json
-
-workflows/test.ts
+dist/
 
 # Logs
 logs
@@ -149,5 +144,3 @@ out
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
-
-wrangler.jsonc

@@ -21,24 +21,13 @@
           "cloudflare-dns.com": ["104.16.248.249", "104.16.249.249"]
         }
       }
-    ],
-    "rules": [
-      {
-        "query_type": [64, 65],
-        "action": "predefined",
-        "rcode": "NOTIMP"
-      },
-      { "action": "route", "server": "dns-cloudflare" }
-    ],
-    "strategy": "prefer_ipv6",
-    "independent_cache": true
+    ]
   },
   "endpoints": [
     {
       "type": "wireguard",
-      "tag": "WARP-1",
+      "tag": "WARP",
       "address": ["172.16.0.2/32", "2606:4700:110:8dc5:553b:6747:e0b3:cbe4/128"],
-      "listen_port": 20003,
       "private_key": "EMCsxRS1HQUiPfoEj/Agj/NA24FDeXcEl3WPyTKW4EM=",
       "peers": [
         {
@@ -46,63 +35,16 @@
           "port": 2408,
           "public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
           "allowed_ips": ["0.0.0.0/0", "::/0"],
-          "reserved": [226, 170, 176]
-        }
-      ]
-    },
-    {
-      "type": "wireguard",
-      "tag": "WARP-2",
-      "address": ["172.16.0.2/32", "2606:4700:110:8114:b8cf:70a9:e5ca:b603/128"],
-      "listen_port": 20004,
-      "private_key": "OKrBqGEV9BxQY3Z7SsMod8BCKDt+87X1T68KX0U9KV0=",
-      "peers": [
-        {
-          "address": "162.159.192.7",
-          "port": 500,
-          "public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
-          "allowed_ips": ["0.0.0.0/0", "::/0"],
-          "reserved": [212, 83, 129]
-        }
-      ]
-    },
-    {
-      "type": "wireguard",
-      "tag": "WARP-3",
-      "address": ["172.16.0.2/32", "2606:4700:110:80ab:fff8:3aa0:24e5:ac66/128"],
-      "listen_port": 20005,
-      "private_key": "uEoctg+RAQu/UhI0KIrER/++USOY9QMgHYmuzp3IVHE=",
-      "peers": [
-        {
-          "address": "162.159.192.7",
-          "port": 1701,
-          "public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
-          "allowed_ips": ["0.0.0.0/0", "::/0"],
-          "reserved": [214, 72, 152]
-        }
-      ]
-    },
-    {
-      "type": "wireguard",
-      "tag": "WARP-4",
-      "address": ["172.16.0.2/32", "2606:4700:110:86f4:1f04:37f8:8300:da24/128"],
-      "listen_port": 20006,
-      "private_key": "cLmkOD/SqF+AuRXMfISTzecX34Je0TtOPwaFpeWKi0w=",
-      "peers": [
-        {
-          "address": "162.159.192.7",
-          "port": 4500,
-          "public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
-          "allowed_ips": ["0.0.0.0/0", "::/0"],
-          "reserved": [75, 106, 78]
+          "reserved": [226, 170, 176],
+          "persistent_keepalive_interval": 30
         }
       ]
     }
   ],
   "inbounds": [
     {
-      "type": "mixed",
-      "tag": "mixed-in",
+      "type": "socks",
+      "tag": "socks-in",
       "listen": "127.0.0.1",
       "listen_port": 10080
     }
@@ -111,51 +53,25 @@
     {
       "type": "direct",
       "tag": "direct"
-    },
-    {
-      "type": "selector",
-      "tag": "Proxy",
-      "interrupt_exist_connections": true,
-      "outbounds": ["Auto-WARP"]
-    },
-    {
-      "type": "urltest",
-      "tag": "Auto-WARP",
-      "url": "https://cp.cloudflare.com",
-      "interval": "3m",
-      "tolerance": 30,
-      "interrupt_exist_connections": true,
-      "outbounds": ["WARP-1", "WARP-2", "WARP-3", "WARP-4"]
     }
   ],
   "route": {
     "rules": [
       {
-        "action": "sniff",
-        "sniffer": ["http", "tls", "quic"]
-      },
-      {
-        "action": "resolve"
-      },
-      {
-        "action": "route",
-        "outbound": "Proxy"
+        "action": "resolve",
+        "server": "dns-cloudflare",
+        "strategy": "prefer_ipv6"
       }
     ],
-    "auto_detect_interface": true,
+    "final": "WARP",
     "default_domain_resolver": {
       "server": "dns-local",
       "strategy": "ipv4_only"
     }
   },
   "experimental": {
-    "clash_api": {
-      "default_mode": "Rule"
-    },
     "cache_file": {
-      "enabled": true,
-      "path": "cache.db",
-      "store_rdrc": true
+      "enabled": true
     }
   }
 }

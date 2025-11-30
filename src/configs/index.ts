@@ -1,5 +1,7 @@
 // src/config/index.ts
 
-export * from './bot_commands';
-export * from './gemini_tools';
-export * from './faq_data';
+export * from './bot-commands';
+export * from './faq-data';
+export * from './function-declarations';
+export * from './mcp-servers';
+export * from './bot-messages';

@@ -3,6 +3,7 @@
 import { BotCommands } from '@/configs';
 import { bot, logger } from '@/services';
 import type { CallbackQuery } from '@/types';
+import { taskScheduler } from '@/utils';
 
 interface CallbackQueryContext {
   queryId: string;
@@ -27,26 +28,20 @@ class CallbackQueryHandler {
 
     // 权限校验
     if (userId !== allowUserId) {
-      await bot.answerCallbackQuery(queryId, {
+      bot.answerCallbackQuery(queryId, {
         callbackText: '🚫 你没有权限进行此操作',
-        showAlert: true, // 使用弹窗提示更显眼
       });
       return;
     }
 
-    // 响应 Telegram 服务器，消除加载转圈
-    await bot.answerCallbackQuery(queryId);
+    bot.answerCallbackQuery(queryId);
 
     // 查找并执行命令
     const targetCommand = BotCommands.find((cmd) => cmd.name === commandName);
     if (targetCommand) {
-      try {
-        await targetCommand.action(chatId, allowUserId, messageId, {
-          isCallback: true,
-        });
-      } catch (err) {
-        logger.error('Error executing callback command', { err, commandName });
-      }
+      await targetCommand.action(chatId, allowUserId, messageId, {
+        isCallback: true,
+      });
     } else {
       logger.warn('Callback command not found', { commandName });
     }
@@ -82,16 +77,20 @@ class CallbackQueryHandler {
       if (ctx.data.startsWith('cmd_')) {
         await this.handleCommand(ctx);
       } else {
-        // 未知类型的回调，直接响应以停止客户端加载动画
         await bot.answerCallbackQuery(ctx.queryId);
       }
     } catch (err) {
       logger.error('Error in callback query handler dispatch', { err, queryId });
       // 即使出错也要尝试结束 loading 状态
       await bot.answerCallbackQuery(ctx.queryId);
+
+      const result = await bot.editMessageText(ctx.chatId, ctx.messageId, '⚠️ 回调查询处理失败，请稍后再试');
+      if (result.ok) {
+        taskScheduler.deleteMessage(ctx.chatId, result.messageId, 3 * 60 * 1000);
+      }
     }
   }
 }
 
 // 导出无状态单例
-export const callbackQueryHandler: CallbackQueryHandler = new CallbackQueryHandler();
+export const callbackQueryHandler = new CallbackQueryHandler();

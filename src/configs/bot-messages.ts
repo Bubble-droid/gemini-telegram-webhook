@@ -1,6 +1,7 @@
 // src/configs/bot_messages.ts
 
 import { config } from '@/services';
+import type { InlineKeyboardMarkup } from '@/types';
 
 /**
  * 集中管理机器人的回复文本
@@ -24,9 +25,7 @@ export const BotMessages = {
 *   **🔗 引用他人消息提问**
     *   回复或引用**他人**的消息时，请务必加上 \`@${botName}\` 或 \`:ask\`，我就会针对该消息进行解答。
 
-*   建议**优先**使用 \`:ask\` 指令与我互动
-
-👍 由 Cloudflare、ClawCloud Run 和 Google Gemini 提供支持
+👍 由 ClawCloud Run 和 Google Gemini 提供支持
 `.trim();
   },
 
@@ -41,7 +40,7 @@ A: 请检查程序所在的完整路径，确保其中不包含中文、空格�
 
 **Q: 滚动发行插件无法更新到新版本？**
 A:
-1.  首先，请在 **插件中心** 检查并更新 \`滚动发行\` 插件本身至最新版本。
+1.  首先，请在 **插件中心** 检查并更新【滚动发行】插件本身至最新版本。
 2.  如果问题依旧，请尝试删除程序目录下的 \`data/rolling-release\` 文件夹后重试。
 
 **Q: 滚动发行提示无法跨大版本升级？**
@@ -60,7 +59,7 @@ A:
 **Q: 订阅没有流量信息，或更新时提示 "Not a valid subscription data"？**
 A:
 1.  在 **订阅 -> 编辑** 中，为目标订阅添加请求头 \`User-Agent: Clash.Meta\`。
-    *   GUI.for.SingBox 还需安装 **节点转换** 插件。
+    *   GUI.for.SingBox 还需安装【节点转换】插件。
 2.  同时，请确保你当前的网络环境可以正常访问该订阅链接。
 
 **Q: 在有多网卡的设备上（如同时连接Wi-Fi和网线），启动后网络异常？**
@@ -95,17 +94,14 @@ A: Linux 上的授权操作依赖 \`pkexec\` 命令，请确保你的系统已�
 
 **Q: TUN 模式启动后无法上网？**
 A: 请按以下顺序排查：
-1.  **更换TUN堆栈**: 在软件设置中尝试更换 **TUN 堆栈模式** (例如 GVisor, System)。
-2.  **检查防火墙**: 检查 Windows 防火墙设置，确保 GUI 客户端及其内核程序（如 \`sing-box.exe\`）未被阻止。
+1.  **更换TUN堆栈**: 在软件设置中尝试更换 **TUN 堆栈模式** (例如 GVisor)。
+2.  **检查防火墙**: 检查 Windows 防火墙设置，确保内核程序（如 \`sing-box.exe\`）未被阻止。
 3.  **处理IPv6问题**: 如果你的网络环境不支持 IPv6，请进行以下调整：
     *   前往 **配置设置 -> 入站设置**，编辑 \`tun-in\`，在 **IPv4 和 IPv6 前缀** 中删除 IPv6 地址，并启用 **严格路由**。
     *   前往 **配置设置 -> DNS 设置 -> 通用**，将 **解析策略** 设为 \`只使用 IPv4\`。
 
-**Q: TUN 模式下出现 SSL 证书错误？**
-A: 请尝试将你操作系统的 DNS 服务器地址修改为公共 DNS，例如 \`8.8.8.8\` 或 \`1.1.1.1\`。
-
 **Q: macOS 系统启用 TUN 模式后无法上网？**
-A: 原因是 sing-box 在 macOS 上不劫持发往局域网的 DNS 请求。请将你 Mac 的系统 DNS 修改为任意公共 DNS 服务器（如 \`8.8.8.8\`）。
+A: 原因是 TUN 在 macOS 上无法发往局域网的 DNS 请求。请将你 Mac 的系统 DNS 修改为任意公共 DNS 服务器（如 \`8.8.8.8\`）。
 `.trim(),
 
   // 清理过程中的文案
@@ -114,23 +110,27 @@ A: 原因是 sing-box 在 macOS 上不劫持发往局域网的 DNS 请求。请�
   // 清理完成文案
   cleared: '✅ **记忆已重置**\n\n我现在已经准备好开始新的话题了。',
 
-  // 工具列表标题
-  toolsHeader: '🛠 **当前可用工具：**\n\n',
+  uploading: '📄 File uploading...',
+
+  thinking: '✨ Thinking...',
 };
 
 // --- 通用键盘布局 ---
 
+interface TKeyBoard {
+  [x: string]: (userId: number) => InlineKeyboardMarkup;
+}
+
 export const Keyboards = {
-  start: {
+  getStart: (userId) => ({
     inline_keyboard: [
       [
-        { text: '🗑 清理对话', callback_data: `cmd_clear` },
-        { text: '❓ 常见问题', callback_data: `cmd_faq` },
+        { text: '🗑 清理对话', callback_data: `cmd_clear_${userId}` },
+        { text: '❓ 常见问题', callback_data: `cmd_faq_${userId}` },
       ],
-      [{ text: '🛠 查看工具', callback_data: `cmd_tools` }],
     ],
-  },
-  backToStart: {
-    inline_keyboard: [[{ text: '⬅️ 返回主菜单', callback_data: `cmd_start` }]],
-  },
-};
+  }),
+  getBackToStart: (userId) => ({
+    inline_keyboard: [[{ text: '⬅️ 返回主菜单', callback_data: `cmd_start_${userId}` }]],
+  }),
+} as const satisfies TKeyBoard;

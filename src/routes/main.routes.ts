@@ -1,5 +1,3 @@
-// src/route.ts
-
 import { updateHandler } from '@/handlers';
 import { config, logger } from '@/services';
 import type { RequestSchema, Update } from '@/types';

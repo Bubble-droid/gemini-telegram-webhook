@@ -1,11 +1,12 @@
 // src/services/PromptStore.ts
 
-import { logger } from '@/services'; // 假设您的 logger 服务路径
-import * as fs from 'fs';
-import * as path from 'path';
+import { logger } from '@/services';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-// 定义支持的提示词文件名（不含后缀），利用 TypeScript 字面量类型提供自动补全
-export type PromptKey = 'assistant' | 'github_toolset' | 'native_tools' | 'rag_system';
+const PROMPT_KEYS = ['assistant', 'file-search', 'github-toolset', 'built-in-tools', 'ocr', 'chit-chat'] as const;
+
+export type PromptKey = (typeof PROMPT_KEYS)[number];
 
 /**
  * @class PromptStore
@@ -30,9 +31,8 @@ class PromptStore {
   private loadAllPrompts(): void {
     // 这里列出你需要加载的文件名列表
     // 也可以改为 fs.readdirSync 自动扫描，但显式列出更安全、更类型友好
-    const keys: PromptKey[] = ['assistant', 'github_toolset', 'native_tools', 'rag_system'];
 
-    keys.forEach((key) => {
+    PROMPT_KEYS.forEach((key) => {
       try {
         const filePath = path.join(this.PROMPT_DIR, `${key}.md`);
 
@@ -63,7 +63,7 @@ class PromptStore {
     const content = this.prompts.get(key);
     if (!content) {
       logger.error(`Attempted to access missing prompt: ${key}`);
-      return ''; // 或者返回一个安全的默认值
+      return 'You are a helpful and friendly AI assistant.';
     }
     return content;
   }
@@ -78,8 +78,6 @@ class PromptStore {
    */
   public format(key: PromptKey, variables: Record<string, string>): string {
     let content = this.get(key);
-
-    if (!content) return '';
 
     // 简单的模板引擎：将 {{key}} 替换为 value
     Object.entries(variables).forEach(([varKey, varValue]) => {

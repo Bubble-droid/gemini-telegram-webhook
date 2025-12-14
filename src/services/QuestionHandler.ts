@@ -1,8 +1,10 @@
 // src/services/QuestionHandler.ts
 
 import { functionDeclarations } from '@/configs';
-import { AppError, bot, chatAgent, config, logger, promptStore, ToolExecutors, type RetryCallback } from '@/services';
-import type { ToolArgs } from '@/types';
+import { bot, chatAgent, config, logger, ToolExecutors, type GeminiApiOptions, type RetryCallback } from '@/services';
+import type { ToolName } from '@/types';
+import { promptStore } from '@/utils';
+import { AppError } from '@/utils/errors';
 import {
   FunctionCallingConfigMode,
   type Content,
@@ -24,10 +26,6 @@ interface QuestionContext extends ChatInfos {
   contents: Content[];
 }
 
-/**
- * @description 封装与 Google Gemini API 的交互逻辑。
- *              设计为无状态单例，所有请求状态通过 Context 传递。
- */
 class QuestionHandler {
   private maxConversationRounds: number;
 
@@ -54,25 +52,19 @@ class QuestionHandler {
     const ctx = this.createContext(chatInfos, initContents);
     const systemPrompt = promptStore.get('assistant');
 
-    let updatedText: string | null = null;
     // 1. 定义 UI 更新回调 (用于重试和工具执行)
     const updateStatus = (text: string) => {
-      if (updatedText === text) return;
       bot.editMessageText(ctx.chatId, ctx.statusMessageId, text);
-      updatedText = text;
     };
 
     const onRetryHandler: RetryCallback = (reason, attempt, delayMs) => {
       const delaySeconds = Math.floor(delayMs / 1000);
 
       let msg = '';
-      // 根据不同的错误原因，给用户不同的反馈
       if (reason.includes('模型响应无效')) {
         msg = `模型响应异常，正在进行第 ${attempt} 次修正重试... (${delaySeconds}s)`;
       } else {
-        // 截取简短的错误信息避免刷屏
-        const shortReason = reason.length > 50 ? reason.slice(0, 50) + '...' : reason;
-        msg = `网络或接口波动，${delaySeconds} 秒后重试... (Attempt ${attempt})\n原因: ${shortReason}`;
+        msg = `网络或接口波动，${delaySeconds} 秒后重试... (Attempt ${attempt})\n原因: ${reason}`;
       }
       updateStatus(msg);
     };
@@ -87,31 +79,33 @@ class QuestionHandler {
     // ChatAgent 调用此函数时，只传 (name, args)
     // 我们在这里闭包注入 onToolStartHandler
     const scopedToolExecutor = async (name: string, args: Record<string, unknown>) => {
-      const executor = ToolExecutors[name];
+      const executor = ToolExecutors[name as ToolName];
       if (!executor) {
         throw new AppError(`Local tool "${name}" not found in ToolExecutors.`);
       }
       // 调用 ToolExecutors.ts 中的函数，并传入回调
-      return await executor(args as unknown as ToolArgs, { onToolStart: onToolStartHandler, onRetry: onRetryHandler });
+      return await executor(args as never, { onToolStart: onToolStartHandler, onRetry: onRetryHandler });
     };
 
     try {
       logger.info(`Handing over to ChatAgent`, { chatId: ctx.chatId });
 
       const config: GenerateContentConfig = {
+        thinkingConfig: { thinkingBudget: -1 },
         systemInstruction: [{ text: systemPrompt }],
         tools: [{ functionDeclarations: functionDeclarations }],
         toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
       };
 
+      const geminiApiOptions: GeminiApiOptions = {
+        genConfig: config,
+        onRetry: onRetryHandler,
+      };
+
       const finalResponse = await chatAgent.chat(ctx.contents, {
         maxRounds: this.maxConversationRounds,
-
-        config,
-
+        geminiApiOptions,
         toolExecutor: scopedToolExecutor, // 注入了逻辑的执行器
-
-        onRetry: onRetryHandler,
         onToolStart: onToolStartHandler, // 主流程的工具也会触发
       });
 

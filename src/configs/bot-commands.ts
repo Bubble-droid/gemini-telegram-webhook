@@ -1,6 +1,6 @@
 // src/configs/bot_commands.ts
 
-import { BotMessages, functionDeclarations, Keyboards } from '@/configs';
+import { BotMessages, Keyboards } from '@/configs';
 import { bot, chatContexts, logger } from '@/services';
 import type { BotCommandAction, InlineKeyboardMarkup } from '@/types';
 import { sleep, taskScheduler, toHtml } from '@/utils';
@@ -51,25 +51,18 @@ const sendOrEdit = async (
   }
 };
 
-export const BotCommands: BotCommandAction[] = [
+export const BotCommands = [
   {
     name: 'start',
     description: '开始使用',
     action: async (chatId, userId, messageId, options = {}) => {
       logger.info('Executing start command.', { userId });
 
-      // 直接从变量获取文本，无需 await KV
       const text = BotMessages.getStartText();
-
-      const dynamicKeyboard = {
-        inline_keyboard: Keyboards.start.inline_keyboard.map((row) =>
-          row.map((btn) => ({ ...btn, callback_data: `${btn.callback_data}_${userId}` })),
-        ),
-      };
 
       await sendOrEdit(chatId, messageId, toHtml(text), {
         isCallback: options.isCallback,
-        replyMarkup: dynamicKeyboard,
+        replyMarkup: Keyboards.getStart(userId),
         autoDeleteMs: 3 * 60_000,
       });
     },
@@ -79,12 +72,9 @@ export const BotCommands: BotCommandAction[] = [
     description: '常见问题',
     action: async (chatId, userId, messageId, options = {}) => {
       logger.info('Executing faq command.', { userId });
+      const { isCallback = false } = options;
 
-      const backKeyboard = {
-        inline_keyboard: Keyboards.backToStart.inline_keyboard.map((row) =>
-          row.map((btn) => ({ ...btn, callback_data: `${btn.callback_data}_${userId}` })),
-        ),
-      };
+      const backKeyboard = isCallback ? Keyboards.getBackToStart(userId) : undefined;
 
       await sendOrEdit(chatId, messageId, toHtml(BotMessages.faq), {
         isCallback: options.isCallback,
@@ -108,15 +98,9 @@ export const BotCommands: BotCommandAction[] = [
       // 2. 执行清理逻辑
       chatContexts.clear(chatId, userId);
       // 模拟一点延迟感，或者等待数据库操作完成
-      await sleep(1000);
+      await sleep(2_000);
 
-      const backKeyboard = isCallback
-        ? {
-            inline_keyboard: Keyboards.backToStart.inline_keyboard.map((row) =>
-              row.map((btn) => ({ ...btn, callback_data: `${btn.callback_data}_${userId}` })),
-            ),
-          }
-        : undefined;
+      const backKeyboard = isCallback ? Keyboards.getBackToStart(userId) : undefined;
 
       // 3. 更新为“清理完成”
       const msgIdToEdit = isCallback ? messageId : loadingResult.ok ? loadingResult.messageId : undefined;
@@ -133,30 +117,4 @@ export const BotCommands: BotCommandAction[] = [
       }
     },
   },
-  {
-    name: 'tools',
-    description: '查看可用工具',
-    action: async (chatId, userId, messageId, options = {}) => {
-      logger.info('Executing tools command.', { userId });
-
-      const toolList =
-        functionDeclarations.length > 0
-          ? functionDeclarations.map((tool) => `• **${tool.name}**: ${tool.description}`).join('\n\n')
-          : '暂无可用工具';
-
-      const fullText = BotMessages.toolsHeader + toolList;
-
-      const backKeyboard = {
-        inline_keyboard: Keyboards.backToStart.inline_keyboard.map((row) =>
-          row.map((btn) => ({ ...btn, callback_data: `${btn.callback_data}_${userId}` })),
-        ),
-      };
-
-      await sendOrEdit(chatId, messageId, toHtml(fullText), {
-        isCallback: options.isCallback,
-        replyMarkup: backKeyboard,
-        autoDeleteMs: 5 * 60_000,
-      });
-    },
-  },
-];
+] as const satisfies BotCommandAction[];

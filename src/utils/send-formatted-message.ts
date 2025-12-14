@@ -1,8 +1,9 @@
 // src/utils/formatters/send_formatted_message.ts
 
-import { AppError, bot, logger } from '@/services';
+import { bot, logger } from '@/services';
 import type { ParseMode } from '@/types';
 import { taskScheduler } from '@/utils';
+import { AppError } from '@/utils/errors';
 import { formatter, preProcessMarkdown, splitAstAndGenerateChunks, splitPlainText } from '@/utils/formatters';
 
 const MAX_CONTENT_LENGTH = 4096;
@@ -49,36 +50,37 @@ export const sendFormattedMessage = async (
       if (mode === null) {
         // 潜在问题修复：对于纯文本模式，也需要进行分割以防超长
         chunks = splitPlainText(processedText, MAX_CONTENT_LENGTH);
+
+        italicOpenTag = '';
+        italicCloseTag = '';
       } else {
-        italicOpenTag = mode === 'HTML' ? '<i>' : '_';
-        italicCloseTag = mode === 'HTML' ? '</i>' : '_';
         // 2. 获取对应模式的生成器
         const generator = formatter.getGenerator(mode);
         // 3. 基于 AST 和生成器，直接得到最终的消息块数组
         chunks = splitAstAndGenerateChunks(ast, generator);
+
+        italicOpenTag = mode === 'HTML' ? '<i>' : '_';
+        italicCloseTag = mode === 'HTML' ? '</i>' : '_';
       }
 
       const warningText = `\n\n${italicOpenTag}⚠️ 本 AI 回答仅供参考，可能存在不准确之处，请你自行判断。${italicCloseTag}`;
 
       logger.info(`[${mode ?? '纯文本'}] 格式的文本被分割成 ${chunks.length} 块.`);
 
-      for (let i = 0; i < chunks.length; i++) {
-        let chunk = chunks[i];
-        logger.info(
-          `发送消息 (块 ${i + 1}/${chunks.length}, 长度: ${[...chunk].length}, 格式: ${mode ?? '纯文本'})...`,
-        );
+      for (const [i, chunk] of chunks.entries()) {
+        const fullText = i === chunks.length - 1 ? chunk + warningText : chunk;
 
-        if (i === chunks.length - 1) {
-          chunk += warningText;
-        }
+        logger.info(
+          `发送消息 (块 ${i + 1}/${chunks.length}, 长度: ${[...fullText].length}, 格式: ${mode ?? '纯文本'})...`,
+        );
 
         let sendResult;
         if (srcMsgId && i === 0) {
-          sendResult = await bot.editMessageText(chatId, srcMsgId, chunk, {
+          sendResult = await bot.editMessageText(chatId, srcMsgId, fullText, {
             parseMode: mode === null ? undefined : mode,
           });
         } else {
-          sendResult = await bot.sendMessage(chatId, chunk, {
+          sendResult = await bot.sendMessage(chatId, fullText, {
             replyToMessageId: currentReplyTo,
             parseMode: mode === null ? undefined : mode,
           });
@@ -124,8 +126,6 @@ export const sendFormattedMessage = async (
   }
 
   logger.error('所有格式化模式均发送失败。');
-  return {
-    ok: false,
-    error: lastError ?? new AppError('未知错误导致所有格式化模式发送失败', 'ALL_FORMAT_MODES_FAILED'),
-  };
+
+  throw lastError || new AppError('未知错误导致所有格式化模式发送失败', 'ALL_FORMAT_MODES_FAILED');
 };

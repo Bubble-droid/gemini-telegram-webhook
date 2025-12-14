@@ -1,6 +1,7 @@
 import { mcpServers } from '@/configs/mcp-servers';
-import { AppError, config, logger } from '@/services';
-import type { Config, MCPServerConfig, MCPServerName } from '@/types';
+import { config, logger } from '@/services';
+import type { Config, ServerConfig, ServerName } from '@/types';
+import { AppError } from '@/utils/errors';
 import { Type, type FunctionCall, type FunctionDeclaration, type Part, type Tool } from '@google/genai';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
@@ -13,14 +14,14 @@ export class MCPClient {
   private requestOptions: RequestOptions = { timeout: 60 * 60_000 };
   private tools: Tool[] = [{ functionDeclarations: [] }];
   private clientName: string;
-  private serverName: MCPServerName;
-  private serverConfig: MCPServerConfig;
+  private serverName: ServerName;
+  private serverConfig: ServerConfig;
   private mcp: Client;
   private transport: StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport | null = null;
 
   private activeConnections = 0;
 
-  constructor(name: MCPServerName) {
+  constructor(name: ServerName) {
     this.serverName = name;
     this.serverConfig = mcpServers[name];
     this.clientName = `${name}-client`;
@@ -137,15 +138,17 @@ export class MCPClient {
    */
   private async refreshTools(): Promise<void> {
     const toolsResult = await this.mcp.listTools();
-    const declarations: FunctionDeclaration[] = toolsResult.tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: {
-        type: Type.OBJECT,
-        properties: tool.inputSchema.properties,
-        required: tool.inputSchema.required,
-      },
-    }));
+    const declarations: FunctionDeclaration[] = toolsResult.tools.map(
+      (tool): FunctionDeclaration => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: {
+          type: Type.OBJECT,
+          properties: tool.inputSchema.properties,
+          required: tool.inputSchema.required,
+        },
+      }),
+    );
 
     this.tools = [{ functionDeclarations: declarations }];
     logger.debug('Tools refreshed:', { tools: declarations.map((d) => d.name) });

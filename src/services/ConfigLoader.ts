@@ -1,7 +1,7 @@
 // src/services/ConfigLoader.ts
 
-import { AppError } from '@/services';
 import type { Config, Env } from '@/types';
+import { AppError } from '@/utils/errors';
 import { isIP } from 'node:net';
 
 // 定义允许的日志级别
@@ -13,7 +13,7 @@ export type LoggerLevel = (typeof LOGGER_LEVELS)[number];
  * @description 负责在应用程序启动阶段一次性加载、解析和验证所有环境变量。
  *              确保 Config 对象不可变且类型安全。
  */
-class ConfigLoader {
+export class ConfigLoader {
   // 1. 定义默认值常量
   private readonly DEFAULT_LISTEN_HOST = '127.0.0.1';
   private readonly DEFAULT_LISTEN_PORT = 39001;
@@ -23,8 +23,8 @@ class ConfigLoader {
   private readonly DEFAULT_LOCAL_PROXY_BASE_URL = `http://127.0.0.1:${this.DEFAULT_LISTEN_PORT}/gemini`;
   private readonly DEFAULT_MODEL_NAME = 'gemini-flash-latest';
   private readonly DEFAULT_MODEL_CONFIG_TEMPERATURE = 0.2;
-  private readonly DEFAULT_MAX_API_CALL_ROUNDS = 12;
-  private readonly DEFAULT_REQUEST_INTERVAL_SECOND = 10;
+  private readonly DEFAULT_MAX_API_CALL_ROUNDS = 16;
+  private readonly DEFAULT_REQUEST_LIMIT_SECOND = 20;
   private readonly DEFAULT_CONTEXT_EXPIRATION_DAY = 7;
   private readonly DEFAULT_MAX_CONTEXT_LENGTH = 8;
   private readonly REQUIRED_ENV_VARS: (keyof Env)[] = [
@@ -33,15 +33,16 @@ class ConfigLoader {
     'WEBHOOK_RECEIVE_URL',
     'WEBHOOK_SECRET_TOKEN',
     'TELEGRAM_BOT_TOKEN',
+    'TELEGRAM_BOT_ID',
     'TELEGRAM_BOT_USERNAME',
     'TELEGRAM_BOT_ADMIN_ID',
     'ALLOWED_USAGE_GROUPS',
   ];
   private readonly config: Config;
-  private readonly env: NodeJS.ProcessEnv;
+  private readonly env: Env;
 
   constructor() {
-    this.env = process.env;
+    this.env = process.env as unknown as Env;
     this.validateRequiredEnv();
     this.config = this.buildConfig();
     Object.freeze(this.config);
@@ -53,7 +54,7 @@ class ConfigLoader {
    */
   private validateRequiredEnv(): void {
     const missing = this.REQUIRED_ENV_VARS.filter((key) => {
-      const val = this.env[key as string];
+      const val = this.env[key];
       return !val || val.trim() === '';
     });
 
@@ -84,15 +85,16 @@ class ConfigLoader {
       loggerLevel: this.parseLoggerLevel(this.env.SERVER_LOGGER_LEVEL),
 
       enableKeyRotation: this.env.ENABLE_KEY_ROTATION === 'true' || this.DEFAULT_ENABLE_KEY_ROTATION,
-
       geminiApiBaseUrl: this.env.GEMINI_API_BASE_URL || this.DEFAULT_GEMINI_API_BASE_URL,
       localProxyBaseUrl: this.env.LOCAL_PROXY_BASE_URL || this.DEFAULT_LOCAL_PROXY_BASE_URL,
+
       geminiApiKeys: this.parseStringArray(this.getEnv('GEMINI_API_KEYS')),
+
       modelName: this.env.GEMINI_MODEL_NAME || this.DEFAULT_MODEL_NAME,
       modelTemperature: Number(this.env.MODEL_CONFIG_TEMPERATURE) || this.DEFAULT_MODEL_CONFIG_TEMPERATURE,
 
       maxApiCallRounds: Number(this.env.MAX_API_CALL_ROUNDS) || this.DEFAULT_MAX_API_CALL_ROUNDS,
-      requestIntervalSecond: Number(this.env.REQUEST_INTERVAL_SECOND) || this.DEFAULT_REQUEST_INTERVAL_SECOND,
+      requestRateLimit: (Number(this.env.REQUEST_LIMIT_SECOND) || this.DEFAULT_REQUEST_LIMIT_SECOND) * 1_000,
 
       contextsExpirationSecond:
         (Number(this.env.CONTEXT_EXPIRATION_DAY) || this.DEFAULT_CONTEXT_EXPIRATION_DAY) * 24 * 60 * 60,
@@ -104,6 +106,8 @@ class ConfigLoader {
       secretToken: this.getEnv('WEBHOOK_SECRET_TOKEN'),
       botToken: this.getEnv('TELEGRAM_BOT_TOKEN'),
       botApiUrl: `https://api.telegram.org/bot${this.env.TELEGRAM_BOT_TOKEN}`,
+
+      botId: Number(this.getEnv('TELEGRAM_BOT_ID')),
       botName: this.getEnv('TELEGRAM_BOT_USERNAME'),
       adminId: Number(this.getEnv('TELEGRAM_BOT_ADMIN_ID')),
       allowGroups: this.parseNumberArray(this.env.ALLOWED_USAGE_GROUPS),
@@ -115,7 +119,7 @@ class ConfigLoader {
    */
   private getEnv(key: keyof Env): string {
     // 前面 validateRequiredEnv 已经保证了这些值存在
-    return this.env[key as string] as string;
+    return this.env[key] as string;
   }
 
   /**
@@ -176,5 +180,5 @@ class ConfigLoader {
   }
 }
 
-const configLoader: ConfigLoader = new ConfigLoader();
-export const config: Config = configLoader.load();
+const configLoader = new ConfigLoader();
+export const config = configLoader.load();

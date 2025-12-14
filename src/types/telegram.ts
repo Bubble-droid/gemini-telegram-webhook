@@ -87,7 +87,6 @@ export interface Message {
   is_automatic_forward?: boolean;
   reply_to_message?: Message;
   quote?: TextQuote;
-  reply_parameters?: ReplyParameters;
   via_bot?: User;
   edit_date?: Integer;
   has_protected_content?: true;
@@ -96,6 +95,7 @@ export interface Message {
   text?: string;
   entities?: MessageEntity[];
   link_preview_options?: LinkPreviewOptions;
+  animation: Animation;
   audio?: Audio;
   document?: Document;
   photo?: PhotoSize[];
@@ -130,61 +130,55 @@ export interface MessageEntity {
   custom_emoji_id?: string;
 }
 
-export interface PhotoSize {
+interface mediaBaseProperties {
   file_id: string;
   file_unique_id: string;
-  width: Integer;
-  height: Integer;
   file_size?: Integer;
 }
 
-export interface Audio {
-  file_id: string;
-  file_unique_id: string;
+interface ImageryBaseProperties extends mediaBaseProperties {
+  width: Integer;
+  height: Integer;
+}
+
+interface AudioBaseProperties extends mediaBaseProperties {
   duration: Integer;
+  mime_type?: string;
+}
+
+export type PhotoSize = ImageryBaseProperties;
+
+export interface Audio extends AudioBaseProperties {
   performer?: string;
   title?: string;
   file_name?: string;
-  mime_type?: string;
-  file_size?: Integer;
   thumbnail?: PhotoSize;
 }
 
-export interface Document {
-  file_id: string;
-  file_unique_id: string;
+export interface Document extends mediaBaseProperties {
   thumbnail?: PhotoSize;
   file_name?: string;
   mime_type?: string;
-  file_size?: Integer;
 }
 
-export interface Video {
-  file_id: string;
-  file_unique_id: string;
-  width: Integer;
-  height: Integer;
+export interface Video extends ImageryBaseProperties {
   duration: Integer;
   thumbnail?: PhotoSize;
   file_name?: string;
   mime_type?: string;
-  file_size?: Integer;
 }
 
-export interface Voice {
-  file_id: string;
-  file_unique_id: string;
+export type Voice = AudioBaseProperties;
+
+export interface Animation extends ImageryBaseProperties {
   duration: Integer;
+  thumbnail?: PhotoSize;
+  file_name?: string;
   mime_type?: string;
-  file_size?: Integer;
 }
 
-export interface Sticker {
-  file_id: string;
-  file_unique_id: string;
+export interface Sticker extends ImageryBaseProperties {
   type: 'regular' | 'mask' | 'custom_emoji';
-  width: Integer;
-  height: Integer;
   is_animated?: boolean;
   is_video?: boolean;
   thumbnail?: PhotoSize;
@@ -193,7 +187,6 @@ export interface Sticker {
   premium_animation?: TFile;
   custom_emoji_id?: string;
   needs_repainting?: true;
-  file_size?: Integer;
 }
 
 export interface TFile {

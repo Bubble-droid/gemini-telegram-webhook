@@ -2,12 +2,12 @@
 
 import type { ParseMode } from '@/types';
 import {
-  Generator,
   HtmlGenerator,
   LegacyMarkdownGenerator,
   MarkdownV2Generator,
   Parser,
   type AstNode,
+  type Generator,
 } from '@/utils/formatters';
 
 /**

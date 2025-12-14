@@ -4,7 +4,8 @@ import { bot, logger } from '@/services';
 import type * as Bot from '@/types/telegram';
 import { formatTime } from '@/utils';
 import Database from 'better-sqlite3';
-import fs from 'fs';
+import fs from 'node:fs';
+import path from 'node:path';
 
 /**
  * 2. 任务注册表：建立 Action 字符串到 参数类型 的映射
@@ -57,11 +58,13 @@ class TaskScheduler {
 
   constructor() {
     const dbDir = '/data';
+
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
     }
 
-    const dbPath = `${dbDir}/tasks.db`;
+    const dbPath = path.join(dbDir, 'tasks.db');
+
     this.db = new Database(dbPath, {
       verbose: (msg) => logger.debug('[TaskScheduler]', { msg }),
     });

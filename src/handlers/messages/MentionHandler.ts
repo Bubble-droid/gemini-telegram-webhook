@@ -1,9 +1,7 @@
-// src/handlers/message/mention.ts
-
-import { fileHandler } from '@/handlers';
+import { BotMessages } from '@/configs';
 import { bot, chatContexts, config, logger, questionHandler } from '@/services';
 import type { Message, ParseMode, TextQuote } from '@/types';
-import { rateLimiter, sendFormattedMessage, taskScheduler } from '@/utils';
+import { handleMediaFiles, rateLimiter, sendFormattedMessage, taskScheduler } from '@/utils';
 import type { Content, GenerateContentResponse, Part } from '@google/genai';
 
 /**
@@ -23,8 +21,25 @@ interface MentionContext {
 /**
  * 检查消息是否包含文件
  */
-const isContainsFile = (message: Message | undefined): boolean => {
-  return !!(message && (message.document || message.photo || message.video || message.audio || message.voice));
+const hasFile = (message: Message | undefined): boolean => {
+  return !!(
+    message &&
+    (message.sticker ||
+      message.animation ||
+      message.document ||
+      message.photo ||
+      message.video ||
+      message.audio ||
+      message.voice)
+  );
+};
+
+export const hasImage = (message: Message): boolean => {
+  const { sticker, photo, document } = message;
+  const isImageSticker = sticker && !sticker.is_animated && !sticker.is_video;
+  const isImageDocument = document && document.mime_type?.startsWith('image/') && !document.mime_type.endsWith('/gif');
+
+  return !!(photo || isImageSticker || isImageDocument);
 };
 
 /**
@@ -58,6 +73,8 @@ class MentionHandler {
   private botName: string;
   private adminId: number;
 
+  private readonly processingLocks: Set<string> = new Set();
+
   constructor() {
     this.botName = config.botName;
     this.adminId = config.adminId;
@@ -67,42 +84,35 @@ class MentionHandler {
    * 从 Telegram 消息中提取适用于 Gemini API 的内容部分
    * @private
    */
-  private async extractMessageParts(message: Message): Promise<Part[]> {
+  private async extractMessageParts(messages: Message[]): Promise<Part[]> {
     const parts: Part[] = [];
 
-    let messageText = message.text || message.caption || '';
+    const fileParts = await handleMediaFiles(messages, hasFile);
 
-    // 清理文本：移除 @botName, :ask 标记
-    messageText = messageText
-      .replace(new RegExp(`(@${this.botName})`, 'gi'), '')
-      .replace(/(:ask)/gi, '')
+    parts.push(...fileParts);
+
+    const mentionRegex = new RegExp(`@${this.botName}`, 'gi');
+
+    const combinedText = messages
+      .map((msg) =>
+        (msg.text || msg.caption || '')
+          .replace(mentionRegex, '')
+          .replace(/^:ask/gi, '')
+          .replace(/^🤖 模型：.*?\n+/g, '')
+          .replace(/⚠️ 本 AI[\s\S]*$/m, '')
+          .trim(),
+      )
+      .filter(Boolean)
+      .join('\n')
       .trim();
 
-    // 清理机器人之前的回复格式（防止模型自循环）
-    if (messageText.includes('🤖 模型：') || messageText.includes('✨ 本次任务')) {
-      messageText = messageText
-        .replace(/^🤖 模型：.*?\n+/g, '')
-        .replace(/✨ API 调用[\s\S]*$/m, '')
-        .trim();
+    if (combinedText) {
+      parts.push({ text: combinedText });
     }
 
-    // 处理文件
-    if (isContainsFile(message)) {
-      const fileData = await fileHandler.handle(message);
-      if (fileData) {
-        parts.push({ inlineData: fileData });
-      }
-
-      // 默认提示词
-      if (!messageText) {
-        if (message.document) messageText = '分析这个文件';
-        else if (message.photo) messageText = '分析这张图片';
-        else if (message.video) messageText = '分析这个视频';
-      }
-    }
-
-    if (messageText) {
-      parts.push({ text: messageText });
+    // 默认 Prompt
+    if (parts.length > 0 && !combinedText) {
+      parts.push({ text: 'Analyze these files' });
     }
 
     return parts;
@@ -141,9 +151,9 @@ class MentionHandler {
    * 发送“文件上传中”提示
    * @private
    */
-  private async updateFileUploadMessage(ctx: MentionContext): Promise<void> {
-    if (isContainsFile(ctx.message) || isContainsFile(ctx.replyToMessage)) {
-      ctx.initMessageId = await updateOrSendMessage(ctx.chatId, '📄 File uploading...', ctx.initMessageId, {
+  private async updateFileUploadMessage(messages: Message[], ctx: MentionContext): Promise<void> {
+    if (messages.some((m) => hasFile(m) || hasFile(m.reply_to_message))) {
+      ctx.initMessageId = await updateOrSendMessage(ctx.chatId, BotMessages.uploading, ctx.initMessageId, {
         replyToMessageId: ctx.userMessageId,
       });
     }
@@ -153,25 +163,25 @@ class MentionHandler {
    * 构建发送给 Gemini 的完整上下文（包括历史记录、引用、当前消息）
    * @private
    */
-  private async buildCompleteContents(ctx: MentionContext): Promise<Content[]> {
-    const { chatId, userId, message, quote, replyToMessage } = ctx;
+  private async buildCompleteContents(ctx: MentionContext, groupMessages: Message[]): Promise<Content[]> {
+    const { chatId, userId } = ctx;
 
     // 1. 获取历史记录
     const historyChatContents = chatContexts.get(chatId, userId);
     const completeContents: Content[] = [...historyChatContents];
 
-    // 2. 准备当前消息副本
-    const currentMessageCopy: Message = { ...message };
+    const replyToMessage = groupMessages.find((m) => !!m.reply_to_message);
 
-    // 3. 处理引用回复 (Reply Quote)
-    if (quote?.text) {
-      const quotedContents = `${quote.text.replace(/^/gm, '> ')}\n\n${message.text || message.caption || ''}`;
-      currentMessageCopy.text = quotedContents;
+    const textQuote = groupMessages.find((m) => !!m.quote);
+
+    let quoteTextPrefix = '';
+    if (textQuote?.quote?.text) {
+      quoteTextPrefix = `❝ Quoted: "${textQuote.quote.text}"\n\n`;
     }
 
     // 4. 处理被回复的消息 (Reply Context)
     if (replyToMessage) {
-      const replyToParts = await this.extractMessageParts(replyToMessage);
+      const replyToParts = await this.extractMessageParts([replyToMessage]);
       if (replyToParts.length > 0) {
         const replyRole = replyToMessage.from?.username === this.botName ? 'model' : 'user';
         completeContents.push({
@@ -182,7 +192,17 @@ class MentionHandler {
     }
 
     // 5. 处理当前消息
-    const currentParts = await this.extractMessageParts(currentMessageCopy);
+    const currentParts = await this.extractMessageParts(groupMessages);
+
+    if (quoteTextPrefix) {
+      const textPartIndex = currentParts.findIndex((p) => p.text);
+      if (textPartIndex !== -1) {
+        currentParts[textPartIndex].text = quoteTextPrefix + currentParts[textPartIndex].text;
+      } else {
+        currentParts.push({ text: quoteTextPrefix }); // 放在最后或最前均可，Gemini 都能理解
+      }
+    }
+
     if (currentParts.length > 0) {
       completeContents.push({
         role: 'user',
@@ -198,7 +218,7 @@ class MentionHandler {
    * @private
    */
   private async updateThinkingMessage(ctx: MentionContext): Promise<void> {
-    ctx.initMessageId = await updateOrSendMessage(ctx.chatId, '✨ Thinking...', ctx.initMessageId, {
+    ctx.initMessageId = await updateOrSendMessage(ctx.chatId, BotMessages.thinking, ctx.initMessageId, {
       replyToMessageId: ctx.userMessageId,
     });
   }
@@ -215,56 +235,67 @@ class MentionHandler {
     const finalText = geminiResponse.text;
 
     // 发送最终格式化消息
-    const finalReplyResult = await sendFormattedMessage(
-      ctx.chatId,
-      ctx.initMessageId,
-      ctx.userMessageId,
-      finalText as string,
-    );
-
-    if (!finalReplyResult.ok) {
-      throw finalReplyResult.error;
-    }
+    await sendFormattedMessage(ctx.chatId, ctx.initMessageId, ctx.userMessageId, finalText as string);
 
     completeContents.push(geminiResponse.candidates?.[0]?.content as Content);
 
     chatContexts.update(ctx.chatId, ctx.userId, completeContents);
   }
 
-  /**
-   * 处理消息的主入口
-   * @public
-   */
-  public async handle(message: Message): Promise<void> {
-    const { chat, from, message_id, reply_to_message, quote } = message;
+  // [新增/修改] 处理消息组入口
+  public async handleGroup(messages: Message[]): Promise<void> {
+    if (messages.length === 0) return;
 
-    // 1. 构建请求上下文 (Context)
+    // 1. 找到“触发点”消息，用于确定回复对象和上下文
+    const triggerMsg =
+      messages.find((m) => {
+        const text = m.text || m.caption || '';
+        return text.includes(`@${this.botName}`) || text.startsWith(':ask') || !!text;
+      }) || messages[0];
+
+    const { chat, from, message_id } = triggerMsg;
+
+    if (!from) return;
+
+    // 2. 生成锁 Key
+    const lockKey = `${chat.id}:${from.id}`;
+    // 3. 检查锁：如果已存在，直接忽略本次请求
+    if (this.processingLocks.has(lockKey)) {
+      logger.warn(`[MentionHandler] Ignored concurrent request from ${lockKey}`);
+      const text = '💡 你已经有一个请求在处理中，请等待处理完成后再试...';
+      taskScheduler.sendTempMessage(chat.id, text, 3 * 60 * 1000, {
+        replyToMessageId: message_id,
+      });
+      return;
+    }
+
+    this.processingLocks.add(lockKey);
+
     const ctx: MentionContext = {
       chatId: chat.id,
-      userId: from?.id as number,
+      userId: from.id,
       userMessageId: message_id,
-      message,
-      replyToMessage: reply_to_message,
-      quote,
+      message: triggerMsg, // 上下文主要基于这条
+      replyToMessage: triggerMsg.reply_to_message,
+      quote: triggerMsg.quote,
       initMessageId: undefined,
     };
 
-    // 2. 速率限制检查
-    if (await this.handleRateLimiting(ctx)) return;
-
     try {
-      // 3. 上传文件提示
-      await this.updateFileUploadMessage(ctx);
+      // 2. 速率限制检查
+      if (await this.handleRateLimiting(ctx)) return;
 
-      // 4. 构建对话内容
-      const completeContents = await this.buildCompleteContents(ctx);
+      await this.updateFileUploadMessage(messages, ctx);
 
-      if (completeContents.length === 0) {
+      // 3. 构建内容时，传入整个 messages 数组
+      const completeContents = await this.buildCompleteContents(ctx, messages);
+
+      if (completeContents[completeContents.length - 1].role === 'model') {
         const text = '未能从消息中提取到有效内容，请检查消息格式。';
-        ctx.initMessageId = await updateOrSendMessage(ctx.chatId, text, ctx.initMessageId, {
+        const messageId = await updateOrSendMessage(ctx.chatId, text, ctx.initMessageId, {
           replyToMessageId: ctx.userMessageId,
         });
-        taskScheduler.deleteMessage(ctx.chatId, ctx.initMessageId, 3 * 60 * 1000);
+        taskScheduler.deleteMessage(ctx.chatId, messageId, 3 * 60 * 1000);
         return;
       }
 
@@ -295,7 +326,17 @@ class MentionHandler {
       }
       // 抛出错误供上层（UpdateHandler）捕获并通知管理员/用户
       throw apiError;
+    } finally {
+      this.processingLocks.delete(lockKey);
     }
+  }
+
+  /**
+   * 处理消息的主入口
+   * @public
+   */
+  public async handle(message: Message): Promise<void> {
+    return await this.handleGroup([message]);
   }
 }
 

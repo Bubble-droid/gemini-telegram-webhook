@@ -27,7 +27,10 @@
     {
       "type": "wireguard",
       "tag": "WARP",
-      "address": ["172.16.0.2/32", "2606:4700:110:8dc5:553b:6747:e0b3:cbe4/128"],
+      "address": [
+        "172.16.0.2/32",
+        "2606:4700:110:8dc5:553b:6747:e0b3:cbe4/128"
+      ],
       "private_key": "EMCsxRS1HQUiPfoEj/Agj/NA24FDeXcEl3WPyTKW4EM=",
       "peers": [
         {

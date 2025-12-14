@@ -1,11 +1,53 @@
-// src/handlers/update.ts
-
-import { commandHandler, mentionHandler, normalMessageHandler } from '@/handlers/message-handlers';
-import { AppError, bot, config, logger } from '@/services';
+import { callbackQueryHandler } from '@/handlers';
+import { commandHandler, mentionHandler, normalMessageHandler } from '@/handlers/messages';
+import { bot, config, logger } from '@/services';
 import type * as Bot from '@/types/telegram';
-import { deepClone, sendErrorNotification, shortenString, sleep, taskScheduler } from '@/utils';
+import { deepClone, messageCollector, sendErrorNotification, shortenString, sleep, taskScheduler } from '@/utils';
+import { AppError } from '@/utils/errors';
 import { escaper } from '@/utils/formatters';
-import { callbackQueryHandler } from './CallbackQueryHandler';
+
+/**
+ * @description 安全地创建一个简化的 Message 对象副本。
+ * @param message - 原始的 Message 对象
+ */
+const simplifyMessage = (message: Bot.Message | undefined): Bot.Message | undefined => {
+  if (!message) return undefined;
+
+  const filterEntity = (entities: Bot.MessageEntity[] | undefined): Bot.MessageEntity[] | undefined =>
+    entities?.filter((e) => ['text_mention', 'mention', 'bot_command'].includes(e.type));
+
+  message.entities = filterEntity(message.entities);
+  message.caption_entities = filterEntity(message.caption_entities);
+  message.photo = message.photo ? [message.photo[message.photo.length - 1]] : undefined;
+  message.reply_to_message = simplifyMessage(message.reply_to_message);
+  message.reply_markup = message.reply_markup?.inline_keyboard
+    ? { inline_keyboard: [message.reply_markup.inline_keyboard[0]] }
+    : undefined;
+
+  return message;
+};
+
+/**
+ * @description ：创建一个简化的 Update 对象副本用于日志记录。
+ * @param update - 原始的 Update 对象
+ */
+const simplifyUpdateInLogger = (update: Bot.Update): Bot.Update => {
+  const updateCopy = deepClone(update);
+
+  if (updateCopy.message) {
+    updateCopy.message = simplifyMessage(updateCopy.message);
+  }
+
+  if (updateCopy.edited_message) {
+    updateCopy.edited_message = simplifyMessage(updateCopy.edited_message);
+  }
+
+  if (updateCopy.callback_query?.message) {
+    updateCopy.callback_query.message = simplifyMessage(updateCopy.callback_query.message);
+  }
+
+  return updateCopy;
+};
 
 /**
  * @description 核心更新处理器，负责接收 Telegram Update，进行权限验证、路由分发和错误处理。
@@ -17,43 +59,16 @@ class UpdateHandler {
   constructor() {
     this.botName = config.botName;
     this.allowGroups = config.allowGroups;
-  }
 
-  /**
-   * @description 处理接收到的 Telegram 更新对象的主入口。
-   * @param update - Telegram 更新对象。
-   */
-  public async handle(update: Bot.Update): Promise<void> {
-    const { update_id, message, callback_query } = update;
-
-    // 1. 忽略贴纸消息
-    if (message?.sticker) return;
-
-    logger.info('Handling Telegram update', { update: simplifyUpdateInLogger(update) });
-
-    // 2. 确保存在有效的消息体或回调
-    if (!message && !callback_query) return;
-
-    // 3. 提取核心消息对象 (Message)
-    const msg = message || callback_query?.message;
-    if (!msg) {
-      logger.warn('No message or callback_query message found in update', { updateId: update_id });
-      return;
-    }
-
-    try {
-      // 4. 验证聊天类型 (私聊/群组)
-      if (!this.validateChatType(msg)) return;
-
-      // 5. 验证群组权限
-      if (!(await this.validateGroupPermission(msg))) return;
-
-      // 6. 路由分发处理
-      await this.dispatch(msg, callback_query);
-    } catch (err: unknown) {
-      // 7. 统一错误处理
-      this.handleError(err, msg, update_id);
-    }
+    // 注册收集器的回调：当收集完毕后，执行此逻辑
+    messageCollector.registerCallback(async (messages) => {
+      try {
+        await this.dispatchBatch(messages);
+      } catch (err) {
+        const anchorMsg = messages.find((m) => m.text || m.caption) || messages[0];
+        this.handleError(err, anchorMsg);
+      }
+    });
   }
 
   /**
@@ -93,46 +108,18 @@ class UpdateHandler {
   }
 
   /**
-   * @description 核心路由逻辑：根据消息内容决定调用哪个处理器。
-   * @private
-   */
-  private async dispatch(msg: Bot.Message, callbackQuery?: Bot.CallbackQuery): Promise<void> {
-    // 情况 A: 回调查询 (Callback Query)
-    if (callbackQuery?.data) {
-      return await callbackQueryHandler.handle(callbackQuery);
-    }
-
-    const messageText = msg.text || msg.caption || '';
-    const entities = msg.entities || msg.caption_entities || [];
-
-    // 情况 B: 提及机器人 (@BotName)
-    if (entities.length > 0 && this.isBotMentioned(messageText, entities)) {
-      return await mentionHandler.handle(msg);
-    }
-
-    // 情况 C: 针对机器人的显式命令 (/cmd@BotName)
-    if (entities.length > 0 && this.isBotCommand(messageText, entities)) {
-      return await commandHandler.handle(msg);
-    }
-
-    // 情况 D: 普通消息
-    return await normalMessageHandler.handle(msg);
-  }
-
-  /**
    * @description 检查是否在消息中提到了机器人。
    * @private
    */
   private isBotMentioned(text: string, entities: Bot.MessageEntity[]): boolean {
-    for (const entity of entities) {
-      if (entity.type === 'mention' || entity.type === 'text_mention') {
+    return entities.some((entity) => {
+      const isMentionType = entity.type === 'mention' || entity.type === 'text_mention';
+      if (isMentionType) {
         const mentionedText = text.substring(entity.offset, entity.offset + entity.length);
-        if (mentionedText === `@${this.botName}`) {
-          return true;
-        }
+        return mentionedText === `@${this.botName}`;
       }
-    }
-    return false;
+      return false;
+    });
   }
 
   /**
@@ -140,24 +127,22 @@ class UpdateHandler {
    * @private
    */
   private isBotCommand(text: string, entities: Bot.MessageEntity[]): boolean {
-    for (const entity of entities) {
-      if (entity.type === 'bot_command') {
+    return entities.some((entity) => {
+      const isCommandType = entity.type === 'bot_command';
+      if (isCommandType) {
         const commandText = text.substring(entity.offset, entity.offset + entity.length);
         const atIndex = commandText.indexOf('@');
-        // 只有当命令包含 @ 且后缀完全匹配 botName 时才算作显式命令
-        if (atIndex !== -1 && commandText.slice(atIndex + 1) === this.botName) {
-          return true;
-        }
+        return atIndex !== -1 && commandText.slice(atIndex + 1) === this.botName;
       }
-    }
-    return false;
+      return false;
+    });
   }
 
   /**
    * @description 统一错误处理逻辑。
    * @private
    */
-  private handleError(err: unknown, msg: Bot.Message, updateId: number): void {
+  private handleError(err: unknown, msg: Bot.Message, updateId?: number): void {
     const { chat, message_id } = msg;
     const errorMessage = err instanceof AppError ? err.message : String(err);
 
@@ -175,55 +160,67 @@ class UpdateHandler {
       parseMode: 'HTML',
     });
   }
+
+  /**
+   * 接收 [Text, Doc1, Doc2] 混合数组
+   */
+  private async dispatchBatch(messages: Bot.Message[]): Promise<void> {
+    if (messages.length === 0) return;
+
+    for (const msg of messages) {
+      const text = msg.text || msg.caption || '';
+      const entities = msg.entities || msg.caption_entities || [];
+
+      if (this.isBotMentioned(text, entities)) {
+        await mentionHandler.handleGroup(messages);
+        return;
+      }
+
+      if (this.isBotCommand(text, entities)) {
+        await commandHandler.handle(msg);
+        return;
+      }
+    }
+
+    // 既没有 Mention 也没有 Command -> 普通消息 (OCR / ChitChat)
+    await normalMessageHandler.handleGroup(messages);
+  }
+
+  /**
+   * @description 处理接收到的 Telegram 更新对象的主入口。
+   * @param update - Telegram 更新对象。
+   */
+  public async handle(update: Bot.Update): Promise<void> {
+    const { update_id, message, callback_query } = update;
+
+    logger.debug('Handling Telegram update', { update: simplifyUpdateInLogger(update) });
+
+    if (!message && !callback_query) return;
+
+    const msg = message || callback_query?.message;
+
+    if (!msg) {
+      logger.warn('No message or callback_query message found in update', { updateId: update_id });
+      return;
+    }
+
+    if (!this.validateChatType(msg)) return;
+
+    if (!(await this.validateGroupPermission(msg))) return;
+
+    try {
+      if (callback_query?.data) {
+        await callbackQueryHandler.handle(callback_query);
+        return;
+      }
+
+      if (msg) {
+        messageCollector.addAndSchedule(msg);
+      }
+    } catch (err) {
+      this.handleError(err, msg, update_id);
+    }
+  }
 }
 
-// 导出单例实例，方便调用
-export const updateHandler: UpdateHandler = new UpdateHandler();
-
-/**
- * @description 安全地创建一个简化的 Message 对象副本。
- * @param message - 原始的 Message 对象
- */
-const simplifyMessage = (message: Bot.Message | undefined): Bot.Message | undefined => {
-  if (!message) return undefined;
-
-  const truncate = (text?: string): string | undefined =>
-    text ? (text.length > 20 ? `${text.slice(0, 20)}...` : text) : undefined;
-
-  const filterEntity = (entities: Bot.MessageEntity[] | undefined): Bot.MessageEntity[] | undefined =>
-    entities?.filter((e) => ['text_mention', 'mention', 'bot_command'].includes(e.type));
-
-  message.text = truncate(message.text);
-  message.caption = truncate(message.caption);
-  message.entities = filterEntity(message.entities);
-  message.caption_entities = filterEntity(message.caption_entities);
-  message.photo = message.photo ? [message.photo[message.photo.length - 1]] : undefined;
-  message.reply_to_message = simplifyMessage(message.reply_to_message);
-  message.reply_markup = message.reply_markup?.inline_keyboard
-    ? { inline_keyboard: [message.reply_markup.inline_keyboard[0]] }
-    : undefined;
-
-  return message;
-};
-
-/**
- * @description ：创建一个简化的 Update 对象副本用于日志记录。
- * @param update - 原始的 Update 对象
- */
-const simplifyUpdateInLogger = (update: Bot.Update): Bot.Update => {
-  const updateCopy = deepClone(update);
-
-  if (updateCopy.message) {
-    updateCopy.message = simplifyMessage(updateCopy.message);
-  }
-
-  if (updateCopy.edited_message) {
-    updateCopy.edited_message = simplifyMessage(updateCopy.edited_message);
-  }
-
-  if (updateCopy.callback_query?.message) {
-    updateCopy.callback_query.message = simplifyMessage(updateCopy.callback_query.message);
-  }
-
-  return updateCopy;
-};
+export const updateHandler = new UpdateHandler();

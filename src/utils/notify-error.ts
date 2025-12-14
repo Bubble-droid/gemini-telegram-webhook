@@ -2,6 +2,7 @@
 
 import { bot, config, logger } from '@/services';
 import { formatTime, shortenString } from '@/utils';
+import { AppError } from '@/utils/errors';
 import { escaper } from '@/utils/formatters';
 
 /**
@@ -22,7 +23,7 @@ export const sendErrorNotification = (error: unknown, context: string = 'Unknown
 
   try {
     // 2. 标准化错误对象
-    const errObj = error instanceof Error ? error : new Error(String(error));
+    const errObj = error instanceof AppError ? error : new AppError(String(error));
 
     // 3. 获取并截断堆栈信息 (保留前 1000 和后 1000 字符，防止消息过长发送失败)
     // 堆栈对于定位问题最重要，所以我们在截断前先获取它

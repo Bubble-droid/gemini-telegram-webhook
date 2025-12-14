@@ -1,7 +1,3 @@
-// src/utils/formatters/preprocessor.ts
-
-import { tableFormatter } from '@/utils/formatters';
-
 /**
  * @class MarkdownUtils
  * @description 提供 Markdown 文本处理相关的工具函数。
@@ -82,30 +78,6 @@ class MarkdownUtils {
   }
 
   /**
-   * 预处理 Markdown 文本，自动将未被代码块包裹的 Markdown 表格用 ```markdown ... ``` 包裹起来。
-   * 此版本新增功能：
-   * 1. 移除表格单元格内的行内代码符号 (`).
-   * 2. 自动对齐所有列的 | 分隔符。
-   * 3. 自动补全分隔线 --- 以匹配列宽。
-   *
-   * @param {string} markdownText - 原始的 Markdown 文本。
-   * @returns {string} 经过清理、格式化并包裹的 Markdown 文本。
-   */
-  public preprocessTables(markdownText: string): string {
-    if (typeof markdownText !== 'string' || !markdownText) {
-      return '';
-    }
-
-    return this.processTextOutsideCodeBlocks(markdownText, (safeText) => {
-      const tableRegex = /^(\s*\|.+\|\r?\n\s*\|(?:\s*:?-+:?\s*\|)+\r?\n(?:(?:\s*\|.*\|\r?\n)*))/gm;
-      return safeText.replace(tableRegex, (table) => {
-        const formattedTable = tableFormatter.format(table);
-        return `\`\`\`markdown\n${formattedTable.trim()}\n\`\`\``;
-      });
-    });
-  }
-
-  /**
    * 预处理 Markdown 文本，将标准的 Markdown 标题转换为带层级序号的有序列表项。
    * 例如： # 概览 -> 1. **概览**
    *        ## 细节 -> 1.1. **细节**
@@ -151,10 +123,6 @@ const markdownUtils: MarkdownUtils = new MarkdownUtils();
 export const preProcessMarkdown = (markdownText: string): string => {
   // 1. 首先规范化代码块，确保后续基于 ``` 的操作（如占位符替换）能正确识别所有代码块。
   let processedText = markdownUtils.normalizeCodeBlocks(markdownText);
-
-  // 2. 接着处理表格。此步骤会将裸露的表格包裹进 ```markdown 代码块中，
-  //    从而保护它们不被后续的标题处理逻辑错误地转换。
-  processedText = markdownUtils.preprocessTables(processedText);
 
   // 3. 最后处理标题。由于表格已被代码块保护，此操作将安全地转换所有剩余的裸露标题。
   processedText = markdownUtils.preprocessHeaders(processedText);

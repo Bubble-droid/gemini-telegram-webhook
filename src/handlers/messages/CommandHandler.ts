@@ -84,20 +84,15 @@ class CommandHandler {
     if (targetCommand) {
       logger.info(`执行命令: /${commandName}`, { cleanText });
 
-      try {
-        // 4. 执行命令 Action
-        await targetCommand.action(chat.id, userId, messageId, {
-          cleanText,
-          message,
-        });
-      } catch (err) {
-        logger.error(`执行命令 /${commandName} 时发生错误`, { err, messageId });
-        throw err;
-      }
+      // 4. 执行命令 Action
+      await targetCommand.action(chat.id, userId, messageId, {
+        cleanText,
+        message,
+      });
     } else {
       logger.info(`未找到命令: /${commandName}`);
     }
   }
 }
 
-export const commandHandler: CommandHandler = new CommandHandler();
+export const commandHandler = new CommandHandler();

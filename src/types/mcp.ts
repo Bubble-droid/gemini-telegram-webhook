@@ -1,5 +1,6 @@
 // src/types/mcp.d.ts
 
+import type { mcpServers } from '@/configs';
 import type { StdioServerParameters } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 interface RemoteServer {
@@ -12,8 +13,10 @@ interface LocalServer extends StdioServerParameters {
   type: 'local';
 }
 
-export type MCPServerName = 'github_toolset' | 'local_rag';
+export type ServerConfig = RemoteServer | LocalServer;
 
-export type MCPServerConfig = RemoteServer | LocalServer;
+export interface McpServer {
+  [x: string]: ServerConfig;
+}
 
-export type MCPServers = Record<MCPServerName, MCPServerConfig>;
+export type ServerName = keyof typeof mcpServers;

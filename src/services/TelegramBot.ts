@@ -1,9 +1,10 @@
 // src/services/TelegramBot.ts
 
-import { AppError, config, logger } from '@/services';
+import { config, logger } from '@/services';
 import type { HttpMethod } from '@/types';
 import type * as Bot from '@/types/telegram';
 import { shortenString } from '@/utils';
+import { AppError } from '@/utils/errors';
 import { escaper } from '@/utils/formatters';
 
 interface ErrorResult {

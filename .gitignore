@@ -3,7 +3,9 @@
 .vscode/
 *.code-workspace
 draft/
+.lingma/
 
+data
 dist/
 
 # Logs

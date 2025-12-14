@@ -1,15 +1,24 @@
-import { AppError, config, logger } from '@/services';
+import { config, logger } from '@/services';
 import { deepClone, sleep } from '@/utils';
+import { AppError } from '@/utils/errors';
 import { keyRotator } from '@/utils/KeyRotator';
 import {
   GoogleGenAI,
   HarmBlockThreshold,
   HarmCategory,
   type Content,
+  type FileSearchStore,
   type GenerateContentConfig,
   type GenerateContentResponse,
   type Part,
 } from '@google/genai';
+
+export interface GeminiApiOptions {
+  genClient?: GoogleGenAI;
+  genModel?: string;
+  genConfig?: GenerateContentConfig;
+  onRetry?: RetryCallback;
+}
 
 // 固定的不可重试错误列表
 const NON_RETRY_ERRORS = [
@@ -40,12 +49,11 @@ export class GeminiAPI {
       apiKey: keyRotator.nextKey(),
       httpOptions: {
         baseUrl: config.enableKeyRotation ? config.localProxyBaseUrl : config.geminiApiBaseUrl,
-        timeout: 10 * 60_000,
+        timeout: 60 * 60_000,
       },
     });
     this.baseConfig = {
       temperature: config.modelTemperature,
-      thinkingConfig: { thinkingBudget: -1 },
       safetySettings: [
         { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
         { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -98,35 +106,51 @@ export class GeminiAPI {
     });
   }
 
+  async listFileSearchStores(): Promise<FileSearchStore[]> {
+    let nextPageToken: string | undefined = undefined;
+    const fileSearchStores: FileSearchStore[] = [];
+
+    do {
+      const response = await this.gemini.fileSearchStores.list({
+        config: {
+          pageSize: 20,
+          pageToken: nextPageToken,
+        },
+      });
+
+      fileSearchStores.push(...response.page);
+      nextPageToken = response.params.config?.pageToken;
+    } while (nextPageToken);
+
+    return fileSearchStores;
+  }
+
   /**
    * 调用 Gemini API 生成内容
    * @param contents 对话上下文
-   * @param generateConfig 生成配置 (temperature, tools 等)
-   * @param onRetry (可选) 重试回调。如果传入此参数，遇到错误会尝试重试；否则直接抛出。
    */
-  public async generate(
-    contents: Content[],
-    generateConfig: GenerateContentConfig = {},
-    onRetry?: RetryCallback,
-  ): Promise<GenerateContentResponse> {
+  public async generate(contents: Content[], options: GeminiApiOptions = {}): Promise<GenerateContentResponse> {
+    const { genClient, genModel, genConfig, onRetry } = options;
     let retryCount = 0; // 当前重试次数计数器
 
-    const systemInstruction = generateConfig.systemInstruction as Part[];
+    const systemInstruction = genConfig?.systemInstruction as Part[] | undefined;
 
     logger.debug(`加载的系统指令:`, {
-      preview: systemInstruction[0].text?.slice(0, 100),
+      preview: systemInstruction?.[0].text?.slice(0, 100),
     });
+
+    const client = genClient || this.gemini;
 
     while (true) {
       try {
         logger.debug('Request Contents: ', { contents: this.simplifyContentsInLogger(contents) });
         // 1. 发起请求
-        const response = await this.gemini.models.generateContent({
-          model: this.modelName,
+        const response = await client.models.generateContent({
+          model: genModel || this.modelName,
           contents,
           config: {
             ...this.baseConfig,
-            ...generateConfig,
+            ...genConfig,
           },
         });
 
@@ -148,9 +172,9 @@ export class GeminiAPI {
           throw err;
         }
 
-        // 2. 检查是否允许重试 (必须提供 onRetry 回调，且未达最大次数)
-        if (!onRetry || retryCount >= this.MAX_RETRIES) {
-          logger.error(`GeminiAPI: Failed. ${onRetry ? 'Max retries reached' : 'No retry handler'}.`, { err });
+        // 2. 检查是否允许重试 (未达最大次数)
+        if (retryCount >= this.MAX_RETRIES) {
+          logger.error(`GeminiAPI: Failed. Max retries reached.`, { err });
           // 如果是因为无效响应导致的重试耗尽，抛出特定错误以便上层识别
           if (errorMsg.includes('Response validation failed')) {
             throw new AppError(errorMsg);
@@ -171,7 +195,9 @@ export class GeminiAPI {
         logger.warn(`GeminiAPI: Error detected. Retrying (${retryCount}/${this.MAX_RETRIES}). Reason: ${reason}`);
 
         // 通知调用者
-        await onRetry(reason, retryCount, delay);
+        if (onRetry) {
+          await onRetry(reason, retryCount, delay);
+        }
 
         // 等待
         await sleep(delay);

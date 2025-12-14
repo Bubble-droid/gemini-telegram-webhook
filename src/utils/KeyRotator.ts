@@ -47,11 +47,4 @@ class KeyRotator {
   }
 }
 
-/**
- * 导出单例实例
- *
- * Node.js 的模块加载机制会缓存 exports 对象。
- * 因此，new KeyRotator() 只会在第一次被 import 时执行一次。
- * 整个进程生命周期内，所有模块引用的都是同一个 keyRotator 实例。
- */
 export const keyRotator = new KeyRotator();

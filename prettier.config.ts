@@ -1,18 +1,33 @@
 // prettier.config.ts
-
 import type { Config } from 'prettier';
 
 const config: Config = {
   printWidth: 120,
-  singleQuote: true,
-  trailingComma: 'all',
+  tabWidth: 2,
+  useTabs: false,
   semi: true,
-  arrowParens: 'always',
-  jsxSingleQuote: false,
+  singleQuote: true,
   quoteProps: 'as-needed',
-  htmlWhitespaceSensitivity: 'css',
-  proseWrap: 'preserve',
+  jsxSingleQuote: false,
+  trailingComma: 'all',
+  bracketSpacing: true,
+  arrowParens: 'always',
   endOfLine: 'lf',
+
+  overrides: [
+    {
+      files: '*.md',
+      options: {
+        proseWrap: 'preserve',
+      },
+    },
+    {
+      files: '*.json',
+      options: {
+        printWidth: 80,
+      },
+    },
+  ],
 };
 
 export default config;

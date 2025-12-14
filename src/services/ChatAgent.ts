@@ -1,7 +1,8 @@
-import { AppError, geminiApi, logger, type RetryCallback } from '@/services';
+import { geminiApi, logger, type GeminiApiOptions } from '@/services';
 import { config } from '@/services/ConfigLoader';
 import { sleep } from '@/utils';
-import { type Content, type GenerateContentConfig, type GenerateContentResponse, type Part } from '@google/genai';
+import { AppError } from '@/utils/errors';
+import { type Content, type GenerateContentResponse, type Part } from '@google/genai';
 
 // 定义工具回调类型
 export type OnToolStartCallback = (toolName: string) => void | Promise<void>;
@@ -11,9 +12,8 @@ export type ToolExecutorFn = (name: string, args: Record<string, unknown>) => Pr
 
 export interface ChatAgentOptions {
   maxRounds?: number;
-  config?: GenerateContentConfig;
+  geminiApiOptions?: GeminiApiOptions;
   toolExecutor?: ToolExecutorFn; // 工具的具体执行逻辑
-  onRetry?: RetryCallback; // 错误重试回调
   onToolStart?: OnToolStartCallback; // UI 状态更新回调
 }
 
@@ -21,7 +21,7 @@ export class ChatAgent {
   private requestRateLimit: number;
 
   constructor() {
-    this.requestRateLimit = config.requestIntervalSecond * 1000;
+    this.requestRateLimit = config.requestRateLimit;
   }
 
   /**
@@ -30,12 +30,12 @@ export class ChatAgent {
    * @param options 配置项
    */
   public async chat(contents: Content[], options: ChatAgentOptions = {}): Promise<GenerateContentResponse> {
-    const { maxRounds = 10, config, toolExecutor, onRetry, onToolStart } = options;
+    const { maxRounds = 10, geminiApiOptions, toolExecutor, onToolStart } = options;
     let round = 0;
     while (round < maxRounds) {
       logger.info(`[ChatAgent] Round ${round + 1} started.`);
 
-      const response = await geminiApi.generate(contents, config, onRetry);
+      const response = await geminiApi.generate(contents, geminiApiOptions);
 
       contents.push(response.candidates?.[0]?.content as Content);
 
@@ -48,13 +48,15 @@ export class ChatAgent {
 
         logger.info(`Model requested ${functionCalls.length} tool calls.`);
 
+        let executed: string | null = null;
         // 4. 执行工具
         const toolResults: Part[] = [];
         for (const call of functionCalls) {
           const { name, args } = call;
-          logger.info(`[ChatAgent] Executing tool: ${name}`);
-          if (onToolStart) {
+          logger.info(`[ChatAgent] Executing tool: ${name}`, { args });
+          if (onToolStart && executed === name) {
             onToolStart(name as string);
+            executed = name as string;
           }
           try {
             // 调用注入的执行器

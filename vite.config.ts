@@ -1,9 +1,10 @@
 // vite.config.ts
-import { defineConfig } from 'vite';
-import { fileURLToPath, URL } from 'node:url';
 import { builtinModules } from 'node:module';
+import { fileURLToPath, URL } from 'node:url';
+import { defineConfig } from 'vite';
 
 const srcPath = fileURLToPath(new URL('./src', import.meta.url));
+const externals = Array.from(new Set([...builtinModules, ...builtinModules.map((m) => `node:${m}`)]));
 
 export default defineConfig({
   resolve: {
@@ -19,8 +20,8 @@ export default defineConfig({
     sourcemap: true,
     minify: 'esbuild',
     rollupOptions: {
-      input: 'src/server.ts',
-      external: [...builtinModules, ...builtinModules.map((m) => `node:${m}`)],
+      input: 'src/main.ts',
+      external: externals,
       output: {
         format: 'esm',
         entryFileNames: 'index.js',

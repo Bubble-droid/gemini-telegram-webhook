@@ -1,4 +1,4 @@
-import { chatAgent, logger, MCPClient } from '@/services';
+import { chatAgent, logger, type GeminiApiOptions, type MCPClient } from '@/services';
 import type { CallBackFns } from '@/types';
 import { FunctionCallingConfigMode, type Content, type GenerateContentConfig } from '@google/genai';
 
@@ -52,19 +52,24 @@ export class MCPWorker {
 
       const config: GenerateContentConfig = {
         temperature: 1,
+        thinkingConfig: { thinkingBudget: -1 },
         systemInstruction: [{ text: systemPrompt }],
         tools: mcpTools,
         toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
         automaticFunctionCalling: { disable: true },
       };
 
+      const geminiApiOptions: GeminiApiOptions = {
+        genConfig: config,
+        onRetry,
+      };
+
       // 4. 使用全局单例 ChatAgent
       const result = await chatAgent.chat(contents, {
-        config,
+        maxRounds: 5,
+        geminiApiOptions,
         toolExecutor: workerToolExecutor,
-        maxRounds: 5, // 子任务轮次通常不需要太多
         onToolStart: parentOnToolStart, // 将回调传给子 Agent 逻辑
-        onRetry,
       });
 
       // 7. 返回结果文本

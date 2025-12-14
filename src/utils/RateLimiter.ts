@@ -2,7 +2,7 @@
 
 import { config, logger } from '@/services'; // 假设 logger 是 Log 的实例或别名
 
-const DEFAULT_RETRY_SECONDS = 60;
+const DEFAULT_RATE_LIMIT = 20_000;
 // 清理周期：每 5 分钟清理一次过期数据
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -18,13 +18,13 @@ interface HasRateLimiter {
 }
 
 class RateLimiter {
-  private readonly intervalMs: number;
+  private readonly rateLimit: number;
   // 直接使用 number 作为 key，减少字符串 GC 压力
   private timestampMap: Map<number, number>;
 
   constructor() {
     // 预先计算毫秒数，避免每次 check 都计算
-    this.intervalMs = (config.requestIntervalSecond || DEFAULT_RETRY_SECONDS) * 1000;
+    this.rateLimit = config.requestRateLimit || DEFAULT_RATE_LIMIT;
     this.timestampMap = new Map();
 
     // 启动定期清理任务，防止内存泄漏
@@ -40,7 +40,7 @@ class RateLimiter {
 
     // Map 迭代器性能很好，可以直接遍历
     for (const [key, timestamp] of this.timestampMap) {
-      if (now - timestamp > this.intervalMs) {
+      if (now - timestamp > this.rateLimit) {
         this.timestampMap.delete(key);
         deletedCount++;
       }
@@ -62,14 +62,14 @@ class RateLimiter {
       const lastTimestamp = this.timestampMap.get(chatId);
 
       // 情况1: 无记录 (新用户/已过期) 或 间隔时间已够
-      if (!lastTimestamp || now - lastTimestamp >= this.intervalMs) {
+      if (!lastTimestamp || now - lastTimestamp >= this.rateLimit) {
         this.timestampMap.set(chatId, now);
         return { canProceed: true };
       }
 
       // 情况2: 处于冷却期
       else {
-        const remainingMs = this.intervalMs - (now - lastTimestamp);
+        const remainingMs = this.rateLimit - (now - lastTimestamp);
         // 向上取整，给用户更友好的提示 (比如剩余 0.1秒 显示为 1秒)
         const retryAfterSeconds = Math.ceil(Math.max(0, remainingMs) / 1000);
 
@@ -79,7 +79,7 @@ class RateLimiter {
       // 兜底逻辑：如果限流器自身出错，为了安全起见，通常选择“阻断”或者“放行”
       // 这里选择阻断并让用户稍后重试
       logger.error(`限流器异常 (ID: ${chatId}):`, { err });
-      return { canProceed: false, retryAfterSeconds: DEFAULT_RETRY_SECONDS };
+      return { canProceed: false, retryAfterSeconds: DEFAULT_RATE_LIMIT / 1000 };
     }
   }
 

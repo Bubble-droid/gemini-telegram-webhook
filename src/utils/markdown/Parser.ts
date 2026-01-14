@@ -1,34 +1,13 @@
 // src/utils/formatters/parser.ts
 
-// --- AST 节点类型定义 ---
-export type NodeType =
-  | 'root'
-  | 'text'
-  | 'bold'
-  | 'underline'
-  | 'strikethrough'
-  | 'spoiler'
-  | 'inline_code'
-  | 'code_block'
-  | 'link'
-  | 'blockquote'
-  | 'newline'; // 新增换行节点，便于处理
-
-export interface AstNode {
-  type: NodeType;
-  children?: AstNode[];
-  content?: string;
-  lang?: string;
-  href?: string;
-  expandable?: boolean;
-}
+import type { AstNode, NodeType } from '@/types';
 
 /**
  * 将自定义 Markdown 转换为抽象语法树 (AST) 的解析器。
  */
 export class Parser {
   private text: string;
-  private pos: number = 0;
+  private pos = 0;
   // 定义所有可能的标记符，用于文本解析
   private readonly markers = ['**', '__', '~~', '||', '`', '[', ']', '(', ')', '```', '\n', '>'];
 
@@ -46,15 +25,15 @@ export class Parser {
     while (!endCondition(this.pos)) {
       const startPos = this.pos;
       const node =
-        this.parseCodeBlock() ||
-        this.parseBlockquote() ||
-        this.parseBold() ||
-        this.parseUnderline() ||
-        this.parseStrikethrough() ||
-        this.parseSpoiler() ||
-        this.parseLink() ||
-        this.parseInlineCode() ||
-        this.parseNewline() ||
+        this.parseCodeBlock() ??
+        this.parseBlockquote() ??
+        this.parseBold() ??
+        this.parseUnderline() ??
+        this.parseStrikethrough() ??
+        this.parseSpoiler() ??
+        this.parseLink() ??
+        this.parseInlineCode() ??
+        this.parseNewline() ??
         this.parseText(endCondition);
 
       if (node) {
@@ -64,7 +43,7 @@ export class Parser {
       // 如果位置没有前进，说明解析陷入死循环，强制前进一位并当作文本处理
       if (this.pos === startPos) {
         if (!endCondition(this.pos)) {
-          nodes.push({ type: 'text', content: this.text[this.pos] });
+          nodes.push({ type: 'text', content: this.text[this.pos] ?? '' });
           this.pos++;
         }
       }
@@ -107,14 +86,14 @@ export class Parser {
     const match = /^`([^`]+?)`/.exec(this.text.substring(this.pos));
     if (!match) return null;
     this.pos += match[0].length;
-    return { type: 'inline_code', content: match[1] };
+    return { type: 'inline_code', content: match[1] ?? '' };
   }
 
   private parseCodeBlock(): AstNode | null {
     const match = /^```(\w*)\n([\s\S]+?)\n```/.exec(this.text.substring(this.pos));
     if (!match) return null;
     this.pos += match[0].length;
-    return { type: 'code_block', lang: match[1] || undefined, content: match[2] };
+    return { type: 'code_block', lang: match[1] ?? undefined, content: match[2] ?? '' };
   }
 
   private parseLink(): AstNode | null {
@@ -146,7 +125,7 @@ export class Parser {
    * 优先尝试解析可展开引用块 (>>)，如果失败，再尝试解析普通引用块 (>).
    */
   private parseBlockquote(): AstNode | null {
-    return this._parseBlockquoteOfType('>>') || this._parseBlockquoteOfType('>');
+    return this._parseBlockquoteOfType('>>') ?? this._parseBlockquoteOfType('>');
   }
 
   /**
@@ -219,7 +198,7 @@ export class Parser {
     // 5. 递归解析合并后的内容
     const innerContent = lines.join('\n');
     const innerParser = new Parser(innerContent);
-    const children = innerParser.parse().children || [];
+    const children = innerParser.parse().children ?? [];
 
     return { type: 'blockquote', expandable: isExpandableQuote, children };
   }

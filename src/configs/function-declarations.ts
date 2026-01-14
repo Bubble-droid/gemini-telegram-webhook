@@ -1,38 +1,41 @@
 // src/configs/function-declarations.ts
 
+import type { FileStoreName } from '@/types';
 import { Type, type FunctionDeclaration } from '@google/genai';
+
+export const FileStores = {
+  document: ['gui-for-cores', 'sing-box', 'mihomo', 'hysteria2', 'anytls'],
+  sourcecode: ['plugin-hub'],
+} as const;
+
+const getFileStoreNames = (): FileStoreName[] => {
+  return Object.entries(FileStores).flatMap(([category, items]) =>
+    items.map((item) => `${category}/${item}` as FileStoreName),
+  );
+};
 
 export const functionDeclarations = [
   {
     name: 'use_file_search',
     description:
-      '使用此工具可以调用 Google Gemini 提供的内置文件搜索工具，对指定的文件存储区进行检索，可以联合检索多个文件存储区。' +
-      '（例如：同时检索 GUI.for.Singbox 和 sing-box 的文档，了解某个配置选项的具体含义）',
+      'This tool can call the built-in file search tool provided by Google Gemini to search specified file storage areas, allowing for the joint search of multiple file storage areas. (For example: simultaneously search the documentation for GUI.for.Singbox and sing-box to understand the specific meaning of a certain configuration option)',
     parameters: {
       type: Type.OBJECT,
       properties: {
         prompt: {
           type: Type.STRING,
-          description: '用自然语言描述要执行的操作。（例如：请帮我查询 sing-box 的 tls 字段的配置结构）',
+          description:
+            'Describe the action you want to perform in natural language. (For example: Please help me query the configuration structure of the tls field in sing-box)',
         },
         fileStores: {
           type: Type.ARRAY,
-          description: '要检索的文件存储区列表。',
+          description: 'List of file storage areas to be searched.',
           items: {
             type: Type.STRING,
-            description: '文件存储区的名称。',
-            enum: [
-              'documents/gui-for-cores',
-              'documents/sing-box',
-              'documents/mihomo',
-              'documents/hysteria2',
-              'documents/anytls',
-              'sourcecode/gui-for-singbox',
-              'sourcecode/gui-for-clash',
-              'sourcecode/plugin-hub',
-            ],
-            minItems: '1',
+            description: 'Name of the file storage area.',
+            enum: getFileStoreNames(),
           },
+          minItems: '1',
         },
       },
       required: ['prompt', 'fileStores'],
@@ -41,14 +44,14 @@ export const functionDeclarations = [
   {
     name: 'use_github_toolset',
     description:
-      '使用此工具可以调用 Github 提供的工具集，对 GitHub 平台进行操作，' +
-      '支持几乎所有的 Github REST API 操作。（例如：查询 xxx 仓库的提交记录、获取发布详情等）',
+      'This tool can call the set of tools provided by GitHub to perform operations on the GitHub platform, supporting almost all GitHub REST API operations. (For example: querying commit records for xxx repository, obtaining release details, etc.)',
     parameters: {
       type: Type.OBJECT,
       properties: {
         prompt: {
           type: Type.STRING,
-          description: '用自然语言描述要执行的操作。（例如：请帮我查询 GUI.for.SingBox 仓库中关于插件功能的源码）',
+          description:
+            'Describe the action you want to perform in natural language. (For example: Please help me find the source code about plugin functions in the GUI.for.SingBox repository.)',
         },
       },
       required: ['prompt'],
@@ -57,29 +60,32 @@ export const functionDeclarations = [
   {
     name: 'use_built-in_tools',
     description:
-      '使用此工具可以调用 Google Gemini 提供的内置工具，支持 Google 搜索（实时联网查询）、' +
-      '代码执行（通过 Python 代码进行复杂计算）、URL 上下文（访问网页的内容），可以搭配使用多个工具。' +
-      '（例如：同时使用 URL 上下文和 Google 搜索，可以通过搜索功能在线查找相关信息，然后使用 URL 上下文工具更深入地了解找到的网页）',
+      'This tool can call built-in tools provided by Google Gemini, supporting Google Search (real-time online queries), code execution (complex calculations through Python code), and URL context (accessing the content of web pages). Multiple tools can be used together. (For example: using URL context and Google Search simultaneously allows you to find relevant information online through the search function, then use the URL context tool to gain a deeper understanding of the found web pages)',
     parameters: {
       type: Type.OBJECT,
       properties: {
         prompt: {
           type: Type.STRING,
-          description: '用自然语言描述要执行的操作。（例如：请帮我查询和 sing-box 相关的博客。）',
+          description:
+            'Describe the action you want to perform in natural language. (For example: Please help me search for blogs related to sing-box.)',
         },
         tools: {
           type: Type.ARRAY,
-          description: '要使用的工具列表。',
+          description: 'List of tools to use.',
           items: {
             type: Type.STRING,
-            description: '工具的名称。',
+            description: 'Name of the tool.',
             enum: ['googleSearch', 'codeExecution', 'urlContext'],
-            minItems: '1',
           },
+          minItems: '1',
         },
       },
       required: ['prompt', 'tools'],
     },
   },
-  { name: 'reload_prompts', description: '使用此工具重新加载对话系统的所有系统指令，将在下次对话时生效。' },
+  {
+    name: 'reload_prompts',
+    description:
+      'Using this tool to reload all system instructions for the dialogue system will take effect the next time a dialogue occurs.',
+  },
 ] as const satisfies FunctionDeclaration[];

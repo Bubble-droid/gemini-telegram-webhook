@@ -1,17 +1,14 @@
 // vite.config.ts
-import { builtinModules } from 'node:module';
-import { fileURLToPath, URL } from 'node:url';
+import commonjs from '@rollup/plugin-commonjs';
+import { nodeResolve } from '@rollup/plugin-node-resolve';
+import typescript from '@rollup/plugin-typescript';
 import { defineConfig } from 'vite';
-
-const srcPath = fileURLToPath(new URL('./src', import.meta.url));
-const externals = Array.from(new Set([...builtinModules, ...builtinModules.map((m) => `node:${m}`)]));
+import tsconfigPaths from 'vite-tsconfig-paths';
 
 export default defineConfig({
-  resolve: {
-    alias: {
-      '@': srcPath,
-    },
-  },
+  base: './',
+  mode: 'production',
+  plugins: [tsconfigPaths()],
   build: {
     ssr: true,
     target: 'esnext',
@@ -21,12 +18,14 @@ export default defineConfig({
     minify: 'esbuild',
     rollupOptions: {
       input: 'src/main.ts',
-      external: externals,
       output: {
         format: 'esm',
         entryFileNames: 'index.js',
         inlineDynamicImports: true,
       },
+
+      plugins: [nodeResolve(), commonjs({ extensions: ['cjs', '.mjs', '.ts'] }), typescript()],
     },
   },
+  ssr: { noExternal: true, target: 'node' },
 });

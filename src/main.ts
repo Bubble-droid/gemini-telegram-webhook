@@ -1,9 +1,9 @@
 import { buildApp } from '@/app';
-import { bot, chatContexts, config, logger } from '@/services';
-import { taskScheduler } from '@/utils';
+import { config, logger } from '@/services';
+import { bot } from '@/services/apis';
 
 /**
- * @description 启动 Fastify 服务器
+ * 启动 Fastify 服务器
  */
 const start = async (): Promise<void> => {
   const { listenHost, listenPort } = config;
@@ -26,9 +26,6 @@ const start = async (): Promise<void> => {
       // server.close() 会触发 Fastify 的 onClose 钩子
       // 停止接收新 HTTP 请求，等待现有请求完成
 
-      chatContexts.close();
-      taskScheduler.close();
-
       await server.close();
       logger.info('🚀 服务器已安全关闭 (Graceful Shutdown Completed)');
       process.exit(0);
@@ -41,10 +38,12 @@ const start = async (): Promise<void> => {
   // --- 2. 注册信号监听 ---
   // SIGINT: 通常是 Ctrl+C
   // SIGTERM: 通常是 Docker/Kubernetes 的停止命令
-  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
+  process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
 
-  await bot.setWebhook(config.webhookUrl, config.secretToken);
+  await bot.setWebhook(config.webhookUrl, {
+    secret_token: config.secretToken,
+  });
 
   // --- 3. 启动服务器 ---
   try {
@@ -61,4 +60,6 @@ process.on('unhandledRejection', (err) => {
   process.exit(1);
 });
 
-start();
+void start().catch((err: unknown) => {
+  logger.error('Unhandled Rejection:', { err });
+});

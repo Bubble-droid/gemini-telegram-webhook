@@ -1,6 +1,7 @@
 // src/utils/formatters/generator.ts
 
-import { escaper, type AstNode, type NodeType } from '@/utils/formatters';
+import type { AstNode, NodeType } from '@/types';
+import { Escaper } from '@/utils/markdown';
 
 /**
  * AST 生成器基类，负责将 AST 转换为字符串。
@@ -10,19 +11,19 @@ export abstract class Generator {
     return this.visitNode(node);
   }
 
-  protected visitNode(node: AstNode): string {
-    const open = this.getOpeningTag(node.type, node);
-    const content = this.generateContent(node);
-    const close = this.getClosingTag(node.type, node);
-    return open + content + close;
-  }
-
   /**
    * 关键修复：将此方法设为 public，以便 chunk_splitting 模块可以合法访问。
    * 这是最直接的解决方案，因为它确实需要生成节点内容的能力。
    */
   public generateContent(node: AstNode): string {
     return node.content ?? this.visitChildren(node);
+  }
+
+  protected visitNode(node: AstNode): string {
+    const open = this.getOpeningTag(node.type, node);
+    const content = this.generateContent(node);
+    const close = this.getClosingTag(node.type, node);
+    return open + content + close;
   }
 
   protected visitChildren(node: AstNode): string {
@@ -50,11 +51,11 @@ export class HtmlGenerator extends Generator {
         return '<code>';
       case 'code_block': {
         // 关键修复：为 case 添加块级作用域，避免 ESLint 错误
-        const langClass = node.lang ? ` class="language-${escaper.html(node.lang)}"` : '';
+        const langClass = node.lang ? ` class="language-${Escaper.html(node.lang)}"` : '';
         return `<pre><code${langClass}>`;
       }
       case 'link':
-        return `<a href="${escaper.html(node.href ?? '')}">`;
+        return `<a href="${Escaper.html(node.href ?? '')}">`;
       case 'blockquote':
         return node.expandable ? '<blockquote expandable>' : '<blockquote>';
       default:
@@ -62,7 +63,7 @@ export class HtmlGenerator extends Generator {
     }
   }
 
-  getClosingTag(type: NodeType, _node: AstNode): string {
+  getClosingTag(type: NodeType): string {
     // 关键修复：将未使用的 'node' 重命名为 '_node'
     switch (type) {
       case 'bold':
@@ -87,10 +88,10 @@ export class HtmlGenerator extends Generator {
   }
 
   public override generateContent(node: AstNode): string {
-    if (node.type === 'text') return escaper.html(node.content ?? '');
+    if (node.type === 'text') return Escaper.html(node.content ?? '');
     if (node.type === 'newline') return '\n';
     if (node.type === 'code_block' || node.type === 'inline_code') {
-      return escaper.html(node.content ?? '');
+      return Escaper.html(node.content ?? '');
     }
     return this.visitChildren(node);
   }
@@ -134,17 +135,17 @@ export class MarkdownV2Generator extends Generator {
       case 'code_block':
         return '\n```';
       case 'link':
-        return `](${escaper.markdownV2Url(node.href ?? '')})`;
+        return `](${Escaper.markdownV2Url(node.href ?? '')})`;
       default:
         return '';
     }
   }
 
   public override generateContent(node: AstNode): string {
-    if (node.type === 'text') return escaper.markdownV2(node.content ?? '');
+    if (node.type === 'text') return Escaper.markdownV2(node.content ?? '');
     if (node.type === 'newline') return '\n';
     if (node.type === 'code_block' || node.type === 'inline_code') {
-      return escaper.markdownV2Code(node.content ?? '');
+      return Escaper.markdownV2Code(node.content ?? '');
     }
     if (node.type === 'blockquote') {
       const content = this.visitChildren(node);
@@ -199,7 +200,7 @@ export class LegacyMarkdownGenerator extends Generator {
   }
 
   public override generateContent(node: AstNode): string {
-    if (node.type === 'text') return escaper.legacyMarkdown(node.content ?? '');
+    if (node.type === 'text') return Escaper.legacyMarkdown(node.content ?? '');
     if (node.type === 'newline') return '\n';
     if (node.type === 'code_block' || node.type === 'inline_code') {
       // 潜在问题修复：根据 Telegram 文档，Legacy Markdown 实体内部不允许转义。

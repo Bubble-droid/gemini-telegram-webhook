@@ -1,7 +1,8 @@
 // src/configs/bot_messages.ts
 
 import { config } from '@/services';
-import type { InlineKeyboardMarkup } from '@/types';
+import type { Recordable } from '@/types';
+import type { InlineKeyboardButton, InlineKeyboardMarkup } from 'grammy/types';
 
 /**
  * 集中管理机器人的回复文本
@@ -15,22 +16,26 @@ export const BotMessages = {
 
 ✨ 你好！你可以通过以下方式与我互动，我能理解上下文哦：
 
-*   **➡️ 直接回复我**
-    *   直接回复我的任意消息即可继续对话或追问，我会将该消息作为最新上下文。
+* **➡️ 直接回复我**
+  * 直接回复我的任意消息即可继续对话或追问，我会将该消息作为最新上下文。
 
-*   **💬 发起新话题**
-    *   \`@${botName}\` + 你想问的问题
-    *   \`:ask\` + 你想问的问题
+* **💬 发起新话题**
+  * \`@${botName}\` + 你想问的问题
+  * \`:ask\` + 你想问的问题
 
-*   **🔗 引用他人消息提问**
-    *   回复或引用**他人**的消息时，请务必加上 \`@${botName}\` 或 \`:ask\`，我就会针对该消息进行解答。
+* **🔗 引用他人消息提问**
+  * 回复或引用**他人**的消息时，请务必加上 \`@${botName}\` 或 \`:ask\`，我就会针对该消息进行解答。
 
 👍 由 ClawCloud Run 和 Google Gemini 提供支持
 `.trim();
   },
 
+  getRateLimiting: (seconds: number): string => {
+    return `⏳ 系统冷却中，请等待 ${seconds} 秒后再试...`;
+  },
+
   // FAQ 文案
-  faq: `
+  faqSimplified: `
 **GUI.for.Cores 常见问题与解决方案 (FAQ)**
 
 **⚙️ 常规与界面**
@@ -104,33 +109,45 @@ A: 请按以下顺序排查：
 A: 原因是 TUN 在 macOS 上无法发往局域网的 DNS 请求。请将你 Mac 的系统 DNS 修改为任意公共 DNS 服务器（如 \`8.8.8.8\`）。
 `.trim(),
 
+  unsupportedChatType: '不支持私聊与频道，请在群组内使用此机器人。',
+
+  callbackFailed: '❌ 回调查询处理失败，请稍后再试',
+
+  unauthorizedGroup: '❌ 群组未授权！',
+
+  pendingRequest: '⏳ 你已经有一个请求在处理中，请等待完成后再试...',
+
+  invalidContents: '❌ 未能从消息中提取到有效内容，请检查消息格式。',
+
   // 清理过程中的文案
   clearing: '🗑 正在清理记忆...',
 
   // 清理完成文案
-  cleared: '✅ **记忆已重置**\n\n我现在已经准备好开始新的话题了。',
+  cleared: '✅ 记忆已重置。',
 
   uploading: '📄 File uploading...',
 
-  thinking: '✨ Thinking...',
+  thinking: '💡 Thinking...',
 };
 
 // --- 通用键盘布局 ---
 
-interface TKeyBoard {
-  [x: string]: (userId: number) => InlineKeyboardMarkup;
-}
+type TKeyBoards = Recordable<(userId: number) => InlineKeyboardMarkup>;
+
+const makeInlineKeyboard = (buttons: InlineKeyboardButton[][]): InlineKeyboardMarkup => {
+  return { inline_keyboard: buttons };
+};
 
 export const Keyboards = {
-  getStart: (userId) => ({
-    inline_keyboard: [
+  getStart: (userId) => {
+    return makeInlineKeyboard([
       [
         { text: '🗑 清理对话', callback_data: `cmd_clear_${userId}` },
         { text: '❓ 常见问题', callback_data: `cmd_faq_${userId}` },
       ],
-    ],
-  }),
-  getBackToStart: (userId) => ({
-    inline_keyboard: [[{ text: '⬅️ 返回主菜单', callback_data: `cmd_start_${userId}` }]],
-  }),
-} as const satisfies TKeyBoard;
+    ]);
+  },
+  getBackToStart: (userId) => {
+    return makeInlineKeyboard([[{ text: '⬅️ 返回主菜单', callback_data: `cmd_start_${userId}` }]]);
+  },
+} as const satisfies TKeyBoards;

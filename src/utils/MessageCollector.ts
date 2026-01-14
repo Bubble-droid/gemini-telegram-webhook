@@ -1,9 +1,10 @@
 import { logger } from '@/services';
-import type { Message } from '@/types';
+import type { MaybePromise } from '@/types';
+import type { Message } from 'grammy/types';
 
-const DEBOUNCE_MS = 3000;
+type BatchCallback = (messages: Message[]) => MaybePromise<void>;
 
-type BatchCallback = (messages: Message[]) => Promise<void> | void;
+const DEBOUNCE_MS = 1500;
 
 /**
  * @class MessageCollector
@@ -11,25 +12,25 @@ type BatchCallback = (messages: Message[]) => Promise<void> | void;
  * 不再局限于 media_group_id，而是基于 [ChatId + UserId] 进行聚合。
  * 可以完美解决 Document 组与 Text 描述分离、或用户连续发送多条短句的问题。
  */
-class MessageCollector {
+export class MessageCollector {
   // Key: `${chatId}:${userId}`
-  private buffer: Map<string, Message[]> = new Map();
-  private timers: Map<string, NodeJS.Timeout> = new Map();
+  private buffer = new Map<string, Message[]>();
+  private timers = new Map<string, NodeJS.Timeout>();
 
   // 存储回调 (实际上通常是固定的处理逻辑，但为了解耦保留回调结构)
-  private callback: BatchCallback | null = null;
+  private callback: BatchCallback | undefined;
 
   /**
    * 注册全局分发回调
    */
-  public registerCallback(cb: BatchCallback) {
+  public registerCallback(cb: BatchCallback): void {
     this.callback = cb;
   }
 
   /**
    * 添加消息并进入聚合倒计时
    */
-  public addAndSchedule(message: Message): void {
+  public append(message: Message): void {
     const { chat, from, message_id } = message;
     if (!from) return; // 忽略没有发送者的消息（极其罕见）
 
@@ -40,7 +41,7 @@ class MessageCollector {
     if (!this.buffer.has(key)) {
       this.buffer.set(key, []);
     }
-    const group = this.buffer.get(key)!;
+    const group = this.buffer.get(key) ?? [];
 
     // 2. 添加消息 (简单去重)
     if (!group.some((m) => m.message_id === message_id)) {
@@ -53,7 +54,7 @@ class MessageCollector {
     }
 
     const timer = setTimeout(() => {
-      this.release(key);
+      void this.release(key);
     }, DEBOUNCE_MS);
 
     this.timers.set(key, timer);
@@ -84,5 +85,3 @@ class MessageCollector {
     }
   }
 }
-
-export const messageCollector = new MessageCollector();

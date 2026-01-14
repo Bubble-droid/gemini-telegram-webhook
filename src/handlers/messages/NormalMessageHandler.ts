@@ -1,9 +1,9 @@
 import { BotCommands, faqData } from '@/configs';
-import { fileHandler } from '@/handlers';
-import { chitChatHandler, hasImage, mentionHandler } from '@/handlers/messages';
+import { ChitChatHandler, mentionHandler } from '@/handlers/messages';
 import { config, logger } from '@/services';
-import type { FaqItem, Message } from '@/types';
-import { recognizer, taskScheduler, toHtml } from '@/utils';
+import type { FaqItem } from '@/types';
+import { MsgPTTL, type ResponseContext } from '@/utils';
+import { toHtml } from '@/utils/markdown';
 
 /**
  * 预编译后的 FAQ 条目结构
@@ -16,18 +16,35 @@ interface CompiledFaqItem {
 }
 
 /**
- * @class NormalMessageHandler
  * @description 处理普通消息（非提及、非显式命令）。
  *              采用无状态单例模式，包含正则缓存优化。
  */
-class NormalMessageHandler {
-  private readonly botName: string;
+export class NormalMessageHandler {
+  private readonly botName = config.botName;
   private compiledFaqs: CompiledFaqItem[] = [];
+  private chitChatHandler: ChitChatHandler;
 
   constructor() {
-    this.botName = config.botName;
-    // 初始化时预编译正则表达式，极大提升运行时匹配速度
+    this.chitChatHandler = new ChitChatHandler();
     this.initFaqData();
+  }
+
+  public async handle(ctx: ResponseContext): Promise<void> {
+    if (await this.handleCommandAlias(ctx)) return;
+
+    const isReplyToBot = ctx.messages.some((m) => m.reply_to_message?.from?.username === this.botName);
+    if (isReplyToBot) {
+      await mentionHandler.handle(ctx);
+      return;
+    }
+
+    try {
+      if (await this.handleKeywordReply(ctx)) return;
+
+      if (await this.chitChatHandler.handle(ctx)) return;
+    } catch (err) {
+      logger.error(`[NormalMessageHandler] Passive processing error`, { err });
+    }
   }
 
   /**
@@ -99,132 +116,56 @@ class NormalMessageHandler {
    * 处理 :ask 等指令别名
    * @private
    */
-  private async handleCommandAlias(messages: Message[]): Promise<boolean> {
-    const textMsg = messages.find((m) => {
-      const text = m.text || m.caption || '';
-      return text.startsWith(':');
-    });
+  private async handleCommandAlias(ctx: ResponseContext): Promise<boolean> {
+    const aliasText = ctx.checkCommandAlias();
 
-    if (!textMsg) return false;
+    if (!aliasText) return false;
 
-    const text = textMsg.text || textMsg.caption || '';
+    const cleanText = aliasText.slice(1).trim();
 
-    const cleanText = text.replace(/^:/, '').trim();
-
-    // 处理 :ask 别名
     if (cleanText.startsWith('ask')) {
-      await mentionHandler.handleGroup(messages);
+      await mentionHandler.handle(ctx);
       return true;
     }
 
-    // 处理其他通用脚本别名
-    const targetCommand = BotCommands.find((cmd) => cleanText.startsWith(cmd.name));
+    const targetCommand = BotCommands.find((cmd) => cleanText.startsWith(cmd.command));
 
-    if (targetCommand) {
-      const { chat, from, message_id } = textMsg;
-      logger.info(`Handling command alias: ${targetCommand.name}`, { chatId: chat.id });
-      await targetCommand.action(chat.id, from!.id, message_id, {
-        message: textMsg,
-      });
-      return true;
-    }
+    if (!targetCommand) return false;
 
-    return false;
+    logger.debug(`Handling command alias: ${targetCommand.command}`, { chatId: ctx.chat.id });
+
+    await targetCommand.action({ ctx });
+
+    return true;
   }
 
   /**
    * 处理 OCR 和关键词回复
    * @private
    */
-  private async handleKeywordReply(messages: Message[]): Promise<boolean> {
-    const textMsg = messages.find((m) => !!(m.text || m.caption)) || messages[0];
-
-    const combinedText = messages
-      .map((m) => m.text || m.caption || '')
+  private async handleKeywordReply(ctx: ResponseContext): Promise<boolean> {
+    const combinedText = ctx.messages
+      .map((m) => ctx.getText(m))
       .filter(Boolean)
-      .join('\n');
+      .join('\n')
+      .trim();
 
-    const { chat, message_id } = textMsg;
+    if (combinedText.length === 0) return false;
 
-    // 1. OCR 处理 (如果包含图片)
-    const ocrPromises = messages.map(async (msg, i) => {
-      if (msg.sticker) return null;
-      if (!hasImage(msg)) return null;
-      try {
-        const fileData = await fileHandler.handle(msg);
-        if (!fileData) return null;
-        const text = await recognizer.handle(fileData);
-        return text ? `\n\n<image_${i + 1}>\n${text}\n</image_${i + 1}>` : null;
-      } catch (err) {
-        logger.warn('OCR error', { err });
-        return null;
-      }
+    const result = this.findFaqMatch(combinedText);
+
+    if (!result) return false;
+
+    logger.debug('FAQ 匹配成功', {
+      chatId: ctx.chat.id,
+      matchedTexts: result.matches,
     });
 
-    const ocrResults = await Promise.all(ocrPromises);
-    const fullText = combinedText + ocrResults.filter(Boolean).join('');
+    await ctx.send(toHtml(result.matchedFaq.answer.trim()), {
+      parse_mode: 'HTML',
+      deleteAfterMs: MsgPTTL['5m'],
+    });
 
-    if (!fullText.trim()) return false;
-
-    // 2. 执行匹配
-    const result = this.findFaqMatch(fullText);
-
-    if (result) {
-      logger.info('FAQ 匹配成功', {
-        chatId: chat.id,
-        matchedTexts: result.matches,
-      });
-
-      // 发送临时消息
-      await taskScheduler.sendTempMessage(chat.id, toHtml(result.matchedFaq.answer.trim()), 5 * 60 * 1_000, {
-        replyToMessageId: message_id,
-        parseMode: 'HTML',
-      });
-      return true;
-    }
-
-    return false;
-  }
-
-  // [新增] 处理消息组
-  public async handleGroup(messages: Message[]): Promise<void> {
-    if (messages.length === 0) return;
-
-    logger.info(`Handling normal message group with ${messages.length} items.`);
-
-    // 1. 指令别名
-    // 通常 :ask 只会在一条里
-    if (await this.handleCommandAlias(messages)) return;
-
-    // 2. 回复 Bot (Handle Reply)
-    // 只要有一条是回复 Bot
-    const isReplyToBot = messages.some((m) => m.reply_to_message?.from?.username === this.botName);
-    if (isReplyToBot) {
-      await mentionHandler.handleGroup(messages); // 转交 Mention 处理整组
-      return;
-    }
-
-    try {
-      // 3. 关键词回复 / OCR
-      // 这里我们把所有图片拿去 OCR，所有文本拿去匹配
-      if (await this.handleKeywordReply(messages)) return;
-
-      // 4. 闲聊 (ChitChat)
-      // 传入整组
-      if (await chitChatHandler.handleGroup(messages)) return;
-    } catch (err) {
-      logger.error(`[NormalMessageHandler] Passive processing error`, { err });
-    }
-  }
-
-  /**
-   * 处理消息的主入口
-   * @public
-   */
-  public async handle(message: Message): Promise<void> {
-    return this.handleGroup([message]);
+    return true;
   }
 }
-
-// 导出单例实例
-export const normalMessageHandler = new NormalMessageHandler();

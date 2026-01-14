@@ -1,2 +1,2 @@
-export * from './main.routes';
-export * from './proxy.routes';
+export * from './webhook.route';
+export * from './proxy.route';

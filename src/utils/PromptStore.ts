@@ -1,12 +1,16 @@
 // src/services/PromptStore.ts
 
+import { DATA_DIR } from '@/configs/data';
 import { logger } from '@/services';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import type { Recordable } from '@/types';
+import fs from 'node:fs';
+import path from 'node:path';
 
-const PROMPT_KEYS = ['assistant', 'file-search', 'github-toolset', 'built-in-tools', 'ocr', 'chit-chat'] as const;
+const PromptKeys = ['assistant', 'file-search', 'github-toolset', 'built-in-tools', 'chit-chat'] as const;
 
-export type PromptKey = (typeof PROMPT_KEYS)[number];
+type PromptKey = (typeof PromptKeys)[number];
+
+const PROMPT_DIR = path.join(DATA_DIR, 'prompts');
 
 /**
  * @class PromptStore
@@ -15,44 +19,10 @@ export type PromptKey = (typeof PROMPT_KEYS)[number];
  */
 class PromptStore {
   // 缓存存储：Key 是文件名，Value 是文件内容
-  private prompts: Map<string, string> = new Map();
-
-  // 提示词文件夹的绝对路径
-  private readonly PROMPT_DIR = '/data/prompts';
+  private prompts = new Map<string, string>();
 
   constructor() {
     this.loadAllPrompts();
-  }
-
-  /**
-   * 加载所有预设的提示词文件到内存
-   * @private
-   */
-  private loadAllPrompts(): void {
-    // 这里列出你需要加载的文件名列表
-    // 也可以改为 fs.readdirSync 自动扫描，但显式列出更安全、更类型友好
-
-    PROMPT_KEYS.forEach((key) => {
-      try {
-        const filePath = path.join(this.PROMPT_DIR, `${key}.md`);
-
-        // 检查文件是否存在
-        if (!fs.existsSync(filePath)) {
-          logger.warn(`Prompt file not found: ${filePath}`);
-          return;
-        }
-
-        // 同步读取，确保应用启动就绪前数据已加载
-        const content = fs.readFileSync(filePath, 'utf-8');
-
-        // 简单的预处理（如去除首尾空白）
-        this.prompts.set(key, content.trim());
-
-        logger.info(`Loaded prompt: ${key} (${content.length} chars)`);
-      } catch (err) {
-        logger.error(`Failed to load prompt: ${key}`, { err });
-      }
-    });
   }
 
   /**
@@ -76,7 +46,7 @@ class PromptStore {
    * // 假设 system.md 中有: "Current time is {{time}}."
    * promptStore.format('system', { time: new Date().toISOString() })
    */
-  public format(key: PromptKey, variables: Record<string, string>): string {
+  public format(key: PromptKey, variables: Recordable<string>): string {
     let content = this.get(key);
 
     // 简单的模板引擎：将 {{key}} 替换为 value
@@ -96,6 +66,37 @@ class PromptStore {
     logger.info('Reloading all prompts...');
     this.prompts.clear();
     this.loadAllPrompts();
+  }
+
+  /**
+   * 加载所有预设的提示词文件到内存
+   * @private
+   */
+  private loadAllPrompts(): void {
+    // 这里列出你需要加载的文件名列表
+    // 也可以改为 fs.readdirSync 自动扫描，但显式列出更安全、更类型友好
+
+    PromptKeys.forEach((key) => {
+      try {
+        const filePath = path.join(PROMPT_DIR, `${key}.md`);
+
+        // 检查文件是否存在
+        if (!fs.existsSync(filePath)) {
+          logger.warn(`Prompt file not found: ${filePath}`);
+          return;
+        }
+
+        // 同步读取，确保应用启动就绪前数据已加载
+        const content = fs.readFileSync(filePath, 'utf-8');
+
+        // 简单的预处理（如去除首尾空白）
+        this.prompts.set(key, content.trim());
+
+        logger.info(`Loaded prompt: ${key} (${content.length} chars)`);
+      } catch (err) {
+        logger.error(`Failed to load prompt: ${key}`, { err });
+      }
+    });
   }
 }
 

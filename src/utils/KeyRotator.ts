@@ -1,12 +1,11 @@
-import { config } from '@/services/ConfigLoader';
-import { logger } from '@/services/LoggerService';
+import { config, logger } from '@/services';
 
-class KeyRotator {
+export class KeyRotator {
   // 存储解析后的 API 密钥列表
   private readonly keys: string[];
 
   // 当前使用的密钥索引指针
-  private currentIndex: number = 0;
+  private currentIndex = 0;
 
   constructor() {
     this.keys = config.geminiApiKeys;
@@ -20,11 +19,11 @@ class KeyRotator {
    * 采用指针轮询算法，无需修改数组结构，性能为 O(1)。
    * 由于数据已在内存中，此方法为同步方法，调用效率极高。
    *
-   * @returns {string} API Key
+   * @returns  API Key
    */
   public nextKey(): string {
     // 获取当前指针指向的密钥
-    const currentKey = this.keys[this.currentIndex];
+    const currentKey = this.keys[this.currentIndex] ?? '';
 
     // 生成密钥 ID (取前 5 位用于日志脱敏展示)
     const keyId = `${currentKey.substring(0, 5)}...${currentKey.substring(currentKey.length - 5)}`;
@@ -46,5 +45,3 @@ class KeyRotator {
     return this.keys.length;
   }
 }
-
-export const keyRotator = new KeyRotator();

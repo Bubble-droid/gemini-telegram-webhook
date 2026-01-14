@@ -1,14 +1,9 @@
 // src/utils/formatters/formatter.ts
 
-import type { ParseMode } from '@/types';
-import {
-  HtmlGenerator,
-  LegacyMarkdownGenerator,
-  MarkdownV2Generator,
-  Parser,
-  type AstNode,
-  type Generator,
-} from '@/utils/formatters';
+import type { AstNode } from '@/types';
+import type { Generator } from '@/utils/markdown';
+import { HtmlGenerator, LegacyMarkdownGenerator, MarkdownV2Generator, Parser } from '@/utils/markdown';
+import type { ParseMode } from 'grammy/types';
 
 /**
  * 协调解析器和生成器，将标准 Markdown 文本转换为 Telegram Bot API 支持的格式。
@@ -37,22 +32,16 @@ class Formatter {
   public getGenerator(parseMode: ParseMode): Generator {
     switch (parseMode) {
       case 'HTML':
-        if (!this.htmlGenerator) {
-          this.htmlGenerator = new HtmlGenerator();
-        }
+        this.htmlGenerator ??= new HtmlGenerator();
         return this.htmlGenerator;
       case 'MarkdownV2':
-        if (!this.markdownV2Generator) {
-          this.markdownV2Generator = new MarkdownV2Generator();
-        }
+        this.markdownV2Generator ??= new MarkdownV2Generator();
         return this.markdownV2Generator;
       case 'Markdown':
-        if (!this.legacyMarkdownGenerator) {
-          this.legacyMarkdownGenerator = new LegacyMarkdownGenerator();
-        }
+        this.legacyMarkdownGenerator ??= new LegacyMarkdownGenerator();
         return this.legacyMarkdownGenerator;
     }
   }
 }
 
-export const formatter: Formatter = new Formatter();
+export const formatter = new Formatter();

@@ -1,113 +1,136 @@
-// src/services/TaskScheduler.ts
-
-import { bot, logger } from '@/services';
-import type * as Bot from '@/types/telegram';
-import { formatTime } from '@/utils';
-import Database from 'better-sqlite3';
+import { DATA_DIR } from '@/configs/data';
+import { logger } from '@/services';
+import { bot } from '@/services/apis';
+import type { ApiMethod, ApiParams, Recordable } from '@/types';
+import { deepClone, formatTime, generateUniqueId } from '@/utils';
+import { LowSync } from 'lowdb';
+import { JSONFileSync } from 'lowdb/node';
 import fs from 'node:fs';
 import path from 'node:path';
+import { AppError } from './errors';
 
 /**
- * 2. 任务注册表：建立 Action 字符串到 参数类型 的映射
- *    如果未来要加新功能，只需在这里添加一行即可。
+ * LowDB 存储结构定义
  */
-interface TaskRegistry {
-  deleteMessage: Bot.DeleteMessageParams;
-  deleteMessages: Bot.DeleteMessagesParams;
+interface TaskItem {
+  id: string; // 使用 UUID
+  action: ApiMethod;
+  params: unknown; // 存储实际的 JSON 对象
+  signature: string; // 用于去重的唯一签名 (Canonical JSON String)
+  dueAt: number;
 }
 
-/**
- * 数据库行结构
- */
-interface TaskRow {
-  id: number;
-  action: string; // 数据库里存的是字符串
-  params: string; // JSON 字符串
-  due_at: number;
+interface DatabaseSchema {
+  tasks: TaskItem[];
 }
+
+const TASK_FILE_PATH = path.join(DATA_DIR, 'tasks.json');
+const DEFAULT_TASK_DATA = { tasks: [] };
+
+const isRecord = (val: unknown): val is Recordable => {
+  return typeof val === 'object' && val !== null && !Array.isArray(val);
+};
 
 /**
  * 递归地对对象键进行排序，确保 JSON.stringify 输出一致性
  * 解决 {a:1, b:2} !== {b:2, a:1} 导致无法去重的问题
  */
 const canonicalizeParams = (obj: unknown): unknown => {
-  if (obj === null || typeof obj !== 'object') {
+  // 1. 处理非对象或空值
+  if (!isRecord(obj)) {
+    if (Array.isArray(obj)) {
+      return obj.map(canonicalizeParams);
+    }
     return obj;
   }
-  if (Array.isArray(obj)) {
-    return obj.map(canonicalizeParams);
-  }
-  const sortedObj: Record<string, unknown> = {};
-  Object.keys(obj as Record<string, unknown>)
-    .sort()
-    .forEach((key) => {
-      sortedObj[key] = canonicalizeParams((obj as Record<string, unknown>)[key]);
-    });
-  return sortedObj;
+
+  // 2. 处理对象：提取条目 -> 排序键 -> 递归处理值 -> 还原为对象
+  const sortedEntries = Object.entries(obj)
+    .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+    .map(([key, value]) => [key, canonicalizeParams(value)]);
+
+  return Object.fromEntries(sortedEntries);
 };
 
 class TaskScheduler {
-  private db: Database.Database;
-  private stmtUpsert: Database.Statement;
-  private stmtGetNext: Database.Statement;
-  private stmtDelete: Database.Statement;
-  private stmtGetDue: Database.Statement;
-
+  private db: LowSync<DatabaseSchema>;
   private nextTaskTimer: NodeJS.Timeout | null = null;
   private currentTimerTargetTime: number | null = null;
 
   constructor() {
-    const dbDir = '/data';
-
-    if (!fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true });
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
     }
 
-    const dbPath = path.join(dbDir, 'tasks.db');
+    const adapter = new JSONFileSync<DatabaseSchema>(TASK_FILE_PATH);
+    this.db = new LowSync(adapter, DEFAULT_TASK_DATA);
 
-    this.db = new Database(dbPath, {
-      verbose: (msg) => logger.debug('[TaskScheduler]', { msg }),
-    });
-
-    this.db.pragma('journal_mode = WAL');
-
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        action TEXT NOT NULL,
-        params TEXT NOT NULL,
-        due_at INTEGER NOT NULL
-      );
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_task ON tasks(action, params);
-
-      CREATE INDEX IF NOT EXISTS idx_due_at ON tasks(due_at);
-    `);
-
-    this.stmtUpsert = this.db.prepare(`
-      INSERT INTO tasks (action, params, due_at)
-      VALUES (@action, @params, @dueAt)
-      ON CONFLICT(action, params)
-      DO UPDATE SET due_at = excluded.due_at
-    `);
-
-    this.stmtGetNext = this.db.prepare(`
-      SELECT * FROM tasks ORDER BY due_at ASC LIMIT 1
-    `);
-
-    this.stmtGetDue = this.db.prepare(`
-      SELECT * FROM tasks WHERE due_at <= ? ORDER BY due_at ASC
-    `);
-
-    this.stmtDelete = this.db.prepare('DELETE FROM tasks WHERE id = ?');
+    this.db.read();
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (!this.db.data) {
+      this.db.data = DEFAULT_TASK_DATA;
+      this.db.write();
+    }
 
     this.refreshSchedule();
 
-    logger.info('[TaskScheduler] 初始化完成，任务队列已加载');
+    logger.info('[TaskScheduler] LowDB initialized, task queue loaded.');
   }
 
-  private refreshSchedule(): void {
+  /**
+   * 公共核心接口：添加任务
+   */
+  public schedule<M extends ApiMethod>(action: M, params: ApiParams<M>, delayMs: number) {
+    const dueAt = Date.now() + delayMs;
+
+    // 1. 规范化参数对象（排序 Key），保证字符串唯一性
+    const canonicalParams = canonicalizeParams(params);
+    const signature = JSON.stringify(canonicalParams);
+
+    // 2. 执行 Upsert 逻辑 (模拟 SQL ON CONFLICT DO UPDATE)
+    const tasks = this.db.data.tasks;
+    const existingIndex = tasks.findIndex((t) => t.action === action && t.signature === signature);
+
+    if (existingIndex !== -1 && tasks[existingIndex]) {
+      // 更新现有任务的执行时间
+      tasks[existingIndex].dueAt = dueAt;
+    } else {
+      // 插入新任务
+      tasks.push({
+        id: this.generateId(),
+        action,
+        params: canonicalParams,
+        signature,
+        dueAt,
+      });
+    }
+
+    this.db.write();
+    this.refreshSchedule();
+
+    logger.debug(`[TaskScheduler] Task scheduled: ${action}, Due: ${formatTime(dueAt)}`, { params });
+  }
+
+  // ================= 业务封装方法 =================
+
+  public deleteMessage(params: ApiParams<'deleteMessage'>, delayMs: number) {
+    this.schedule('deleteMessage', params, delayMs);
+  }
+
+  public deleteMessages(params: ApiParams<'deleteMessages'>, delayMs: number) {
+    const paramsCopy = deepClone(params);
+    paramsCopy.message_ids = [...new Set(paramsCopy.message_ids)];
+    if (paramsCopy.message_ids.length === 0) return;
+
+    paramsCopy.message_ids.sort((a, b) => a - b);
+
+    this.schedule('deleteMessages', paramsCopy, delayMs);
+  }
+
+  private refreshSchedule() {
     try {
-      const nextTask = this.stmtGetNext.get() as TaskRow | undefined;
+      // 获取最早需要执行的任务 (模拟 ORDER BY due_at ASC LIMIT 1)
+      const nextTask = this.getNextTask();
 
       if (!nextTask) {
         if (this.nextTaskTimer) {
@@ -118,7 +141,8 @@ class TaskScheduler {
         return;
       }
 
-      if (this.nextTaskTimer && this.currentTimerTargetTime === nextTask.due_at) {
+      // 如果当前定时器已经对准了这个时间，则无需重置
+      if (this.nextTaskTimer && this.currentTimerTargetTime === nextTask.dueAt) {
         return;
       }
 
@@ -127,152 +151,87 @@ class TaskScheduler {
       }
 
       const now = Date.now();
-      const delay = Math.max(0, nextTask.due_at - now);
-      this.currentTimerTargetTime = nextTask.due_at;
+      const delay = Math.max(0, nextTask.dueAt - now);
+      this.currentTimerTargetTime = nextTask.dueAt;
 
-      const MAX_DELAY = 2147483647;
+      const MAX_DELAY = 2147483647; // 32-bit signed int max
       const safeDelay = Math.min(delay, MAX_DELAY);
 
       this.nextTaskTimer = setTimeout(() => {
-        this.processDueTasks();
+        void this.processDueTasks();
       }, safeDelay);
 
       if (delay > MAX_DELAY) {
-        logger.warn(`[TaskScheduler] 任务 ID:${nextTask.id} 延迟超过 setTimeout 上限，将在下一轮调度`);
+        logger.warn(`[TaskScheduler] Task ID:${nextTask.id} delay exceeds limit, deferred.`);
       }
     } catch (err) {
-      logger.error('[TaskScheduler] 刷新调度失败', { err });
+      logger.error('[TaskScheduler] Refresh schedule failed', { err });
     }
   }
 
-  private processDueTasks(): void {
+  private async processDueTasks() {
     this.nextTaskTimer = null;
     this.currentTimerTargetTime = null;
 
     const now = Date.now();
-    const tasks = this.stmtGetDue.all(now) as TaskRow[];
 
-    for (const task of tasks) {
+    // 获取所有到期任务 (模拟 WHERE due_at <= ?)
+    // 注意：这里需要复制数组，因为后续我们会修改 db.data.tasks
+    const allTasks = this.db.data.tasks;
+    const dueTasks = allTasks.filter((t) => t.dueAt <= now).sort((a, b) => a.dueAt - b.dueAt);
+
+    for (const task of dueTasks) {
+      const { id, action, params } = task;
       try {
-        const params = JSON.parse(task.params);
-        this.executeTask(task.action, params);
+        const result = await this.executeTask(action, params);
+        if (!result.ok) throw new AppError(result.error);
       } catch (err) {
-        logger.error(`[TaskScheduler] 任务执行失败 ID:${task.id}`, { action: task.action, err });
+        logger.error(`[TaskScheduler] Task execution failed ID:${id}`, { action, err });
       } finally {
-        this.stmtDelete.run(task.id);
+        // 模拟 DELETE FROM tasks WHERE id = ?
+        this.deleteTask(id);
       }
     }
 
+    // 写入更改并刷新调度
+    this.db.write();
     this.refreshSchedule();
   }
 
-  /**
-   * 分发器：将字符串 action 映射回代码逻辑
-   * params 类型为 unknown，在 case 内部进行断言
-   */
-  private executeTask(action: string, params: unknown): void {
+  private executeTask(action: ApiMethod, params: unknown) {
     logger.debug(`[TaskScheduler] Executing: ${action}`, { params });
 
-    switch (action) {
-      case 'deleteMessage': {
-        // 类型断言：明确告诉 TS 这里的 params 是什么结构
-        if (this.isParams<Bot.DeleteMessageParams>(params)) {
-          const p = params; // 这里的 p 已经是 DeleteMessageParams 类型
-          bot.deleteMessage(p.chat_id, p.message_id);
-        }
-        break;
-      }
-
-      case 'deleteMessages': {
-        if (this.isParams<Bot.DeleteMessagesParams>(params)) {
-          const p = params;
-          bot.deleteMessages(p.chat_id, p.message_ids);
-        }
-        break;
-      }
-
-      default:
-        logger.warn(`[TaskScheduler] 未知的任务类型: ${action}`, { params });
-    }
+    return bot.requestJson(action, params as ApiParams<ApiMethod>);
   }
 
   /**
-   * 简单的运行时辅助函数，用于配合泛型断言
-   * 在实际工程中，这里可以换成 Zod 或 Ajv 进行严格校验
-   * 这里为了保持无依赖，仅做类型转换（Trust assumption: DB data is valid）
+   * 辅助：获取队列中最早的任务
    */
-  private isParams<T>(params: unknown): params is T {
-    return typeof params === 'object' && params !== null;
-  }
+  private getNextTask(): TaskItem | undefined {
+    if (this.db.data.tasks.length === 0) return undefined;
 
-  /**
-   * 公共核心接口：添加任务
-   *
-   * 使用泛型 K extends keyof TaskRegistry
-   * 强力约束：如果 action 是 'deleteMessage'，params 必须是 DeleteMessageParams
-   */
-  public schedule<K extends keyof TaskRegistry>(action: K, params: TaskRegistry[K], delayMs: number): void {
-    const dueAt = Date.now() + delayMs;
-
-    // [关键修改] 1. 规范化参数对象（排序 Key），保证字符串唯一性
-    const canonicalParams = canonicalizeParams(params);
-    const paramsStr = JSON.stringify(canonicalParams);
-
-    this.stmtUpsert.run({
-      action,
-      params: paramsStr,
-      dueAt,
+    // O(N) 查找最小值，对于任务队列通常足够快
+    return this.db.data.tasks.reduce((prev, curr) => {
+      return prev.dueAt < curr.dueAt ? prev : curr;
     });
-
-    this.refreshSchedule();
-
-    logger.info(`[TaskScheduler] 任务已调度: ${action}，预计执行时间: ${formatTime(dueAt)}`, { params });
   }
 
-  // ================= 业务封装方法 =================
-
-  public deleteMessage(chatId: number | string, messageId: number, delayMs: number): void {
-    return this.schedule('deleteMessage', { chat_id: chatId, message_id: messageId }, delayMs);
-  }
-
-  public deleteMessages(chatId: number | string, messageIds: number[], delayMs: number): void {
-    const validIds = [...new Set(messageIds.filter((id) => id))];
-    if (validIds.length === 0) return;
-
-    validIds.sort((a, b) => a - b);
-    if (validIds.length === 1) {
-      return this.deleteMessage(chatId, validIds[0], delayMs);
-    }
-    return this.schedule('deleteMessages', { chat_id: chatId, message_ids: validIds }, delayMs);
-  }
-
-  public async sendTempMessage(
-    chatId: number,
-    text: string,
-    delayMs: number,
-    options: {
-      relatedMessageIds?: number[];
-      replyToMessageId?: number;
-      parseMode?: Bot.ParseMode;
-    } = {},
-  ): Promise<void> {
-    const { relatedMessageIds = [], ...sendOptions } = options;
-
-    const sentResult = await bot.sendMessage(chatId, text, sendOptions);
-
-    if (sentResult.ok) {
-      const idsToDelete = [sentResult.messageId, ...relatedMessageIds];
-      this.deleteMessages(chatId, idsToDelete, delayMs);
+  /**
+   * 辅助：根据 ID 删除任务
+   */
+  private deleteTask(id: string): void {
+    const index = this.db.data.tasks.findIndex((t) => t.id === id);
+    if (index !== -1) {
+      this.db.data.tasks.splice(index, 1);
     }
   }
 
-  public close(): void {
-    if (this.nextTaskTimer) {
-      clearTimeout(this.nextTaskTimer);
-    }
-    this.db.close();
-    logger.info('[TaskScheduler] Database closed.');
+  /**
+   * 辅助：生成唯一 ID
+   */
+  private generateId(): string {
+    return generateUniqueId();
   }
 }
 
-export const taskScheduler: TaskScheduler = new TaskScheduler();
+export const taskScheduler = new TaskScheduler();

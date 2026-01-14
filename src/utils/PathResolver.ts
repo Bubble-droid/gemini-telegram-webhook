@@ -1,9 +1,6 @@
 import { logger } from '@/services';
+import type { Recordable } from '@/types';
 import { URL } from 'node:url';
-
-// ----------------------------------------------------------------------
-// Types & Interfaces (类型定义)
-// ----------------------------------------------------------------------
 
 type PathTransformFn = (path: string) => string;
 
@@ -16,8 +13,8 @@ interface ProjectConfig {
 }
 
 interface ResolverConfig {
-  docs: Record<string, ProjectConfig>;
-  source: Record<string, ProjectConfig>;
+  docs: Recordable<ProjectConfig>;
+  source: Recordable<ProjectConfig>;
 }
 
 // ----------------------------------------------------------------------
@@ -28,16 +25,16 @@ const GITHUB_BASE = 'https://github.com';
 
 // 预定义通用的路径转换函数
 const Transforms = {
-  removeMdExtension: (p: string) => p.replace(/\.md$/, ''),
+  removeMdExtension: (p: string): string => p.replace(/\.md$/, ''),
 
-  removeIndex: (p: string) => p.replace(/index$/, ''),
+  removeIndex: (p: string): string => p.replace(/index$/, ''),
 
-  ensureTrailingSlash: (p: string) => (p.endsWith('/') || p === '' ? p : `${p}/`),
+  ensureTrailingSlash: (p: string): string => (p.endsWith('/') || p === '' ? p : `${p}/`),
 
-  removeLeadingEn: (p: string) => p.replace(/^\/?en\//, ''), // 处理 gui-for-cores 的 en 前缀
+  removeLeadingEn: (p: string): string => p.replace(/^\/?en\//, ''), // 处理 gui-for-cores 的 en 前缀
 
   // 处理 sing-box/hysteria2 的 .zh 后缀 -> /zh 前缀
-  zhSuffixToPrefix: (p: string) => {
+  zhSuffixToPrefix: (p: string): string => {
     if (p.endsWith('.zh')) {
       return `/zh/${p.replace(/\.zh$/, '')}`;
     }
@@ -45,7 +42,7 @@ const Transforms = {
   },
 
   // 处理 mihomo 的 .en 后缀 -> /en 前缀
-  enSuffixToPrefix: (p: string) => {
+  enSuffixToPrefix: (p: string): string => {
     if (p.endsWith('.en')) {
       return `/en/${p.replace(/\.en$/, '')}`;
     }
@@ -53,7 +50,7 @@ const Transforms = {
   },
 
   // 标准化路径开头（移除开头的 /）
-  normalizeStart: (p: string) => p.replace(/^\/+/, ''),
+  normalizeStart: (p: string): string => p.replace(/^\/+/, ''),
 };
 
 // 组合常用的文档处理管道
@@ -107,80 +104,62 @@ const CONFIG: ResolverConfig = {
   },
 };
 
-// ----------------------------------------------------------------------
-// Main Logic (核心逻辑)
-// ----------------------------------------------------------------------
+const PATH_REGEX = /^(documents|sourcecode)\/([^/]+)(\/.*)?$/;
 
-class PathResolver {
-  private readonly PATH_REGEX = /^(documents|sourcecode)\/([^/]+)(\/.*)?$/;
+const resolveDocs = (project: string, relativePath: string, fallback: string): string => {
+  const config = CONFIG.docs[project];
+  if (!config) return fallback;
 
-  /**
-   * 解析文件路径为对应的 Web URL
-   * @param rawPath 原始路径 (e.g., "documents/hysteria2/advanced.zh.md")
-   * @returns 解析后的 URL 字符串，如果无法解析则返回原路径
-   */
-  public resolve = (rawPath: string): string => {
-    // 1. 使用正则解析路径结构
-    const match = rawPath.match(this.PATH_REGEX);
+  // 应用转换管道 (Pipeline Pattern)
+  const finalPath = (config.transforms ?? []).reduce((path, transform) => transform(path), relativePath);
 
-    if (!match) {
-      return rawPath;
-    }
+  try {
+    // 某些 docUrl 已经是完整路径（如 anytls），new URL 会正确处理
+    const url = new URL(finalPath, config.baseUrl);
+    return url.toString();
+  } catch (err) {
+    logger.error(`Invalid URL construction: ${config.baseUrl} + ${finalPath}`, { err });
+    return fallback;
+  }
+};
 
-    const [, category, project, restPath] = match;
-    // restPath 可能为 undefined 或以 / 开头，标准化为无前导 /
-    const rawRelativePath = restPath ? restPath.substring(1) : '';
+const resolveSource = (project: string, relativePath: string, fallback: string): string => {
+  const config = CONFIG.source[project];
+  if (!config) return fallback;
 
-    // 2. 分发处理逻辑
-    if (category === 'documents') {
-      return this.resolveDocs(project, rawRelativePath, rawPath);
-    } else if (category === 'sourcecode') {
-      return this.resolveSource(project, rawRelativePath, rawPath);
-    }
+  try {
+    // 组合完整路径部分
+    const fullPath = `${config.repoPrefix ?? ''}/${relativePath}`;
+    // 清理可能出现的重复斜杠 (// -> /)，但保留协议部分的 ://
+    const cleanPath = fullPath.replace(/([^:]\/)\/+/g, '$1');
 
+    const url = new URL(cleanPath, config.baseUrl);
+    return url.toString();
+  } catch (err) {
+    logger.error(`Invalid URL construction: ${config.baseUrl} + ${config.repoPrefix} + ${relativePath}`, { err });
+    return fallback;
+  }
+};
+
+export const resolvePath = (rawPath: string): string => {
+  // 1. 使用正则解析路径结构
+  const match = PATH_REGEX.exec(rawPath);
+
+  if (!match) {
     return rawPath;
-  };
-
-  /**
-   * 处理文档类路径
-   */
-  private resolveDocs(project: string, relativePath: string, fallback: string): string {
-    const config = CONFIG.docs[project];
-    if (!config) return fallback;
-
-    // 应用转换管道 (Pipeline Pattern)
-    const finalPath = (config.transforms ?? []).reduce((path, transform) => transform(path), relativePath);
-
-    try {
-      // 某些 docUrl 已经是完整路径（如 anytls），new URL 会正确处理
-      const url = new URL(finalPath, config.baseUrl);
-      return url.toString();
-    } catch (err) {
-      logger.error(`Invalid URL construction: ${config.baseUrl} + ${finalPath}`, { err });
-      return fallback;
-    }
   }
 
-  /**
-   * 处理源码类路径
-   */
-  private resolveSource(project: string, relativePath: string, fallback: string): string {
-    const config = CONFIG.source[project];
-    if (!config) return fallback;
+  const [, category, project = '', restPath] = match;
+  // restPath 可能为 undefined 或以 / 开头，标准化为无前导 /
+  const rawRelativePath = restPath ? restPath.substring(1) : '';
 
-    try {
-      // 组合完整路径部分
-      const fullPath = `${config.repoPrefix ?? ''}/${relativePath}`;
-      // 清理可能出现的重复斜杠 (// -> /)，但保留协议部分的 ://
-      const cleanPath = fullPath.replace(/([^:]\/)\/+/g, '$1');
+  // 2. 分发处理逻辑
 
-      const url = new URL(cleanPath, config.baseUrl);
-      return url.toString();
-    } catch (err) {
-      logger.error(`Invalid URL construction: ${config.baseUrl} + ${config.repoPrefix} + ${relativePath}`, { err });
-      return fallback;
-    }
+  if (category === 'documents') {
+    return resolveDocs(project, rawRelativePath, rawPath);
+  } else if (category === 'sourcecode') {
+    return resolveSource(project, rawRelativePath, rawPath);
   }
-}
 
-export const pathResolver = new PathResolver();
+  return rawPath;
+};

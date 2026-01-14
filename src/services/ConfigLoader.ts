@@ -2,11 +2,10 @@
 
 import type { Config, Env } from '@/types';
 import { AppError } from '@/utils/errors';
+import type { LogLevel } from 'fastify';
 import { isIP } from 'node:net';
 
-// 定义允许的日志级别
-const LOGGER_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const;
-export type LoggerLevel = (typeof LOGGER_LEVELS)[number];
+const LogLevels = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const;
 
 /**
  * @class ConfigLoader
@@ -17,12 +16,11 @@ export class ConfigLoader {
   // 1. 定义默认值常量
   private readonly DEFAULT_LISTEN_HOST = '127.0.0.1';
   private readonly DEFAULT_LISTEN_PORT = 39001;
-  private readonly DEFAULT_LOGGER_LEVEL: LoggerLevel = 'info';
-  private readonly DEFAULT_ENABLE_KEY_ROTATION = false;
+  private readonly DEFAULT_LOG_LEVEL: LogLevel = 'info';
   private readonly DEFAULT_GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com';
   private readonly DEFAULT_LOCAL_PROXY_BASE_URL = `http://127.0.0.1:${this.DEFAULT_LISTEN_PORT}/gemini`;
-  private readonly DEFAULT_MODEL_NAME = 'gemini-flash-latest';
-  private readonly DEFAULT_MODEL_CONFIG_TEMPERATURE = 0.2;
+  private readonly DEFAULT_MODEL_NAME = 'gemini-3-flash-preview';
+  private readonly DEFAULT_MODEL_CONFIG_TEMPERATURE = 1.0;
   private readonly DEFAULT_MAX_API_CALL_ROUNDS = 16;
   private readonly DEFAULT_REQUEST_LIMIT_SECOND = 20;
   private readonly DEFAULT_CONTEXT_EXPIRATION_DAY = 7;
@@ -49,6 +47,15 @@ export class ConfigLoader {
   }
 
   /**
+   * 获取配置对象
+   * @public
+   * @returns {Config} 已初始化的配置对象
+   */
+  public load(): Config {
+    return this.config;
+  }
+
+  /**
    * 验证所有必须的环境变量是否已设置
    * @private
    */
@@ -64,39 +71,30 @@ export class ConfigLoader {
   }
 
   /**
-   * 获取配置对象
-   * @public
-   * @returns {Config} 已初始化的配置对象
-   */
-  public load(): Config {
-    return this.config;
-  }
-
-  /**
    * 核心构建逻辑：将所有 ENV 转换为 Config
    * @private
    */
   private buildConfig(): Config {
     return {
-      nodeEnv: this.env.NODE_ENV || 'production',
+      nodeEnv: this.env.NODE_ENV ?? 'production',
 
       listenHost: this.parseListenHost(this.env.SERVER_LISTEN_HOST),
       listenPort: this.parsePort(this.env.SERVER_LISTEN_PORT),
-      loggerLevel: this.parseLoggerLevel(this.env.SERVER_LOGGER_LEVEL),
+      logLevel: this.parseLoggerLevel(this.env.SERVER_LOG_LEVEL),
 
-      enableKeyRotation: this.env.ENABLE_KEY_ROTATION === 'true' || this.DEFAULT_ENABLE_KEY_ROTATION,
-      geminiApiBaseUrl: this.env.GEMINI_API_BASE_URL || this.DEFAULT_GEMINI_API_BASE_URL,
-      localProxyBaseUrl: this.env.LOCAL_PROXY_BASE_URL || this.DEFAULT_LOCAL_PROXY_BASE_URL,
+      enableKeyRotation: this.env.ENABLE_KEY_ROTATION === 'true',
+      geminiApiBaseUrl: this.env.GEMINI_API_BASE_URL ?? this.DEFAULT_GEMINI_API_BASE_URL,
+      localProxyBaseUrl: this.env.LOCAL_PROXY_BASE_URL ?? this.DEFAULT_LOCAL_PROXY_BASE_URL,
 
       geminiApiKeys: this.parseStringArray(this.getEnv('GEMINI_API_KEYS')),
 
-      modelName: this.env.GEMINI_MODEL_NAME || this.DEFAULT_MODEL_NAME,
+      modelName: this.env.GEMINI_MODEL_NAME ?? this.DEFAULT_MODEL_NAME,
       modelTemperature: Number(this.env.MODEL_CONFIG_TEMPERATURE) || this.DEFAULT_MODEL_CONFIG_TEMPERATURE,
 
       maxApiCallRounds: Number(this.env.MAX_API_CALL_ROUNDS) || this.DEFAULT_MAX_API_CALL_ROUNDS,
       requestRateLimit: (Number(this.env.REQUEST_LIMIT_SECOND) || this.DEFAULT_REQUEST_LIMIT_SECOND) * 1_000,
 
-      contextsExpirationSecond:
+      contextsExpirationTtl:
         (Number(this.env.CONTEXT_EXPIRATION_DAY) || this.DEFAULT_CONTEXT_EXPIRATION_DAY) * 24 * 60 * 60,
       maxContextLength: Number(this.env.MAX_CONTEXT_LENGTH) || this.DEFAULT_MAX_CONTEXT_LENGTH,
 
@@ -119,7 +117,7 @@ export class ConfigLoader {
    */
   private getEnv(key: keyof Env): string {
     // 前面 validateRequiredEnv 已经保证了这些值存在
-    return this.env[key] as string;
+    return this.env[key] ?? '';
   }
 
   /**
@@ -147,7 +145,7 @@ export class ConfigLoader {
   // --- 以下为原有的验证逻辑，稍作保留和优化 ---
 
   private parseListenHost(val: string | undefined): string {
-    const host = val?.trim() || this.DEFAULT_LISTEN_HOST;
+    const host = val?.trim() ?? this.DEFAULT_LISTEN_HOST;
     if (isIP(host) === 0) {
       throw new AppError(`环境变量 SERVER_LISTEN_HOST 无效："${host}" 不是有效的 IPv4 或 IPv6 地址`);
     }
@@ -168,15 +166,15 @@ export class ConfigLoader {
     return n;
   }
 
-  private parseLoggerLevel(val: string | undefined): LoggerLevel {
+  private parseLoggerLevel(val: string | undefined): LogLevel {
     const levelRaw = val?.trim().toLowerCase();
     if (!levelRaw) {
-      return this.DEFAULT_LOGGER_LEVEL;
+      return this.DEFAULT_LOG_LEVEL;
     }
-    if ((LOGGER_LEVELS as readonly string[]).includes(levelRaw)) {
-      return levelRaw as LoggerLevel;
+    if (LogLevels.includes(levelRaw as LogLevel)) {
+      return levelRaw as LogLevel;
     }
-    throw new AppError(`环境变量 SERVER_LOGGER_LEVEL 非法："${val}"。可选值为 ${LOGGER_LEVELS.join(', ')}`);
+    throw new AppError(`环境变量 SERVER_LOGGER_LEVEL 非法："${val}"。可选值为 ${LogLevels.join(', ')}`);
   }
 }
 

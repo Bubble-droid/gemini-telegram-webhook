@@ -1,45 +1,57 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
-    "target": "esnext",
+    "baseUrl": "./",
+    // "rootDir": "./src",
+    "outDir": "dist",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
     "module": "esnext",
-    "moduleResolution": "bundler",
+    "target": "esnext",
     "lib": ["ESNext"],
-
-    // 严格模式
-    "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "useUnknownInCatchVariables": true,
-    "strictFunctionTypes": true,
-    "strictBindCallApply": true,
-    "strictPropertyInitialization": true,
-    "noImplicitThis": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-
-    // 互操作性
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
-    "verbatimModuleSyntax": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
+    "types": ["node"],
 
     "noEmit": true,
+    "moduleResolution": "bundler",
 
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-    },
-    "types": ["node"]
+    "allowJs": true,
+    "checkJs": true,
+
+    // Stricter Typechecking Options
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    // Style Options
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+
+    "esModuleInterop": true,
+    "importHelpers": true,
+    "downlevelIteration": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // Recommended Options
+    "strict": true,
+    "jsx": "react-jsx",
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true
   },
   "include": [
-    "src/**/*",
-    "vite.config.ts",
+    "src/**/*.ts",
     "eslint.config.js",
+    "vite.config.ts",
     "prettier.config.ts"
   ],
   "exclude": ["node_modules/", "dist/", "draft/"]

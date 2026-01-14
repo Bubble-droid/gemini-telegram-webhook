@@ -1,10 +1,12 @@
-import { hasImage } from '@/handlers/messages';
-import { chatContexts, config, geminiApi, logger } from '@/services';
-import type { Chat, Message, MessageOrigin, User } from '@/types';
-import { formatTime, handleMediaFiles, promptStore, taskScheduler, toHtml } from '@/utils';
+import { chatContext, config, logger } from '@/services';
+import { geminiApi } from '@/services/apis';
+import type { ChitChatState, Recordable } from '@/types';
+import type { ResponseContext } from '@/utils';
+import { formatTime, handleMediaFiles, hasImage, MsgPTTL, promptStore } from '@/utils';
+import { toHtml } from '@/utils/markdown';
 import type { Content, Part } from '@google/genai';
+import type { Chat, Message, MessageOrigin, User } from 'grammy/types';
 
-// --- 常量定义
 // 绝对沉默期：上次回复后，至少要累积这么多“注意力分”才开始从 0 计算概率
 // 相当于人类说完话后的“贤者时间”
 const MIN_ATTENTION_SCORE = 4;
@@ -14,16 +16,6 @@ const MIN_ATTENTION_SCORE = 4;
 const MAX_ATTENTION_SCORE = 25;
 
 const HISTORY_LIMIT = 20; // 对话历史记录上限
-const CHITCHAT_TEMP_TTL_MS = 24 * 60 * 60 * 1_000;
-
-/**
- * 每个聊天会话的状态结构
- */
-export interface ChitChatState {
-  maxScore: number; // 目标回合数（随机值）
-  currentScore: number; // 当前回合计数
-  context: Content[]; // 对话历史记录
-}
 
 /**
  * 格式化用户身份信息 (包含 ID 以区分同名用户)
@@ -44,7 +36,7 @@ const formatUserIdentity = (user?: User): string => {
  * 格式: "Group Title [CID: -100xxx]"
  */
 const formatChatIdentity = (chat: Chat): string => {
-  const title = chat.title || chat.username || 'Private Chat';
+  const title = chat.title ?? chat.username ?? 'Private Chat';
   return `${title} [CID: ${chat.id}] (${chat.type})`;
 };
 
@@ -56,9 +48,9 @@ const formatForwardOrigin = (origin?: MessageOrigin): string => {
 
   let source = 'Unknown';
   if (origin.type === 'user') source = formatUserIdentity(origin.sender_user);
-  if (origin.type === 'channel') source = `${origin.chat?.title || 'Channel'} [ID: ${origin.chat?.id}]`;
+  if (origin.type === 'channel') source = `${origin.chat.title} [ID: ${origin.chat.id}]`;
   if (origin.type === 'hidden_user') source = `${origin.sender_user_name} (Hidden)`;
-  if (origin.type === 'chat') source = formatChatIdentity(origin.sender_chat as Chat);
+  if (origin.type === 'chat') source = formatChatIdentity(origin.sender_chat);
 
   return `⏩ Forwarded from: ${source} | Time: ${origin.date ? formatTime(origin.date * 1000) : 'N/A'}`;
 };
@@ -71,7 +63,7 @@ const formatForwardOrigin = (origin?: MessageOrigin): string => {
  * [Current Message Metadata]
  * [Content]
  */
-export const formatContextToMarkdown = (ctx: Message): string => {
+const formatContextToMarkdown = (ctx: Message): string => {
   const parts: string[] = [];
 
   // --- 1. 全局环境信息 (Global Context) ---
@@ -86,7 +78,7 @@ export const formatContextToMarkdown = (ctx: Message): string => {
     const replyTime = `🕒 ${r.date ? formatTime(r.date * 1000) : 'N/A'}`;
 
     // 处理引用内容
-    let replyContent = r.text || r.caption || '[Media/File]';
+    let replyContent = r.text ?? r.caption ?? '[Media/File]';
     // 如果是引用了特定片段
     if (r.quote?.text) {
       replyContent = `❝ Quoted: "${r.quote.text}"\n    -- Full Context: ${replyContent}`;
@@ -125,32 +117,35 @@ export const formatContextToMarkdown = (ctx: Message): string => {
 
   // --- 6. 消息正文 (Content) ---
   // 留空一行，开始正文
-  parts.push(`\n${ctx.text || ctx.caption || '[Media/File]'}`);
+  parts.push(`\n${ctx.text ?? ctx.caption ?? '[Media/File]'}`);
 
   return parts.join('\n');
 };
 
 /**
- * @class ChitChatHandler
  * @description 闲聊处理器，负责在非命令、非 FAQ 匹配的情况下，
  *              以回合制触发机制与用户进行自然语言对话。
  *              采用 Map 实现的 Chat ID 粒度状态管理，以支持单例复用。
  */
-class ChitChatHandler {
-  private readonly model: string;
+export class ChitChatHandler {
+  private readonly chitChatModel = 'gemma-3-27b-it';
+  private locks = new Map<number, Promise<void>>();
 
-  private locks: Map<number, Promise<void>> = new Map();
-
-  constructor() {
-    this.model = 'gemma-3-27b-it';
+  /**
+   * 处理消息组
+   * 现在的入口方法，确保只处理一次
+   */
+  public handle(ctx: ResponseContext): Promise<boolean> {
+    return this.runSequential(ctx.chat.id, () => {
+      return this.handleMessage(ctx);
+    });
   }
 
   /**
    * 获取或初始化聊天状态
-   * @private
    */
   private getChatState(chatId: number): ChitChatState {
-    const savedState = chatContexts.getChitChatState(chatId);
+    const savedState = chatContext.getChitChatState(chatId);
 
     if (savedState) {
       return savedState;
@@ -164,7 +159,7 @@ class ChitChatHandler {
     };
 
     // 立即持久化初始状态
-    chatContexts.saveChitChatState(chatId, newState);
+    chatContext.saveChitChatState(chatId, newState);
     logger.debug(`[ChitChat] Initialized new state for chat ${chatId}`, { currentScore: newState.currentScore });
 
     return newState;
@@ -174,12 +169,11 @@ class ChitChatHandler {
    * 保存状态到 DB 的辅助方法
    */
   private saveState(chatId: number, state: ChitChatState): void {
-    chatContexts.saveChitChatState(chatId, state);
+    chatContext.saveChitChatState(chatId, state);
   }
 
   /**
    * 记录用户消息并裁剪历史记录，确保不会超出上限。
-   * @private
    */
   private recordMessage(state: ChitChatState, content: Content): void {
     if (state.context.length > HISTORY_LIMIT) {
@@ -190,7 +184,6 @@ class ChitChatHandler {
 
   /**
    * 调用 Gemini 服务生成响应。
-   * @private
    */
   private async getGeminiResponse(state: ChitChatState): Promise<string | null> {
     const systemPrompt = promptStore.format('chit-chat', {
@@ -210,23 +203,23 @@ class ChitChatHandler {
 
     try {
       const response = await geminiApi.generate(fullContents, {
-        genModel: this.model,
+        genModel: this.chitChatModel,
         genConfig: {
-          temperature: 1,
+          temperature: 1.0,
         },
-        onRetry: () => {
+        onStatusUpdate: () => {
           logger.warn('[ChitChatHandler] Retrying...');
         },
       });
 
       if (response.text?.includes('SILENCE')) {
-        logger.info(`[ChitChatHandler] Model keep silence.`);
+        logger.debug(`[ChitChatHandler] Model keep silence.`);
         return null;
       }
 
-      this.recordMessage(state, response.candidates?.[0]?.content as Content);
+      if (response.candidates?.[0]?.content) this.recordMessage(state, response.candidates[0].content);
 
-      return response.text as string;
+      return response.text ?? null;
     } catch (err) {
       logger.error('[ChitChatHandler] Gemini API failed', { err });
       return null;
@@ -240,7 +233,7 @@ class ChitChatHandler {
    */
   private runSequential<T>(chatId: number, task: () => Promise<T>): Promise<T> {
     // 1. 获取当前队列的尾部（如果不存在，则为一个已完成的 Promise）
-    const previousPromise = this.locks.get(chatId) || Promise.resolve();
+    const previousPromise = this.locks.get(chatId) ?? Promise.resolve();
 
     // 2. 构建当前任务的执行 Promise
     // 无论前一个任务是成功还是失败，都要执行当前任务
@@ -250,7 +243,7 @@ class ChitChatHandler {
     // 3. 构建用于维护队列的 "Safe Promise"
     // 这个 Promise 永远不会 Reject，确保队列中的下一个任务总能被调度
     const safeQueuePromise = currentResultPromise
-      .catch((err) => {
+      .catch((err: unknown) => {
         // 记录日志，但不抛出，防止打断后续的任务链
         logger.error(`[ChitChat] Task failed in queue for chat ${chatId}`, { err });
       })
@@ -282,7 +275,7 @@ class ChitChatHandler {
     // 1. 图片消息：信息密度大，权重高
     if (hasImage(message)) return 2.5;
 
-    const text = message.text || message.caption || '';
+    const text = message.text ?? message.caption ?? '';
 
     const len = text.length;
 
@@ -299,7 +292,7 @@ class ChitChatHandler {
     return 2.0;
   }
 
-  private isShouldReply(state: ChitChatState, logContext: Record<string, unknown>): boolean {
+  private isShouldReply(state: ChitChatState, logContext: Recordable): boolean {
     // 逻辑：如果分数 < 最小阈值，必定不回。
     //      如果分数 > 最大阈值，必定回。
     //      中间区间：计算概率 p，随机触发。
@@ -315,7 +308,7 @@ class ChitChatHandler {
       shouldReply = false;
     } else if (state.currentScore >= MAX_ATTENTION_SCORE) {
       // 忍不住了，必回
-      logger.info(`[ChitChat] Max score reached. Triggering reply.`, logContext);
+      logger.debug(`[ChitChat] Max score reached. Triggering reply.`, logContext);
       shouldReply = true;
     } else {
       // 概率判定区间：使用平方函数模拟“越往后越想回”的心理
@@ -331,7 +324,7 @@ class ChitChatHandler {
       const hit = roll < probability;
 
       if (hit) {
-        logger.info(`[ChitChat] Dice rolled success: ${roll.toFixed(2)} < ${probability.toFixed(2)}`, logContext);
+        logger.debug(`[ChitChat] Dice rolled success: ${roll.toFixed(2)} < ${probability.toFixed(2)}`, logContext);
         shouldReply = true;
       } else {
         logger.debug(`[ChitChat] Dice rolled pass: ${roll.toFixed(2)} >= ${probability.toFixed(2)}`, logContext);
@@ -345,24 +338,22 @@ class ChitChatHandler {
   /**
    * 提取原本的 handle 逻辑到单独的私有方法
    */
-  private async handleMessage(messages: Message[]): Promise<boolean> {
-    const chat = messages[0].chat;
-
-    const state = this.getChatState(chat.id);
+  private async handleMessage(ctx: ResponseContext): Promise<boolean> {
+    const state = this.getChatState(ctx.chat.id);
 
     let shouldSave = true;
 
     const messageParts: Part[] = [];
 
-    const mediaParts = await handleMediaFiles(messages, hasImage);
+    const mediaParts = await handleMediaFiles(ctx.messages, hasImage);
 
-    const rawTexts = messages.flatMap(({ text, caption }) => [text, caption].filter(Boolean) as string[]);
+    const rawTexts = ctx.messages.map((m) => ctx.getText(m)).filter(Boolean);
 
     if (mediaParts.length === 0 && rawTexts.length === 0) return false;
 
     messageParts.push(...mediaParts);
 
-    const contextMarkdown = messages.map(formatContextToMarkdown).join('\n\n---\n\n');
+    const contextMarkdown = ctx.messages.map(formatContextToMarkdown).join('\n\n---\n\n');
 
     messageParts.push({ text: contextMarkdown });
 
@@ -374,11 +365,11 @@ class ChitChatHandler {
     this.recordMessage(state, messageContent);
 
     // 3. 计算注意力分
-    const weight = messages.map(this.calculateMessageWeight).reduce((a, b) => a + b, 0);
+    const weight = ctx.messages.map((m) => this.calculateMessageWeight(m)).reduce((a, b) => a + b, 0);
 
     state.currentScore += weight;
 
-    const logContext = { chatId: chat.id, currentScore: state.currentScore, maxScore: state.maxScore };
+    const logContext = { chatId: ctx.chat.id, currentScore: state.currentScore, maxScore: state.maxScore };
 
     try {
       // 判定是否触发回复
@@ -391,20 +382,21 @@ class ChitChatHandler {
 
       const responseText = await this.getGeminiResponse(state);
 
-      if (responseText) {
-        logger.info(`[ChitChat] Replying.`, logContext);
-
-        await taskScheduler.sendTempMessage(chat.id, toHtml(responseText), CHITCHAT_TEMP_TTL_MS, {
-          parseMode: 'HTML',
-        });
-
-        return true;
+      if (!responseText) {
+        // 如果生成失败，也要稍微重置一下分数，防止死循环重试，但不用完全清零，保留一点“想说话的欲望”
+        state.currentScore = MIN_ATTENTION_SCORE / 2;
+        logger.warn('闲聊处理器未能生成回复，重置回合目标。', logContext);
+        return false;
       }
 
-      // 如果生成失败，也要稍微重置一下分数，防止死循环重试，但不用完全清零，保留一点“想说话的欲望”
-      state.currentScore = MIN_ATTENTION_SCORE / 2;
-      logger.warn('闲聊处理器未能生成回复，重置回合目标。', logContext);
-      return false;
+      logger.debug(`[ChitChat] Replying.`, logContext);
+
+      await ctx.send(toHtml(responseText), {
+        parse_mode: 'HTML',
+        deleteAfterMs: MsgPTTL['1d'],
+      });
+
+      return true;
     } catch (err) {
       logger.error('[ChitChatHandler] Error in handle loop', { err });
       shouldSave = false;
@@ -412,35 +404,8 @@ class ChitChatHandler {
     } finally {
       // 5. 统一保存状态 (Write-Back)
       if (shouldSave) {
-        this.saveState(chat.id, state);
+        this.saveState(ctx.chat.id, state);
       }
     }
   }
-
-  /**
-   * 处理消息组
-   * 现在的入口方法，确保只处理一次
-   */
-  public async handleGroup(messages: Message[]): Promise<boolean> {
-    if (messages.length === 0) return false;
-
-    // 使用第一条消息作为 Context 的锚点
-    const primaryMsg = messages[0];
-
-    return this.runSequential(primaryMsg.chat.id, () => {
-      return this.handleMessage(messages);
-    });
-  }
-
-  /**
-   * 处理消息的主入口
-   * @public
-   * @param message - Telegram 消息对象
-   * @returns {Promise<boolean>} 是否发送了回复
-   */
-  public async handle(message: Message): Promise<boolean> {
-    return this.handleGroup([message]);
-  }
 }
-
-export const chitChatHandler = new ChitChatHandler();

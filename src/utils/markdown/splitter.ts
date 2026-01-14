@@ -1,8 +1,9 @@
 // src/utils/formatters/chunk_splitting.ts
 
-import type { AstNode, Generator } from '@/utils/formatters';
+import type { AstNode } from '@/types';
+import type { Generator } from './Generator';
 
-const MAX_CONTENT_LENGTH = 4096;
+const MAX_CONTENT_LENGTH = 4000;
 
 /**
  * 递归计算一个 AST 节点及其所有子节点包含的“可见内容”的总长度。
@@ -41,18 +42,18 @@ const getAstContentLength = (node: AstNode): number => {
  * @param generator - 用于生成目标格式文本的生成器实例。
  * @returns {string[]} 已平衡格式的消息块数组。
  */
-export const splitAstAndGenerateChunks = (rootNode: AstNode, generator: Generator): string[] => {
+export const splitMdastToChunks = (rootNode: AstNode, generator: Generator): string[] => {
   const chunks: string[] = [];
   let currentChunkString = '';
   let currentContentLength = 0;
   const openNodesStack: AstNode[] = []; // 跟踪当前开放的节点（格式）
 
-  const startNewChunk = () => {
+  const startNewChunk = (): void => {
     currentChunkString = openNodesStack.map((node) => generator.getOpeningTag(node.type, node)).join('');
     currentContentLength = 0;
   };
 
-  const finalizeCurrentChunk = () => {
+  const finalizeCurrentChunk = (): void => {
     if (currentContentLength === 0 && currentChunkString === '') return;
     currentChunkString += [...openNodesStack]
       .reverse()
@@ -63,7 +64,7 @@ export const splitAstAndGenerateChunks = (rootNode: AstNode, generator: Generato
     }
   };
 
-  const traverse = (node: AstNode) => {
+  const traverse = (node: AstNode): void => {
     // --- 1. 预处理 & 原子节点检查 ---
     const nodeContentLength = getAstContentLength(node);
 
@@ -167,7 +168,7 @@ export const splitAstAndGenerateChunks = (rootNode: AstNode, generator: Generato
           let currentLength = 0;
           const chars = [...remainingContent]; // 按码点分割
 
-          for (let i = 0; i < chars.length; i++) {
+          for (const _char of chars) {
             if (currentLength + 1 > remainingSpace) {
               break;
             }
@@ -230,11 +231,10 @@ export const splitAstAndGenerateChunks = (rootNode: AstNode, generator: Generato
 /**
  * 简单的纯文本分割函数，确保在回退到纯文本模式时不会因消息超长而失败。
  * @param text - 原始文本。
- * @param maxLength - 每块的最大长度。
  */
-export const splitPlainText = (text: string, maxLength: number): string[] => {
+export const splitPlainText = (text: string): string[] => {
   // 关键修复：使用码点计数法进行初始长度检查，确保准确性。
-  if ([...text].length <= maxLength) {
+  if ([...text].length <= MAX_CONTENT_LENGTH) {
     return [text];
   }
 
@@ -242,20 +242,20 @@ export const splitPlainText = (text: string, maxLength: number): string[] => {
   let remainingText = text;
 
   while (remainingText.length > 0) {
-    if (remainingText.length <= maxLength) {
+    if (remainingText.length <= MAX_CONTENT_LENGTH) {
       chunks.push(remainingText);
       break;
     }
 
     // 优先在换行符处分割
-    let splitIndex = remainingText.lastIndexOf('\n', maxLength);
+    let splitIndex = remainingText.lastIndexOf('\n', MAX_CONTENT_LENGTH);
     // 其次在空格处分割
     if (splitIndex === -1) {
-      splitIndex = remainingText.lastIndexOf(' ', maxLength);
+      splitIndex = remainingText.lastIndexOf(' ', MAX_CONTENT_LENGTH);
     }
     // 如果都找不到，则硬分割
     if (splitIndex === -1 || splitIndex === 0) {
-      splitIndex = maxLength;
+      splitIndex = MAX_CONTENT_LENGTH;
     }
 
     chunks.push(remainingText.substring(0, splitIndex));

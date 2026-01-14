@@ -1,6 +1,6 @@
-// src/types/config.d.ts
+// src/types/config.ts
 
-import type { LoggerLevel } from '@/services';
+import type { LogLevel } from 'fastify';
 
 /**
  * Env 接口定义了应用程序期望从环境变量中读取的所有配置项。
@@ -11,7 +11,7 @@ export interface Env {
 
   SERVER_LISTEN_HOST?: string; // 服务器监听的主机地址 (可选)
   SERVER_LISTEN_PORT?: string; // 服务器监听的端口号 (可选)
-  SERVER_LOGGER_LEVEL?: string; // 服务器日志级别 (可选)
+  SERVER_LOG_LEVEL?: string; // 服务器日志级别 (可选)
 
   ENABLE_KEY_ROTATION?: string; // 是否启用密钥轮换 (可选)
   GEMINI_API_BASE_URL?: string; // Gemini API 的基础 URL (可选)
@@ -49,7 +49,7 @@ export interface Config {
 
   listenHost: string; // 监听主机地址，已解析为 string
   listenPort: number; // 监听端口号，已解析为 number
-  loggerLevel: LoggerLevel; // 日志级别，已解析为 LoggerLevel 类型
+  logLevel: LogLevel; // 日志级别，已解析为 LoggerLevel 类型
 
   enableKeyRotation: boolean; // 是否启用密钥轮换
   geminiApiBaseUrl: string; // Gemini API 的基础 URL，已解析为 string
@@ -63,7 +63,7 @@ export interface Config {
   maxApiCallRounds: number;
   requestRateLimit: number;
 
-  contextsExpirationSecond: number;
+  contextsExpirationTtl: number;
   maxContextLength: number;
 
   githubToken: string; // GitHub Access Token
@@ -78,5 +78,3 @@ export interface Config {
   adminId: number; // 管理员的 Telegram 用户 ID，已解析为 number
   allowGroups: number[]; // 允许使用机器人的群组 ID 列表，已解析为 string[]
 }
-
-export type { LoggerLevel };

@@ -1,43 +1,45 @@
 // eslint.config.js
-
-import eslintConfigPrettier from 'eslint-config-prettier';
-import { defineConfig } from 'eslint/config';
+import eslint from '@eslint/js';
+import prettierConfig from 'eslint-config-prettier';
+import { defineConfig, globalIgnores } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
+  globalIgnores(['node_modules/', 'dist/', 'draft/']),
+
+  eslint.configs.recommended,
+  tseslint.configs.strictTypeChecked,
+  tseslint.configs.stylisticTypeChecked,
+
   {
-    ignores: ['node_modules/', 'dist/', 'draft/'],
-  },
-  // 基础配置
-  ...tseslint.configs.recommended,
-  {
-    files: ['src/**/*.ts', 'src/**/*.d.ts'],
     languageOptions: {
+      parser: tseslint.parser,
       parserOptions: {
-        project: './tsconfig.json',
-        tsconfigRootDir: import.meta.dirname,
+        ecmaVersion: 'latest',
+        projectService: true,
       },
     },
+
     rules: {
-      '@typescript-eslint/consistent-type-imports': [
-        'warn',
-        { prefer: 'type-imports', fixStyle: 'inline-type-imports' },
-      ],
-      // 自定义规则
-      '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/require-await': 'off',
-      '@typescript-eslint/no-empty-function': 'warn',
-      '@typescript-eslint/no-var-requires': 'error',
+      '@typescript-eslint/member-ordering': 'error',
+      '@typescript-eslint/consistent-type-imports': 'error',
+      '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
+      '@typescript-eslint/no-misused-spread': ['error', { allow: [{ from: 'lib', name: 'string' }] }],
+      '@typescript-eslint/no-deprecated': ['error', { allow: [{ from: 'lib', name: 'SSEClientTransport' }] }],
       '@typescript-eslint/no-unused-vars': [
-        'warn',
+        'error',
         {
+          args: 'all',
           argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
+          caughtErrors: 'all',
           caughtErrorsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
         },
       ],
     },
   },
-  // 关闭所有与格式化冲突的 ESLint 规则
-  eslintConfigPrettier,
+
+  prettierConfig,
 );

@@ -1,21 +1,23 @@
 // src/handlers/FileHandler.ts
 
-import { bot, config, logger } from '@/services';
-import type * as Bot from '@/types/telegram';
+import { config, logger } from '@/services';
+import { bot } from '@/services/apis';
+import type { Recordable } from '@/types';
 import { AppError } from '@/utils/errors';
-import type { BlobImageUnion } from '@google/genai';
+import type { Blob as TBlob } from '@google/genai';
+import type { Animation, Audio, Document, Message, PhotoSize, Sticker, Video, Voice } from 'grammy/types';
 import path from 'node:path';
 
-// --- 常量定义 ---
+const DEFAULT_FILE_NAME = 'downloaded_file';
 
-const SUPPORTED_MIME_TYPE = {
-  APPLICATION_TYPES: ['pdf'],
-  IMAGE_TYPES: ['png', 'jpeg', 'webp', 'heic', 'heif'],
-  VIDEO_TYPES: ['mp4', 'mpeg', 'mov', 'avi', 'x-flv', 'mpg', 'webm', 'wmv', '3gpp'],
-  AUDIO_TYPES: ['wav', 'mp3', 'aiff', 'aac', 'ogg', 'flac'],
+const SupportedMimeType = {
+  ApplicationTypes: ['pdf'],
+  ImageTypes: ['png', 'jpeg', 'webp', 'heic', 'heif'],
+  VideoTypes: ['mp4', 'mpeg', 'mov', 'avi', 'x-flv', 'mpg', 'webm', 'wmv', '3gpp'],
+  AudioTypes: ['wav', 'mp3', 'aiff', 'aac', 'ogg', 'flac'],
 };
 
-const FILE_EXTENSION_MIME_MAP = {
+const FileExtensionMime = {
   // 文本与代码
   txt: 'text/plain',
 
@@ -74,11 +76,14 @@ const FILE_EXTENSION_MIME_MAP = {
   aac: 'audio/aac',
   ogg: 'audio/ogg',
   flac: 'audio/flac',
-} as const satisfies Record<string, string>;
+} as const satisfies Recordable<string>;
 
-type MimeType = (typeof FILE_EXTENSION_MIME_MAP)[keyof typeof FILE_EXTENSION_MIME_MAP];
+type FileExtension = keyof typeof FileExtensionMime;
+type MimeType = (typeof FileExtensionMime)[FileExtension];
 
-const DEFAULT_FILE_NAME = 'downloaded_file';
+const isValidExtension = (ext: string): ext is FileExtension => {
+  return Object.prototype.hasOwnProperty.call(FileExtensionMime, ext);
+};
 
 /**
  * @class FileHandler
@@ -87,10 +92,29 @@ const DEFAULT_FILE_NAME = 'downloaded_file';
  */
 class FileHandler {
   private botToken: string;
-  private fileMimeMap: Map<string, MimeType> = new Map(Object.entries(FILE_EXTENSION_MIME_MAP));
 
   constructor() {
     this.botToken = config.botToken;
+  }
+
+  /**
+   * 处理消息中的附件
+   * @param message - Telegram 消息对象
+   */
+  public async handle(message: Message): Promise<TBlob | undefined> {
+    const { sticker, animation, document, photo, video, audio, voice } = message;
+
+    const largePhoto = photo?.[photo.length - 1];
+
+    if (largePhoto) return this.handleImage(largePhoto);
+    if (sticker) return this.handleSticker(sticker);
+    if (animation) return this.handleAnimation(animation);
+    if (video) return this.handleVideo(video);
+    if (audio) return this.handleAudio(audio, 'audio/mp3');
+    if (voice) return this.handleAudio(voice, 'audio/ogg');
+    if (document) return this.handleDocument(document);
+
+    return undefined;
   }
 
   /**
@@ -106,18 +130,17 @@ class FileHandler {
   private extractFileName(contentDisposition: string | null, url: string): string {
     if (contentDisposition) {
       const regex = /filename="([^"]+)"|filename=([^;]+)/;
-      const match = contentDisposition.match(regex);
+      const match = regex.exec(contentDisposition);
       if (match) {
-        return (match[1] || match[2]).trim();
+        return (match[1] ?? match[2])?.trim() ?? '';
       }
     }
 
     // Fallback: 从 URL 获取
-    try {
-      const urlPath = new URL(url).pathname;
-      const lastPart = path.basename(urlPath);
-      if (lastPart) return lastPart;
-    } catch {}
+
+    const urlPath = new URL(url).pathname;
+    const lastPart = path.basename(urlPath);
+    if (lastPart) return lastPart;
 
     return DEFAULT_FILE_NAME;
   }
@@ -128,8 +151,8 @@ class FileHandler {
   private isBinaryApplicationMime(mime: string): boolean {
     if (!mime || typeof mime !== 'string') return true;
 
-    const clean = mime.split(';')[0].trim().toLowerCase();
-    if (!clean.startsWith('application/')) return true;
+    const clean = mime.split(';')[0]?.trim().toLowerCase();
+    if (!clean?.startsWith('application/')) return true;
 
     const subtype = clean.slice('application/'.length);
 
@@ -185,7 +208,7 @@ class FileHandler {
   /**
    * 下载文件流并转换为 Base64
    */
-  private async downloadAndEncode(fileId: string, mimeType: MimeType): Promise<BlobImageUnion> {
+  private async downloadAndEncode(fileId: string, mimeType: MimeType): Promise<TBlob> {
     // 1. 获取 Telegram 文件路径
     const fileResult = await bot.getFile(fileId);
     if (!fileResult.ok || !fileResult.data.file_path) {
@@ -206,10 +229,9 @@ class FileHandler {
       const fileSize = arrayBuffer.byteLength;
       const displaySize =
         fileSize >= 1048576 ? `${(fileSize / 1048576).toFixed(2)} MB` : `${(fileSize / 1024).toFixed(2)} KB`;
-      logger.info(`文件下载成功 (${displaySize})`);
+      logger.debug(`文件下载成功 (${displaySize})`);
 
-      // 3. 智能 MIME 类型修正
-      let finalMimeType = mimeType;
+      let finalMimeType: MimeType = mimeType;
 
       // 尝试根据实际下载的文件名修正 MIME
       const disposition = response.headers.get('content-disposition');
@@ -217,8 +239,8 @@ class FileHandler {
 
       if (fileName !== DEFAULT_FILE_NAME) {
         const ext = this.getExtension(fileName);
-        finalMimeType = this.fileMimeMap.get(ext) || mimeType;
-        logger.info(`修正 MIME 类型: ${mimeType} -> ${finalMimeType} (基于扩展名 .${ext})`);
+        finalMimeType = isValidExtension(ext) ? FileExtensionMime[ext] : mimeType;
+        logger.debug(`修正 MIME 类型: ${mimeType} -> ${finalMimeType} (基于扩展名 .${ext})`);
       }
 
       // 4. 转换为 Base64
@@ -233,85 +255,81 @@ class FileHandler {
 
   // --- 特定类型处理器 ---
 
-  private handleSticker(sticker: Bot.Sticker): Promise<BlobImageUnion> {
+  private handleSticker(sticker: Sticker): Promise<TBlob> {
     const isImageSticker = !sticker.is_animated && !sticker.is_video;
     return this.downloadAndEncode(sticker.file_id, isImageSticker ? 'image/webp' : 'video/webm');
   }
 
-  private handleAnimation(animation: Bot.Animation): Promise<BlobImageUnion> {
+  private handleAnimation(animation: Animation): Promise<TBlob> {
     return this.downloadAndEncode(animation.file_id, 'video/mp4');
   }
 
-  private handleImage(photo: Bot.PhotoSize): Promise<BlobImageUnion> {
+  private handleImage(photo: PhotoSize): Promise<TBlob> {
     return this.downloadAndEncode(photo.file_id, 'image/jpeg');
   }
 
-  private handleVideo(video: Bot.Video): Promise<BlobImageUnion> {
+  private handleVideo(video: Video): Promise<TBlob> {
     const { file_id, mime_type } = video;
     const mime =
-      mime_type && SUPPORTED_MIME_TYPE.VIDEO_TYPES.includes(mime_type.split('/')[1]) ? mime_type : 'video/mp4';
+      mime_type && SupportedMimeType.VideoTypes.includes(mime_type.split('/')[1] ?? '') ? mime_type : 'video/mp4';
     return this.downloadAndEncode(file_id, mime as MimeType);
   }
 
-  private handleAudio(source: Bot.Audio | Bot.Voice, defaultMime: 'audio/mp3' | 'audio/ogg'): Promise<BlobImageUnion> {
+  private handleAudio(source: Audio | Voice, defaultMime: 'audio/mp3' | 'audio/ogg'): Promise<TBlob> {
     const { file_id, mime_type } = source;
     const mime =
-      mime_type && SUPPORTED_MIME_TYPE.AUDIO_TYPES.includes(mime_type.split('/')[1]) ? mime_type : defaultMime;
+      mime_type && SupportedMimeType.AudioTypes.includes(mime_type.split('/')[1] ?? '') ? mime_type : defaultMime;
     return this.downloadAndEncode(file_id, mime as MimeType);
   }
 
-  private handleDocument(document: Bot.Document): Promise<BlobImageUnion> {
+  private handleDocument(document: Document): Promise<TBlob> {
     const { file_id, mime_type, file_name } = document;
-    let mime = mime_type;
+    let mime: string | undefined = mime_type;
 
     // 1. 优先尝试通过文件名后缀推断更准确的 MIME
     if (!mime_type && file_name) {
       const ext = this.getExtension(file_name);
-      const type = this.fileMimeMap.get(ext);
-      if (type) {
-        mime = type;
-        logger.info(`通过后缀推断文档 MIME: ${mime}`);
-      }
+      if (isValidExtension(ext)) mime = FileExtensionMime[ext];
     }
 
     if (!mime) {
-      throw new AppError(`无法确定文件类型: ${file_name || '未知文件名'}`, 'FILE_TYPE_NOT_SUPPORTED');
+      throw new AppError(`无法确定文件类型: ${file_name ?? 'N/A'}`, 'FILE_TYPE_NOT_SUPPORTED');
     }
 
     // 2. 特殊逻辑：GIF 转 Video
     if (mime === 'image/gif') {
-      logger.info('检测到 GIF，转为 video/mp4 处理');
+      logger.debug('检测到 GIF，转为 video/mp4 处理');
       return this.downloadAndEncode(file_id, 'video/mp4');
     }
 
-    const [mainType, subType] = mime.split('/');
+    const [mainType, subType = ''] = mime.split('/');
     let finalMime: string | undefined;
 
     // 3. MIME 类型分类与验证
     switch (mainType) {
       case 'text':
-        finalMime = mime;
+        finalMime = 'text/plain';
         break;
 
       case 'application':
-        if (SUPPORTED_MIME_TYPE.APPLICATION_TYPES.includes(subType)) {
+        if (SupportedMimeType.ApplicationTypes.includes(subType)) {
           finalMime = mime; // e.g. application/pdf
         } else if (!this.isBinaryApplicationMime(mime)) {
-          logger.info(`非二进制 application 类型 "${mime}" -> 视为 text/plain`);
+          logger.debug(`非二进制 application 类型 "${mime}" -> 视为 text/plain`);
           finalMime = 'text/plain';
         }
         break;
 
       case 'image':
-        finalMime = SUPPORTED_MIME_TYPE.IMAGE_TYPES.includes(subType) ? mime : 'image/jpeg';
+        finalMime = SupportedMimeType.ImageTypes.includes(subType) ? mime : undefined;
         break;
 
       case 'video':
-        finalMime = SUPPORTED_MIME_TYPE.VIDEO_TYPES.includes(subType) ? mime : 'video/mp4';
+        finalMime = SupportedMimeType.VideoTypes.includes(subType) ? mime : undefined;
         break;
 
       case 'audio':
-        finalMime = SUPPORTED_MIME_TYPE.AUDIO_TYPES.includes(subType) ? mime : 'audio/mp3';
+        finalMime = SupportedMimeType.AudioTypes.includes(subType) ? mime : undefined;
         break;
     }
 
@@ -320,26 +338,6 @@ class FileHandler {
     }
 
     return this.downloadAndEncode(file_id, finalMime as MimeType);
-  }
-
-  /**
-   * 处理消息中的附件
-   * @param message - Telegram 消息对象
-   */
-  public async handle(message: Bot.Message): Promise<BlobImageUnion | undefined> {
-    const { sticker, animation, document, photo, video, audio, voice } = message;
-
-    if (sticker?.is_animated) return undefined;
-
-    if (photo) return this.handleImage(photo[photo.length - 1]);
-    if (sticker) return this.handleSticker(sticker);
-    if (animation) return this.handleAnimation(animation);
-    if (video) return this.handleVideo(video);
-    if (audio) return this.handleAudio(audio, 'audio/mp3');
-    if (voice) return this.handleAudio(voice, 'audio/ogg');
-    if (document) return this.handleDocument(document);
-
-    return undefined;
   }
 }
 

@@ -41,7 +41,7 @@ export const processCallbackQuery = async (ctx: ResponseContext): Promise<void> 
   } catch (err) {
     logger.error('Error in callback query handler dispatch', { err, queryId: ctx.callBackQueryId });
 
-    void ctx.reply(BotMessages.callbackFailed, {
+    void ctx.edit(BotMessages.callbackFailed, {
       deleteAfterMs: MsgPTTL['3m'],
     });
   }

@@ -76,7 +76,7 @@ class PromptStore {
     // 这里列出你需要加载的文件名列表
     // 也可以改为 fs.readdirSync 自动扫描，但显式列出更安全、更类型友好
 
-    PromptKeys.forEach((key) => {
+    for (const key of PromptKeys) {
       try {
         const filePath = path.join(PROMPT_DIR, `${key}.md`);
 
@@ -96,7 +96,7 @@ class PromptStore {
       } catch (err) {
         logger.error(`Failed to load prompt: ${key}`, { err });
       }
-    });
+    }
   }
 }
 

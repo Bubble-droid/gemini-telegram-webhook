@@ -25,6 +25,7 @@ RUN apt update && apt install -y proxychains4 ca-certificates && \
     apt autoremove -y && rm -rf /var/lib/apt/lists/*
 
 COPY --from=fetch /usr/local/bin/sing-box /usr/local/bin/sing-box
+RUN chmod +x /usr/local/bin/sing-box
 
 COPY ./proxy/sing-box-config.json /etc/sing-box/config.json
 COPY ./proxy/proxychains.conf /etc/proxychains4.conf

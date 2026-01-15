@@ -7,7 +7,7 @@ import { AppError } from '@/utils/errors';
 import { Escaper } from '@/utils/markdown';
 import { ResponseContext } from '@/utils/ResponseContext';
 import type { Message, Update } from 'grammy/types';
-import { processCallbackQuery } from './CallbackQueryHandler';
+import { handleCallbackQuery } from './CallbackQueryHandler';
 
 /**
  * 核心更新处理器，负责接收 Telegram Update，进行权限验证、路由分发和错误处理。
@@ -38,11 +38,11 @@ export class UpdateHandler {
 
   public async handle(update: Update) {
     const { message, callback_query } = update;
-    logger.debug('Handling webhook update:', { update: simplifyUpdateInLogger(update) });
+    logger.debug('Received webhook update:', { update: simplifyUpdateInLogger(update) });
     if (!message && !callback_query) return;
     if (callback_query?.message) {
       const callbackCtx = new ResponseContext([callback_query.message], callback_query);
-      await processCallbackQuery(callbackCtx);
+      await handleCallbackQuery(callbackCtx);
     } else if (message) {
       if (!this.validateChatType(message)) return;
 

@@ -14,18 +14,17 @@ class InlineQueryHandler {
   public handle(inlineQuery: InlineQuery): void {
     const { id, from, query: queryText } = inlineQuery;
 
-    // 1. 验证是否需要处理
-    if (this.shouldIgnore(inlineQuery)) {
-      logger.info('Invalid or empty inline query ignored', { queryId: id });
-      return;
-    }
-
-    // 2. 记录日志
-    logger.debug('Handling inline query', {
+    logger.debug('Received inline query', {
       queryId: id,
       userId: from.id,
       queryText,
     });
+
+    // 1. 验证是否需要处理
+    if (this.shouldIgnore(inlineQuery)) {
+      logger.warn('Invalid or empty inline query ignored', { queryId: id });
+      return;
+    }
 
     return;
   }

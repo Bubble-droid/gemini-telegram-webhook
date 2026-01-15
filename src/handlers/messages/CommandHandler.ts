@@ -7,7 +7,7 @@ import type { ResponseContext } from '@/utils';
 import type { Message } from 'grammy/types';
 
 export const processCommand = async (msg: Message, ctx: ResponseContext): Promise<void> => {
-  logger.debug('Handling command message...', { chatId: ctx.chat.id, userId: ctx.user.id });
+  logger.debug('Received command message...', { chatId: ctx.chat.id, userId: ctx.user.id });
 
   const command = ctx.getEntityText(msg, ['bot_command'])?.slice(1).split('@')[0]?.trim();
 
@@ -24,7 +24,7 @@ export const processCommand = async (msg: Message, ctx: ResponseContext): Promis
 
   if (!targetCommand) return;
 
-  logger.debug(`执行命令: /${command}`);
+  logger.info(`执行命令: /${command}`, { chatId: ctx.chat.id, userId: ctx.user.id });
 
   await targetCommand.action({ ctx });
 };

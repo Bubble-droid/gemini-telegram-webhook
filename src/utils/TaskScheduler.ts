@@ -165,7 +165,7 @@ class TaskScheduler {
         logger.warn(`[TaskScheduler] Task ID:${nextTask.id} delay exceeds limit, deferred.`);
       }
     } catch (err) {
-      logger.error('[TaskScheduler] Refresh schedule failed', { err });
+      logger.warn('[TaskScheduler] Refresh schedule failed', { err });
     }
   }
 
@@ -183,10 +183,9 @@ class TaskScheduler {
     for (const task of dueTasks) {
       const { id, action, params } = task;
       try {
-        const result = await this.executeTask(action, params);
-        if (!result.ok) throw new AppError(result.error);
+        await this.executeTask(action, params);
       } catch (err) {
-        logger.error(`[TaskScheduler] Task execution failed ID:${id}`, { action, err });
+        logger.warn(`[TaskScheduler] Task execution failed ID:${id}`, { action, err });
       } finally {
         // 模拟 DELETE FROM tasks WHERE id = ?
         this.deleteTask(id);
@@ -198,10 +197,11 @@ class TaskScheduler {
     this.refreshSchedule();
   }
 
-  private executeTask(action: ApiMethod, params: unknown) {
-    logger.debug(`[TaskScheduler] Executing: ${action}`, { params });
+  private async executeTask(action: ApiMethod, params: unknown) {
+    logger.info(`[TaskScheduler] Executing: ${action}`, { params });
 
-    return bot.requestJson(action, params as ApiParams<ApiMethod>);
+    const result = await bot.requestJson(action, params as ApiParams<ApiMethod>);
+    if (!result.ok) throw new AppError(result.error);
   }
 
   /**

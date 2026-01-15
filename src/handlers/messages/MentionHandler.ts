@@ -18,6 +18,12 @@ class MentionHandler {
 
   // 处理消息组入口
   public async handle(ctx: ResponseContext): Promise<void> {
+    logger.debug('Received mention', {
+      chatId: ctx.chat.id,
+      messageId: ctx.primaryMessage.message_id,
+      userId: ctx.user.id,
+    });
+
     if (!this.checkProcessingLocks(ctx)) return;
 
     if (!this.checkRateLimiting(ctx)) return;
@@ -97,7 +103,7 @@ class MentionHandler {
 
   private checkContents(contents: Content[], ctx: ResponseContext): boolean {
     if (contents.at(-1)?.role !== 'model') return true;
-
+    logger.warn(`Invalid contents ignored.`);
     void ctx.reply(BotMessages.invalidContents, {
       deleteAfterMs: MsgPTTL['3m'],
     });

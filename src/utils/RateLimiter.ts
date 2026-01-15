@@ -56,7 +56,7 @@ class RateLimiter {
     } catch (err) {
       // 兜底逻辑：如果限流器自身出错，为了安全起见，通常选择“阻断”或者“放行”
       // 这里选择阻断并让用户稍后重试
-      logger.error(`限流器异常 (ID: ${uniqueId}):`, { err });
+      logger.warn(`限流器异常 (ID: ${uniqueId}):`, { err });
       return { canProceed: false, retryAfterSeconds: DEFAULT_RATE_LIMIT / 1000 };
     }
   }

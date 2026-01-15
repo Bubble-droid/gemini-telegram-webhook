@@ -43,7 +43,7 @@ export const chatAgent = async (
           continue;
         }
 
-        logger.debug(`[ChatAgent] Executing tool: ${name}`, { args });
+        logger.info(`[ChatAgent] Executing tool: ${name}`, { args });
 
         const updateText = `${response.text ?? ''}\n\n🔧 Executing: \`${name}\`...`.trim();
 
@@ -65,7 +65,7 @@ export const chatAgent = async (
           });
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
-          logger.error(`[ChatAgent] Tool execution error: ${name}`, { err });
+          logger.warn(`[ChatAgent] Tool execution error: ${name}`, { err });
           toolResults.push({
             functionResponse: {
               name,
@@ -86,7 +86,7 @@ export const chatAgent = async (
 
       continue;
     }
-
+    logger.info(`[ChatAgent] Task completed`, { rounds: round + 1 });
     return response;
   }
   throw new AppError(`Max conversation rounds (${maxRounds}) reached.`);

@@ -74,7 +74,7 @@ export class MessageCollector {
     messages.sort((a, b) => a.message_id - b.message_id);
 
     // 记录日志：看看我们聚合了什么
-    logger.debug(`[Collector] Released batch for ${key}, count: ${messages.length}`);
+    logger.info(`[Collector] Released batch for ${key}, count: ${messages.length}`);
 
     try {
       if (this.callback) {

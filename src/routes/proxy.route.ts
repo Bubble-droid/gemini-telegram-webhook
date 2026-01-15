@@ -58,9 +58,13 @@ export const registerProxyRoute = (app: FastifyInstance): void => {
         headers.set('x-goog-api-key', rotatedKey); // Header 鉴权方式
 
         // 5. 发起上游请求
-        logger.debug(
-          `🔄 代理转发 -> Google | Key: ${rotatedKey.substring(0, 5)}...${rotatedKey.substring(rotatedKey.length - 5)} | Path: ${targetUrl.pathname}`,
-        );
+        logger.info(`[Proxy] Forwarding to Google`, {
+          provider: 'Google',
+          // 仅暴露 Key 的掩码，符合安全规范
+          keyMask: `${rotatedKey.slice(0, 5)}***${rotatedKey.slice(-5)}`,
+          path: targetUrl.pathname,
+          fullUrl: targetUrl.toString(),
+        });
 
         logger.debug(`Body Forwarding:`, { body: req.body });
 

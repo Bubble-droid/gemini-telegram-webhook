@@ -271,6 +271,8 @@ export class TelegramBotAPI {
     params: ApiParams<M> | FormData,
     ...context: (string | undefined)[]
   ): Promise<ApiResult<M>> {
+    logger.info(`[Telegram API] ${method} calling...`);
+    logger.debug(`[Telegram API] ${method} params:`, { params });
     try {
       const response = await this.request(method, params as Recordable | FormData);
       if (!response.ok) {
@@ -281,6 +283,7 @@ export class TelegramBotAPI {
       if (!result.ok) {
         return this.handleError(result.description, method, [JSON.stringify(result.parameters)]);
       }
+      logger.debug(`[Telegram API] ${method} result:`, { result });
       return { ok: true, data: result.result };
     } catch (err) {
       return this.handleError(err, method, context);
@@ -413,7 +416,7 @@ export class TelegramBotAPI {
   private handleError(err: unknown, method: string, context?: (string | undefined)[]): ApiErrorResult {
     const errMsg = err instanceof Error ? err.message : typeof err === 'string' ? err : String(err);
     const contextInfo = context && context.length > 0 ? context.filter(Boolean).join('\n') : 'N/A';
-    logger.error(`Telegram API Error [${method}]: ${errMsg}`, {
+    logger.warn(`Telegram API Error [${method}]: ${errMsg}`, {
       err,
       context: contextInfo,
     });

@@ -83,10 +83,4 @@ export const ToolExecutors: ToolExecutorsMap = {
 
     return { response: { output: addCitations(result) } };
   },
-
-  reload_prompts: () => {
-    promptStore.reload();
-
-    return { response: { output: 'All prompts reloaded' } };
-  },
 };

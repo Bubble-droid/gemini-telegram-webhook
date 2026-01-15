@@ -53,7 +53,11 @@ export const registerWebhookRoute = (app: FastifyInstance): void => {
     },
 
     handler: async (req, rep) => {
-      logger.debug('Webhook Verification successful');
+      logger.info(`[Webhook] Incoming update authorized`, {
+        updateId: req.body.update_id, // 假设是 Telegram Update
+        type: req.body.message ? 'message' : 'other',
+        remoteIp: req.ip,
+      });
 
       void updateHandler.handle(req.body);
 

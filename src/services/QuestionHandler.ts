@@ -28,9 +28,13 @@ export const processQuestion = async (contents: Content[], ctx: ResponseContext)
     return ToolExecutors[name as ToolName](args as never, { onStatusUpdate: updateStatus });
   };
 
-  try {
-    logger.info(`Handing over to ChatAgent`, { chatId: ctx.chat.id });
+  logger.info(`Processing over to ChatAgent`, {
+    chatId: ctx.chat.id,
+    messageId: ctx.primaryMessage.message_id,
+    userId: ctx.user.id,
+  });
 
+  try {
     const genConfig: GenerateContentConfig = {
       temperature: 1.0,
       thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },

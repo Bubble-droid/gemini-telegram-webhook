@@ -874,3 +874,7 @@ A: 按 \`Ctrl + Shift + F12\` 打开开发者工具控制台即可查看，主�
 `,
   },
 ];
+
+/* import fs from 'node:fs';
+import path from 'node:path';
+fs.writeFileSync(path.join('/data', 'faq-data.json'), JSON.stringify(faqData)); */

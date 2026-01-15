@@ -32,7 +32,7 @@ class PromptStore {
   public get(key: PromptKey): string {
     const content = this.prompts.get(key);
     if (!content) {
-      logger.error(`Attempted to access missing prompt: ${key}`);
+      logger.warn(`Attempted to access missing prompt: ${key}`);
       return 'You are a helpful and friendly AI assistant.';
     }
     return content;

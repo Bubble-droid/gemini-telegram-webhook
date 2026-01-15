@@ -83,9 +83,4 @@ export const functionDeclarations = [
       required: ['prompt', 'tools'],
     },
   },
-  {
-    name: 'reload_prompts',
-    description:
-      'Using this tool to reload all system instructions for the dialogue system will take effect the next time a dialogue occurs.',
-  },
 ] as const satisfies FunctionDeclaration[];

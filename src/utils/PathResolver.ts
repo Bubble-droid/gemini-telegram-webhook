@@ -118,7 +118,7 @@ const resolveDocs = (project: string, relativePath: string, fallback: string): s
     const url = new URL(finalPath, config.baseUrl);
     return url.toString();
   } catch (err) {
-    logger.error(`Invalid URL construction: ${config.baseUrl} + ${finalPath}`, { err });
+    logger.warn(`Invalid URL construction: ${config.baseUrl} + ${finalPath}`, { err });
     return fallback;
   }
 };
@@ -136,7 +136,7 @@ const resolveSource = (project: string, relativePath: string, fallback: string):
     const url = new URL(cleanPath, config.baseUrl);
     return url.toString();
   } catch (err) {
-    logger.error(`Invalid URL construction: ${config.baseUrl} + ${config.repoPrefix} + ${relativePath}`, { err });
+    logger.warn(`Invalid URL construction: ${config.baseUrl} + ${config.repoPrefix} + ${relativePath}`, { err });
     return fallback;
   }
 };

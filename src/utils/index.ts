@@ -1,6 +1,7 @@
 // src/utils/index.ts
 
 export * from './citation-generate';
+export * from './FAQMatcher';
 export * from './helpers';
 export * from './KeyRotator';
 export * from './message';

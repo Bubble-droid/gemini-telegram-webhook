@@ -54,7 +54,7 @@ export const sendErrorNotification = (error: unknown, context = 'N/A'): void => 
     logger.info('Error notification sent to admin.', { context });
   } catch (err) {
     // 6. 兜底处理：如果发送通知本身失败（例如网络断了），仅记录日志，千万别再抛出错误导致无限循环
-    logger.error('Failed to send error notification.', {
+    logger.warn('Failed to send error notification.', {
       err,
       originalErrorContext: context,
     });

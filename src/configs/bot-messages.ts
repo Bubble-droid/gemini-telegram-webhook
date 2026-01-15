@@ -128,6 +128,8 @@ A: 原因是 TUN 在 macOS 上无法发往局域网的 DNS 请求。请将你 Ma
   uploading: '📄 File uploading...',
 
   thinking: '💡 Thinking...',
+
+  unauthorized: '🚫 你没有权限执行此操作。',
 };
 
 // --- 通用键盘布局 ---

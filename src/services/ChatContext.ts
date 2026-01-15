@@ -80,7 +80,7 @@ export class ChatContext {
 
     this.save(key, history);
 
-    logger.debug(`${key}: Context persisted, length: ${history.length}`);
+    logger.info(`${key}: Context persisted, length: ${history.length}`);
   }
 
   /**

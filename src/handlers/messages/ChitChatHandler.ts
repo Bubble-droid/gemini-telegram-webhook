@@ -207,13 +207,13 @@ export class ChitChatHandler {
         genConfig: {
           temperature: 1.0,
         },
-        onStatusUpdate: () => {
-          logger.warn('[ChitChatHandler] Retrying...');
+        onStatusUpdate: (msg) => {
+          if (msg.includes('重试')) logger.warn('[ChitChatHandler] Gemini API Request Retrying...');
         },
       });
 
-      if (response.text?.includes('SILENCE')) {
-        logger.debug(`[ChitChatHandler] Model keep silence.`);
+      if (/silence/gi.exec(response.text ?? '')) {
+        logger.info(`[ChitChatHandler] Model keep silence.`);
         return null;
       }
 
@@ -238,7 +238,10 @@ export class ChitChatHandler {
     // 2. 构建当前任务的执行 Promise
     // 无论前一个任务是成功还是失败，都要执行当前任务
     // 注意：这里不需要 catch previousPromise，因为我们在步骤 3 中保证了存储在 Map 里的 Promise 永远是 Resolved 状态
-    const currentResultPromise = previousPromise.then(() => task());
+    const currentResultPromise = previousPromise.then(() => {
+      logger.trace(`[ChitChat] Task started after queue wait`, { chatId });
+      return task();
+    });
 
     // 3. 构建用于维护队列的 "Safe Promise"
     // 这个 Promise 永远不会 Reject，确保队列中的下一个任务总能被调度
@@ -297,23 +300,24 @@ export class ChitChatHandler {
     //      如果分数 > 最大阈值，必定回。
     //      中间区间：计算概率 p，随机触发。
 
+    const { currentScore } = state;
     let shouldReply = false;
 
-    if (state.currentScore < MIN_ATTENTION_SCORE) {
+    if (currentScore < MIN_ATTENTION_SCORE) {
       // 还没引起足够注意，忽略
-      logger.debug(
-        `[ChitChat] Score accumulating: ${state.currentScore.toFixed(2)} (Min: ${MIN_ATTENTION_SCORE})`,
+      logger.trace(
+        `[ChitChat] Score accumulating: ${currentScore.toFixed(2)} (Min: ${MIN_ATTENTION_SCORE})`,
         logContext,
       );
       shouldReply = false;
-    } else if (state.currentScore >= MAX_ATTENTION_SCORE) {
+    } else if (currentScore >= MAX_ATTENTION_SCORE) {
       // 忍不住了，必回
-      logger.debug(`[ChitChat] Max score reached. Triggering reply.`, logContext);
+      logger.info(`[ChitChat] Max score reached. Triggering reply.`, logContext);
       shouldReply = true;
     } else {
       // 概率判定区间：使用平方函数模拟“越往后越想回”的心理
       // Normalized Position (0 ~ 1)
-      const position = (state.currentScore - MIN_ATTENTION_SCORE) / (MAX_ATTENTION_SCORE - MIN_ATTENTION_SCORE);
+      const position = (currentScore - MIN_ATTENTION_SCORE) / (MAX_ATTENTION_SCORE - MIN_ATTENTION_SCORE);
 
       // 概率曲线：P = position ^ 2
       // 举例：进度 20% -> 几率 4%；进度 50% -> 几率 25%；进度 80% -> 几率 64%
@@ -389,7 +393,7 @@ export class ChitChatHandler {
         return false;
       }
 
-      logger.debug(`[ChitChat] Replying.`, logContext);
+      logger.info(`[ChitChat] Replying.`, logContext);
 
       await ctx.send(toHtml(responseText), {
         parse_mode: 'HTML',

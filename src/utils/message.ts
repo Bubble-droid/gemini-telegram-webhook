@@ -65,7 +65,7 @@ export const handleMediaFiles = async (messages: Message[], predicate: (msg: Mes
       const fileData = await fileHandler.handle(msg);
       return fileData ? { inlineData: fileData } : null;
     } catch (err) {
-      logger.error('Failed to process media file:', { err, msgId: msg.message_id });
+      logger.warn('Failed to process media file:', { err, msgId: msg.message_id });
       return null;
     }
   });

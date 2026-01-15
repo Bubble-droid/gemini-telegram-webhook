@@ -37,11 +37,11 @@ export class MCPClient {
 
     // 如果已经有 Transport 且连接中，直接复用，不做任何操作
     if (this.transport) {
-      logger.debug(`[${this.clientName}] Reusing existing connection (Active: ${this.activeConnections})`);
+      logger.trace(`[${this.clientName}] Reusing existing connection (Active: ${this.activeConnections})`);
       return;
     }
 
-    logger.debug(`[${this.clientName}] Establishing new connection...`);
+    logger.info(`[${this.clientName}] Establishing new connection...`);
 
     try {
       if (this.serverConfig.type === 'http') {
@@ -53,6 +53,10 @@ export class MCPClient {
         await this.connectLocalServer(this.serverName, command, options);
       }
       await this.refreshTools();
+      logger.info(`[${this.clientName}] Connected and tools refreshed`, {
+        server: this.serverName,
+        active: this.activeConnections,
+      });
     } catch (err) {
       this.activeConnections--;
       this.transport = null;
@@ -73,7 +77,7 @@ export class MCPClient {
     logger.debug(`[${this.clientName}] Release requested. Remaining active: ${this.activeConnections}`);
 
     if (this.activeConnections === 0 && this.transport) {
-      logger.debug(`[${this.clientName}] No active users. Closing transport.`);
+      logger.info(`[${this.clientName}] No active users. Closing transport.`);
       try {
         await this.mcp.close();
       } catch (err) {
@@ -99,14 +103,21 @@ export class MCPClient {
       throw new AppError(`[${this.clientName}] Cannot execute tools: Client is disconnected.`);
     }
 
+    const startTime = Date.now();
     try {
       const toolResult = await this.mcp.callTool({ name, arguments: args }, CallToolResultSchema, this.requestOptions);
-      logger.debug(`Tool executed: ${name}`);
+      logger.debug(`[${this.clientName}] Tool executed: ${name}`, {
+        duration: `${Date.now() - startTime}ms`,
+        args,
+      });
       return {
         response: { output: toolResult },
       };
     } catch (err) {
-      logger.error(`Tool execution failed: ${name}`, { err });
+      logger.warn(`[${this.clientName}] Tool call rejected: ${name}`, {
+        duration: `${Date.now() - startTime}ms`,
+        err,
+      });
       return {
         response: {
           error: err instanceof Error ? err.message : String(err),
@@ -119,15 +130,15 @@ export class MCPClient {
     const serverUrl = new URL(url);
     const requestInit = headers && { requestInit: { headers } };
     try {
-      logger.debug(`[${serverName}] Connecting via Streamable HTTP...`);
+      logger.debug(`[${serverName}] Attempting Streamable HTTP...`);
       this.transport = new StreamableHTTPClientTransport(serverUrl, { ...requestInit });
       await this.mcp.connect(this.transport as Transport, this.requestOptions);
     } catch (err) {
-      logger.warn(`[${serverName}] HTTP failed, trying SSE...`, { err });
+      logger.warn(`[${serverName}] HTTP Stream failed, falling back to SSE`, { err });
       this.transport = new SSEClientTransport(serverUrl, { ...requestInit });
       await this.mcp.connect(this.transport, this.requestOptions);
     }
-    logger.debug(`[${serverName}] Connected.`);
+    logger.info(`[${serverName}] Remote connection established`, { url });
   }
 
   private async connectLocalServer(
@@ -135,10 +146,10 @@ export class MCPClient {
     command: string,
     options: Omit<StdioServerParameters, 'command'> = {},
   ): Promise<void> {
-    logger.debug(`[${serverName}] Connecting via Stdio...`);
+    logger.debug(`[${serverName}] Spawning Stdio process: ${command}`);
     this.transport = new StdioClientTransport({ command, ...options });
     await this.mcp.connect(this.transport, this.requestOptions);
-    logger.debug(`[${serverName}] Connected.`);
+    logger.info(`[${serverName}] Local server connected (PID: ${this.transport.stderr ? 'active' : 'unknown'})`);
   }
 
   /**
@@ -159,7 +170,8 @@ export class MCPClient {
     );
 
     this.tools = [{ functionDeclarations: declarations }];
-    logger.debug('Tools refreshed:', { tools: declarations.map((d) => d.name) });
+    logger.info(`[${this.clientName}] Sync complete: ${declarations.length} tools registered.`);
+    logger.debug(`[${this.clientName}] Registered tools:`, { names: declarations.map((d) => d.name) });
   }
 
   /**

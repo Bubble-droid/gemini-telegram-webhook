@@ -32,7 +32,7 @@ export class ResponseContext {
   }
 
   public get user(): User {
-    const user = this.callBackQuery?.message?.reply_to_message?.from ?? this.primaryMessage.from;
+    const user = this.callBackQuery?.from ?? this.primaryMessage.from;
     if (!user) throw new AppError('Missing user.');
     return user;
   }

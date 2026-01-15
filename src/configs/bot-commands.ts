@@ -19,7 +19,7 @@ interface BotCommandAction extends BotCommand {
 
 const canPerformAction = (ctx: ResponseContext): boolean => {
   if (ctx.user.id === config.adminId) return true;
-  void ctx.reply(BotMessages.unauthorized);
+  void ctx.reply(BotMessages.unauthorized, { deleteAfterMs: MsgPTTL['3m'] });
   return false;
 };
 

@@ -68,7 +68,8 @@ class MentionHandler {
 
     logger.warn(`[MentionHandler] Ignored concurrent request from ${lockKey}`);
     void ctx.send(BotMessages.pendingRequest, {
-      deleteAfterMs: MsgPTTL['3m'],
+      opts: { deleteAfterMs: MsgPTTL['3m'] },
+      isReply: true,
     });
     return false;
   }
@@ -85,7 +86,10 @@ class MentionHandler {
     logger.warn(`Rate limit exceeded for chat ${ctx.chat.id}. Retry after ${checkResult.retryAfterSeconds} seconds.`);
 
     void ctx.send(BotMessages.getRateLimiting(checkResult.retryAfterSeconds), {
-      deleteAfterMs: MsgPTTL.sec(checkResult.retryAfterSeconds),
+      opts: {
+        deleteAfterMs: MsgPTTL.sec(checkResult.retryAfterSeconds),
+      },
+      isReply: true,
     });
 
     return false;
@@ -97,8 +101,7 @@ class MentionHandler {
    */
   private async checkFile(ctx: ResponseContext): Promise<void> {
     if (!ctx.hasValidFile) return;
-
-    await ctx.send(BotMessages.uploading);
+    await ctx.send(BotMessages.uploading, { isReply: true });
   }
 
   private checkContents(contents: Content[], ctx: ResponseContext): boolean {

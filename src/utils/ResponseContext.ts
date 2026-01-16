@@ -96,16 +96,19 @@ export class ResponseContext {
     if (this.isEditContext(opts)) {
       result = await this.edit(text, opts);
     } else {
-      result = await this.send(text, opts);
+      result = await this.send(text, { opts, isReply: true });
     }
 
     return result;
   }
 
-  public async send(text: string, opts?: BotApiOptions<'sendMessage', 2>): Promise<ApiResult<'sendMessage'>> {
+  public async send(
+    text: string,
+    { opts, isReply = false }: { opts?: BotApiOptions<'sendMessage', 2>; isReply?: boolean } = {},
+  ): Promise<ApiResult<'sendMessage'>> {
     const result = await bot.sendMessage(this.chat.id, text, {
-      replyToMessageId: this.lastMessageId ?? this.replyToMessageId,
       ...opts,
+      ...(isReply && { replyToMessageId: this.lastMessageId ?? this.replyToMessageId }),
     });
     this.updateLastMessageId(result);
     return result;

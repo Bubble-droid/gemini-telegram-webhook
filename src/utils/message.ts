@@ -1,16 +1,8 @@
 import { fileHandler } from '@/handlers';
 import { logger } from '@/services';
-import { bot } from '@/services/apis';
-import type { ApiParams, ApiResult, AutoDeleteParams, ChatId, CustomReplyParams } from '@/types';
 import type { Part } from '@google/genai';
 import type { Message, MessageEntity, Update } from 'grammy/types';
 import { deepClone } from './helpers';
-
-type SendOrUpdateOptions = CustomReplyParams &
-  AutoDeleteParams &
-  Pick<ApiParams<'editMessageText'>, 'parse_mode' | 'reply_markup'> & {
-    messageIdToEdit?: number;
-  };
 
 const SEC = 1000;
 const MIN = 60 * SEC;
@@ -78,23 +70,6 @@ export const handleMediaFiles = async (messages: Message[], predicate: (msg: Mes
   const results = await Promise.all(mediaPromises);
 
   return results.filter((r) => !!r);
-};
-
-export const sendOrUpdate = async (
-  chatId: ChatId,
-  text: string,
-  opts?: SendOrUpdateOptions,
-): Promise<number | undefined> => {
-  let result: ApiResult<'editMessageText' | 'sendMessage'> | undefined = undefined;
-  if (opts?.messageIdToEdit) {
-    const { messageIdToEdit, ...rest } = opts;
-    result = await bot.editMessageText(chatId, messageIdToEdit, text, rest);
-    if (result.ok) return typeof result.data !== 'boolean' ? result.data.message_id : messageIdToEdit;
-  }
-
-  result = await bot.sendMessage(chatId, text, opts);
-
-  return result.ok && typeof result.data !== 'boolean' ? result.data.message_id : undefined;
 };
 
 const filterEntity = <T extends MessageEntity[]>(entities: T): T => {

@@ -28,8 +28,11 @@ const sendTextChunks = async (textChunks: string[], ctx: ResponseContext, mode?:
       });
     } else {
       result = await ctx.send(fullText, {
-        ...(mode && { parse_mode: mode }),
-        deleteAfterMs: MsgPTTL['1d'],
+        opts: {
+          ...(mode && { parse_mode: mode }),
+          deleteAfterMs: MsgPTTL['1d'],
+        },
+        isReply: true,
       });
     }
 

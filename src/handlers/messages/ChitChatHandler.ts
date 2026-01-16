@@ -396,8 +396,11 @@ export class ChitChatHandler {
       logger.info(`[ChitChat] Replying.`, logContext);
 
       await ctx.send(toHtml(responseText), {
-        parse_mode: 'HTML',
-        deleteAfterMs: MsgPTTL['1d'],
+        opts: {
+          parse_mode: 'HTML',
+          deleteAfterMs: MsgPTTL['1d'],
+        },
+        isReply: false,
       });
 
       return true;

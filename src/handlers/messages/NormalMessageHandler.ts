@@ -89,8 +89,8 @@ export class NormalMessageHandler {
     });
 
     await ctx.send(toHtml(result.matchedFaq.answer.trim()), {
-      parse_mode: 'HTML',
-      deleteAfterMs: MsgPTTL['5m'],
+      opts: { parse_mode: 'HTML', deleteAfterMs: MsgPTTL['5m'] },
+      isReply: true,
     });
 
     return true;

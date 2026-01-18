@@ -15,7 +15,7 @@ COPY . /app
 WORKDIR /app
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm run build:only
+RUN pnpm run build
 
 FROM node:current-bookworm-slim AS prod
 

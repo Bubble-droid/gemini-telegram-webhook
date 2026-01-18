@@ -11,7 +11,7 @@ export const chatAgent = async (
   contents: Content[],
   options: ChatAgentOptions = {},
 ): Promise<GenerateContentResponse> => {
-  const { maxRounds = 10, geminiApiOptions, toolExecutor, onStatusUpdate } = options;
+  const { maxRounds = config.maxApiCallRounds, geminiApiOptions, toolExecutor, onStatusUpdate } = options;
   let round = 0;
   while (round < maxRounds) {
     logger.debug(`[ChatAgent] Round ${round + 1} started.`);
@@ -47,9 +47,9 @@ export const chatAgent = async (
 
         const updateText = `${response.text ?? ''}\n\n🔧 Executing: \`${name}\`...`.trim();
 
-        if (updated !== updateText) {
+        if (updated !== updateText && onStatusUpdate) {
           logger.debug(`[UI] Updating status for tool: ${name}`);
-          void onStatusUpdate?.(updateText);
+          void onStatusUpdate(updateText);
           updated = updateText;
         }
 

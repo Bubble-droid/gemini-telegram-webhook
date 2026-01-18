@@ -1,15 +1,15 @@
-// eslint.config.js
 import eslint from '@eslint/js';
 import prettierConfig from 'eslint-config-prettier';
 import { defineConfig, globalIgnores } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
-  globalIgnores(['node_modules/', 'dist/', 'draft/']),
+  globalIgnores(['node_modules/**', 'dist/**', 'draft/**']),
 
   eslint.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
+  prettierConfig,
 
   {
     languageOptions: {
@@ -40,6 +40,4 @@ export default defineConfig(
       ],
     },
   },
-
-  prettierConfig,
 );

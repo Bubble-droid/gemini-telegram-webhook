@@ -9,13 +9,13 @@ import type { Chat, Message, MessageOrigin, User } from 'grammy/types';
 
 // 绝对沉默期：上次回复后，至少要累积这么多“注意力分”才开始从 0 计算概率
 // 相当于人类说完话后的“贤者时间”
-const MIN_ATTENTION_SCORE = 4;
+const MIN_ATTENTION_SCORE = 2;
 
 // 必发期：如果注意力分累积到这个值，概率强制为 100%
 // 相当于“实在忍不住了”
-const MAX_ATTENTION_SCORE = 25;
+const MAX_ATTENTION_SCORE = 15;
 
-const HISTORY_LIMIT = 20; // 对话历史记录上限
+const HISTORY_LIMIT = 14;
 
 /**
  * 格式化用户身份信息 (包含 ID 以区分同名用户)
@@ -207,12 +207,9 @@ export class ChitChatHandler {
         genConfig: {
           temperature: 1.0,
         },
-        onStatusUpdate: (msg) => {
-          if (msg.includes('重试')) logger.warn('[ChitChatHandler] Gemini API Request Retrying...');
-        },
       });
 
-      if (/silence/gi.exec(response.text ?? '')) {
+      if (/silence/gi.test(response.text ?? '')) {
         logger.info(`[ChitChatHandler] Model keep silence.`);
         return null;
       }
@@ -280,7 +277,7 @@ export class ChitChatHandler {
 
     const text = message.text ?? message.caption ?? '';
 
-    const len = text.length;
+    const len = [...text].length;
 
     // 3. 极短文本 (语气词)：权重极低
     if (len <= 4) return 0.5;
@@ -351,9 +348,12 @@ export class ChitChatHandler {
 
     const mediaParts = await handleMediaFiles(ctx.messages, hasImage);
 
-    const rawTexts = ctx.messages.map((m) => ctx.getText(m)).filter(Boolean);
+    const rawTexts = ctx.messages.map((m) => ctx.getText(m)).filter((t) => t.length > 0);
 
-    if (mediaParts.length === 0 && rawTexts.length === 0) return false;
+    if (mediaParts.length === 0 && rawTexts.length === 0) {
+      logger.trace(`[ChitChat] No message content.`, { chatId: ctx.chat.id });
+      return false;
+    }
 
     messageParts.push(...mediaParts);
 

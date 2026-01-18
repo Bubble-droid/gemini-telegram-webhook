@@ -1,0 +1,31 @@
+{
+  "folders": [
+    {
+      "path": "./",
+    },
+  ],
+  "settings": {
+    "typescript.format.enable": false,
+    "javascript.format.enable": false,
+    "json.format.enable": false,
+
+    "files.associations": {
+      "*.css": "css",
+      "*.json": "jsonc",
+      ".env*": "properties",
+      "*ignore": "ignore",
+    },
+    "codeLogPlus.useAccessibleLogs": true,
+    "codeLogPlus.logCommand": "logger.debug",
+    "codeLogPlus.isLogMessageWrapped": false,
+    "codeLogPlus.messageLogDelimiter": "-",
+    "codeLogPlus.useSingleQuotes": true,
+    "codeLogPlus.defaultLanguage": "typescript",
+    "codeLogPlus.customLogTemplates": [
+      {
+        "language": "typescript",
+        "template": "{{{indent}}}{{{logCommand}}}({{{quote}}}{{{logMessagePrefix}}} {{{fileName}}}:{{{lineNumber}}} -> {{{functionName}}} -> {{{variableName}}}:{{{quote}}}, { {{{variableName}}} });\n",
+      },
+    ],
+  },
+}

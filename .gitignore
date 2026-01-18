@@ -1,11 +1,7 @@
-# .gitignore
 .roo/
-.vscode/
-*.code-workspace
 draft/
 .lingma/
-
-dist/
+.gemini/
 
 # Logs
 logs

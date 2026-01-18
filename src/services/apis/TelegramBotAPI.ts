@@ -276,12 +276,13 @@ export class TelegramBotAPI {
     try {
       const response = await this.request(method, params as Recordable | FormData);
       if (!response.ok) {
-        const desc = `Network request failed with status: ${response.status}`;
-        return this.handleError(desc, method, [response.statusText]);
+        const desc = `Network request failed with status: ${response.status} - ${response.statusText}`;
+        return this.handleError(desc, method);
       }
       const result = (await response.json()) as ApiResponse<ApiReturn<M>>;
       if (!result.ok) {
-        return this.handleError(result.description, method, [JSON.stringify(result.parameters)]);
+        const desc = `${result.error_code} - ${result.description}`;
+        return this.handleError(desc, method, [JSON.stringify(result.parameters)]);
       }
       logger.debug(`[Telegram API] ${method} result:`, { result });
       return { ok: true, data: result.result };

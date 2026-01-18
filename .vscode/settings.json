@@ -1,0 +1,37 @@
+{
+  // --- 全局策略 ---
+  "editor.formatOnSave": true,
+  "editor.formatOnSaveMode": "file",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit",
+    "source.organizeImports": "explicit"
+  },
+
+  // --- 语言格式化器绑定 (全部交给 Prettier) ---
+  "[typescript]": { "editor.defaultFormatter": "prettier.prettier-vscode" },
+  "[javascript]": { "editor.defaultFormatter": "prettier.prettier-vscode" },
+  "[json]": { "editor.defaultFormatter": "prettier.prettier-vscode" },
+  "[jsonc]": { "editor.defaultFormatter": "prettier.prettier-vscode" },
+  "[markdown]": {
+    "editor.defaultFormatter": "prettier.prettier-vscode",
+    "editor.wordWrap": "on"
+  },
+
+  // --- 搜索排除 ---
+  "search.exclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/pnpm-lock.yaml": true
+  },
+  "cSpell.words": [
+    "anytls",
+    "genai",
+    "mihomo",
+    "modelcontextprotocol",
+    "PTTL",
+    "Singbox",
+    "Streamable",
+    "supergroup",
+    "Thenables"
+  ]
+}

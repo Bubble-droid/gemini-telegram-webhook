@@ -16,6 +16,7 @@ import {
 
 // 固定的不可重试错误列表
 const NonRetryErrors = [
+  'RESOURCE_EXHAUSTED',
   'Unsupported MIME type',
   'User location is not supported for the API use',
   'API key not valid',

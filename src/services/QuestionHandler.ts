@@ -1,7 +1,7 @@
 // src/services/QuestionHandler.ts
 
 import { functionDeclarations } from '@/configs';
-import { config, logger } from '@/services';
+import { logger } from '@/services';
 import { chatAgent, ToolExecutors } from '@/services/agents';
 import type { GeminiApiOptions, StatusUpdateCallback, ToolExecutorFn, ToolName } from '@/types';
 import type { ResponseContext } from '@/utils';
@@ -49,7 +49,6 @@ export const processQuestion = async (contents: Content[], ctx: ResponseContext)
     };
 
     const finalResponse = await chatAgent([...contents], {
-      maxRounds: config.maxApiCallRounds,
       geminiApiOptions,
       toolExecutor: customToolExecutor,
       onStatusUpdate: updateStatus,

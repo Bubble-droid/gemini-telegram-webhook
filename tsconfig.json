@@ -2,19 +2,19 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
     "baseUrl": "./",
-    // "rootDir": "./src",
-    "outDir": "dist",
+    "outDir": "dist/",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["src/*"]
     },
 
     "module": "esnext",
     "target": "esnext",
     "lib": ["ESNext"],
     "types": ["node"],
-
-    "noEmit": true,
     "moduleResolution": "bundler",
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
 
     "allowJs": true,
     "checkJs": true,
@@ -48,11 +48,6 @@
     "moduleDetection": "force",
     "skipLibCheck": true
   },
-  "include": [
-    "src/**/*.ts",
-    "eslint.config.js",
-    "vite.config.ts",
-    "prettier.config.ts"
-  ],
+  "include": ["src/**/*.ts", "*.js", "*.ts"],
   "exclude": ["node_modules/", "dist/", "draft/"]
 }

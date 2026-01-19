@@ -286,10 +286,10 @@ export class ChitChatHandler {
     if (len <= 15) return 1.0;
 
     // 5. 中长文本：权重稍高
-    if (len <= 50) return 1.5;
+    if (len <= 50) return 2.0;
 
     // 6. 长篇大论：权重封顶
-    return 2.0;
+    return 2.5;
   }
 
   private isShouldReply(state: ChitChatState, logContext: Recordable): boolean {

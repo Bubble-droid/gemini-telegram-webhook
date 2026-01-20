@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit",
     "check:all": "pnpm run typecheck && pnpm run lint:check && pnpm run format:check",
     "fix:all": "pnpm run format && pnpm run lint",
-    "push:github": "pnpm run check:all && git add . && git commit -m 'Update' && git push"
+    "push:github": "git add . && git commit -m \"Update $(date +'%Y-%m-%d %H:%M:%S')\" && git push"
   },
   "dependencies": {
     "@google/genai": "^1.37.0",

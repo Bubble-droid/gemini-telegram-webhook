@@ -1,6 +1,7 @@
 import { config, logger } from '@/services';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { registerProxyRoute, registerWebhookRoute } from './routes';
+import { HOUR, MIN } from './utils';
 
 /**
  * @description 构建 Fastify 应用程序实例
@@ -37,8 +38,10 @@ export const buildApp = (): FastifyInstance => {
       stream: logger.stream,
     },
     trustProxy: true,
-    bodyLimit: 10485760,
-    connectionTimeout: 60000,
+    bodyLimit: 104857600,
+    connectionTimeout: 3 * MIN,
+    keepAliveTimeout: 10 * MIN,
+    requestTimeout: 1 * HOUR,
   });
 
   app.get('/ping', async (_req, rep) => {

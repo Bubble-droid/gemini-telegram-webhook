@@ -21,7 +21,7 @@ FROM node:current-bookworm-slim AS prod
 
 WORKDIR /app
 
-RUN apt update && apt install -y proxychains4 ca-certificates && \
+RUN apt update && apt install -y proxychains4 && \
     apt autoremove -y && rm -rf /var/lib/apt/lists/*
 
 COPY --from=fetch /usr/local/bin/sing-box /usr/local/bin/sing-box

@@ -2,7 +2,7 @@ import { DATA_DIR } from '@/configs/data';
 import { logger } from '@/services';
 import { bot } from '@/services/apis';
 import type { ApiMethod, ApiParams, Recordable } from '@/types';
-import { deepClone, formatTime, generateUniqueId } from '@/utils';
+import { deepClone, formatTime, generateUuid } from '@/utils';
 import { LowSync } from 'lowdb';
 import { JSONFileSync } from 'lowdb/node';
 import fs from 'node:fs';
@@ -97,7 +97,7 @@ class TaskScheduler {
     } else {
       // 插入新任务
       tasks.push({
-        id: this.generateId(),
+        id: generateUuid(),
         action,
         params: canonicalParams,
         signature,
@@ -224,13 +224,6 @@ class TaskScheduler {
     if (index !== -1) {
       this.db.data.tasks.splice(index, 1);
     }
-  }
-
-  /**
-   * 辅助：生成唯一 ID
-   */
-  private generateId(): string {
-    return generateUniqueId();
   }
 }
 

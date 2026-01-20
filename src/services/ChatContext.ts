@@ -4,6 +4,7 @@ import { DATA_DIR } from '@/configs/data';
 import { config } from '@/services/ConfigLoader';
 import { logger } from '@/services/LoggerService';
 import type { ChitChatState, Recordable } from '@/types';
+import { HOUR } from '@/utils';
 import type { Content } from '@google/genai';
 import { LowSync } from 'lowdb';
 import { JSONFileSync } from 'lowdb/node';
@@ -21,7 +22,7 @@ interface DatabaseSchema {
 
 const CONTEXT_FILE_PATH = path.join(DATA_DIR, 'chat-contexts.json');
 const DEFAULT_CONTEXT_DATA = { contexts: {} };
-const CLEANUP_INTERVAL = 6 * 60 * 60 * 1000;
+const CLEANUP_INTERVAL = 6 * HOUR;
 
 export class ChatContext {
   private db: LowSync<DatabaseSchema>;

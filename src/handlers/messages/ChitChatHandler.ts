@@ -15,7 +15,7 @@ const MIN_ATTENTION_SCORE = 2;
 // 相当于“实在忍不住了”
 const MAX_ATTENTION_SCORE = 15;
 
-const HISTORY_LIMIT = 14;
+const HISTORY_LIMIT = 16;
 
 /**
  * 格式化用户身份信息 (包含 ID 以区分同名用户)
@@ -381,17 +381,15 @@ export class ChitChatHandler {
         return false;
       }
 
-      // 到达发言回合，归零
-      state.currentScore = 0;
-
       const responseText = await this.getGeminiResponse(state);
 
       if (!responseText) {
-        // 如果生成失败，也要稍微重置一下分数，防止死循环重试，但不用完全清零，保留一点“想说话的欲望”
-        state.currentScore = MIN_ATTENTION_SCORE / 2;
+        state.currentScore = state.currentScore / 2;
         logger.warn('闲聊处理器未能生成回复，重置回合目标。', logContext);
         return false;
       }
+
+      state.currentScore = 0;
 
       logger.info(`[ChitChat] Replying.`, logContext);
 

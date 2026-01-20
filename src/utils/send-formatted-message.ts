@@ -7,7 +7,7 @@ import { AppError } from '@/utils/errors';
 import { getHtmlChunks, getPlainTextChunks } from '@/utils/markdown';
 import type { ParseMode } from 'grammy/types';
 import type { ResponseContext } from './ResponseContext';
-import { MsgPTTL } from './message';
+import { MsgPTTL } from './helpers';
 
 const sendTextChunks = async (textChunks: string[], ctx: ResponseContext, mode?: Extract<ParseMode, 'HTML'>) => {
   const italicOpenTag = mode === 'HTML' ? '<i>' : '';

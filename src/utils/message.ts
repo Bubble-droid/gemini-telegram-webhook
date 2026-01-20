@@ -4,23 +4,6 @@ import type { Part } from '@google/genai';
 import type { Message, MessageEntity, Update } from 'grammy/types';
 import { deepClone } from './helpers';
 
-const SEC = 1000;
-const MIN = 60 * SEC;
-const HOUR = 60 * MIN;
-const DAY = 24 * HOUR;
-
-export const MsgPTTL = {
-  '3m': 3 * MIN,
-  '5m': 5 * MIN,
-  '10m': 10 * MIN,
-  '1d': 1 * DAY,
-
-  sec: (seconds: number): number => seconds * SEC,
-  min: (minutes: number): number => minutes * MIN,
-  hour: (hours: number): number => hours * HOUR,
-  day: (days: number): number => days * DAY,
-} as const;
-
 /**
  * 检查消息是否包含文件
  */

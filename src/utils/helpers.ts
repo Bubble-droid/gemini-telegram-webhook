@@ -1,7 +1,5 @@
-// src/utils/helpers.ts
-
 import type { Recordable } from '@/types';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 
 // 1. 用于格式化 YYYY-MM-DD HH:mm:ss 部分 (使用 'sv-SE' + 'Asia/Shanghai' 确保 ISO 格式)
 const timeFormatter = new Intl.DateTimeFormat('sv-SE', {
@@ -106,6 +104,23 @@ export const deepClone = <T>(obj: T): T => {
   return JSON.parse(JSON.stringify(obj)) as T;
 };
 
-export const generateUniqueId = (): string => {
-  return uuidv4();
+export const generateUuid = (): string => {
+  return randomUUID();
 };
+
+export const SEC = 1000;
+export const MIN = 60 * SEC;
+export const HOUR = 60 * MIN;
+export const DAY = 24 * HOUR;
+
+export const MsgPTTL = {
+  '3m': 3 * MIN,
+  '5m': 5 * MIN,
+  '10m': 10 * MIN,
+  '1d': 1 * DAY,
+
+  sec: (seconds: number): number => seconds * SEC,
+  min: (minutes: number): number => minutes * MIN,
+  hour: (hours: number): number => hours * HOUR,
+  day: (days: number): number => days * DAY,
+} as const;

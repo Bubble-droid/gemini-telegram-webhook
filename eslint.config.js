@@ -17,6 +17,7 @@ export default defineConfig(
       parserOptions: {
         ecmaVersion: 'latest',
         projectService: true,
+        tsconfigRootDir: import.meta.dirname,
       },
     },
 

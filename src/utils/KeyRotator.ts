@@ -1,4 +1,5 @@
 import { config, logger } from '@/services';
+import { AppError } from './errors';
 
 export class KeyRotator {
   // 存储解析后的 API 密钥列表
@@ -23,7 +24,11 @@ export class KeyRotator {
    */
   public nextKey(): string {
     // 获取当前指针指向的密钥
-    const currentKey = this.keys[this.currentIndex] ?? '';
+    const currentKey = this.keys[this.currentIndex];
+
+    if (!currentKey) {
+      throw new AppError('No API keys available.');
+    }
 
     // 生成密钥 ID (取前 5 位用于日志脱敏展示)
     const keyId = `${currentKey.substring(0, 5)}...${currentKey.substring(currentKey.length - 5)}`;

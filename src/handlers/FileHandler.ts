@@ -4,7 +4,7 @@ import { config, logger } from '@/services';
 import { bot } from '@/services/apis';
 import type { Recordable } from '@/types';
 import { AppError } from '@/utils/errors';
-import type { Blob as TBlob } from '@google/genai';
+import type { Blob as GBlob } from '@google/genai';
 import type { Animation, Audio, Document, Message, PhotoSize, Sticker, Video, Voice } from 'grammy/types';
 import path from 'node:path';
 
@@ -82,7 +82,7 @@ type FileExtension = keyof typeof FileExtensionMime;
 type MimeType = (typeof FileExtensionMime)[FileExtension];
 
 const isValidExtension = (ext: string): ext is FileExtension => {
-  return Object.prototype.hasOwnProperty.call(FileExtensionMime, ext);
+  return Object.hasOwn(FileExtensionMime, ext);
 };
 
 /**
@@ -101,7 +101,7 @@ class FileHandler {
    * 处理消息中的附件
    * @param message - Telegram 消息对象
    */
-  public async handle(message: Message): Promise<TBlob | undefined> {
+  public async handle(message: Message): Promise<GBlob | undefined> {
     const { sticker, animation, document, photo, video, audio, voice } = message;
 
     const largePhoto = photo?.[photo.length - 1];
@@ -208,7 +208,7 @@ class FileHandler {
   /**
    * 下载文件流并转换为 Base64
    */
-  private async downloadAndEncode(fileId: string, mimeType: MimeType): Promise<TBlob> {
+  private async downloadAndEncode(fileId: string, mimeType: MimeType): Promise<GBlob> {
     // 1. 获取 Telegram 文件路径
     const fileResult = await bot.getFile(fileId);
     if (!fileResult.ok || !fileResult.data.file_path) {
@@ -255,34 +255,34 @@ class FileHandler {
 
   // --- 特定类型处理器 ---
 
-  private handleSticker(sticker: Sticker): Promise<TBlob> {
+  private handleSticker(sticker: Sticker): Promise<GBlob> {
     const isImageSticker = !sticker.is_animated && !sticker.is_video;
     return this.downloadAndEncode(sticker.file_id, isImageSticker ? 'image/webp' : 'video/webm');
   }
 
-  private handleAnimation(animation: Animation): Promise<TBlob> {
+  private handleAnimation(animation: Animation): Promise<GBlob> {
     return this.downloadAndEncode(animation.file_id, 'video/mp4');
   }
 
-  private handleImage(photo: PhotoSize): Promise<TBlob> {
+  private handleImage(photo: PhotoSize): Promise<GBlob> {
     return this.downloadAndEncode(photo.file_id, 'image/jpeg');
   }
 
-  private handleVideo(video: Video): Promise<TBlob> {
+  private handleVideo(video: Video): Promise<GBlob> {
     const { file_id, mime_type } = video;
     const mime =
       mime_type && SupportedMimeType.VideoTypes.includes(mime_type.split('/')[1] ?? '') ? mime_type : 'video/mp4';
     return this.downloadAndEncode(file_id, mime as MimeType);
   }
 
-  private handleAudio(source: Audio | Voice, defaultMime: 'audio/mp3' | 'audio/ogg'): Promise<TBlob> {
+  private handleAudio(source: Audio | Voice, defaultMime: 'audio/mp3' | 'audio/ogg'): Promise<GBlob> {
     const { file_id, mime_type } = source;
     const mime =
       mime_type && SupportedMimeType.AudioTypes.includes(mime_type.split('/')[1] ?? '') ? mime_type : defaultMime;
     return this.downloadAndEncode(file_id, mime as MimeType);
   }
 
-  private handleDocument(document: Document): Promise<TBlob> {
+  private handleDocument(document: Document): Promise<GBlob> {
     const { file_id, mime_type, file_name } = document;
     let mime: string | undefined = mime_type;
 

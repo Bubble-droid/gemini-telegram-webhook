@@ -80,9 +80,9 @@ export const rotateArray = <T>(arr: readonly T[], steps = 1, direction: 'left' |
  * 截断长字符串
  */
 export const shortenString = (input: string): string => {
-  const MAX = 4096;
-  const HEAD = 2020;
-  const TAIL = 2020;
+  const MAX = 4000;
+  const HEAD = 2000;
+  const TAIL = 2000;
 
   const chars = [...input];
 

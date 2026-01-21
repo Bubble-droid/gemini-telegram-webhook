@@ -1,2 +1,2 @@
 export * from './webhook.route';
-export * from './proxy.route';
+export * from './gemini.route';

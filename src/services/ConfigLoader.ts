@@ -76,8 +76,6 @@ export class ConfigLoader {
    */
   private buildConfig(): Config {
     return {
-      nodeEnv: this.env.NODE_ENV ?? 'production',
-
       listenHost: this.parseListenHost(this.env.SERVER_LISTEN_HOST),
       listenPort: this.parsePort(this.env.SERVER_LISTEN_PORT),
       logLevel: this.parseLoggerLevel(this.env.SERVER_LOG_LEVEL),
@@ -135,7 +133,7 @@ export class ConfigLoader {
   }
 
   private parseStringArray(val: string | undefined): string[] {
-    if (!val || val.trim() === '') return [];
+    if (!val || val.trim().length === 0) return [];
     return val
       .split(',')
       .map((k) => k.trim())

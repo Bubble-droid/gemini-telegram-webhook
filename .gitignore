@@ -3,6 +3,7 @@ draft/
 .lingma/
 .gemini/
 dist/
+proxy/
 
 # Logs
 logs

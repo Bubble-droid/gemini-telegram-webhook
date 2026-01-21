@@ -7,8 +7,6 @@ import type { LogLevel } from 'fastify';
  * 这些属性通常对应于 process.env 中的字符串值。
  */
 export interface Env {
-  NODE_ENV?: string; // 运行环境 (可选)
-
   SERVER_LISTEN_HOST?: string; // 服务器监听的主机地址 (可选)
   SERVER_LISTEN_PORT?: string; // 服务器监听的端口号 (可选)
   SERVER_LOG_LEVEL?: string; // 服务器日志级别 (可选)
@@ -45,8 +43,6 @@ export interface Env {
  * 这些属性通常具有更强的类型（如 number, LoggerLevel），而不是原始的 string。
  */
 export interface Config {
-  nodeEnv: string; // 运行环境，已解析为 string
-
   listenHost: string; // 监听主机地址，已解析为 string
   listenPort: number; // 监听端口号，已解析为 number
   logLevel: LogLevel; // 日志级别，已解析为 LoggerLevel 类型

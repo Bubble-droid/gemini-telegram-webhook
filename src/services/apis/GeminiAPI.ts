@@ -1,7 +1,7 @@
 import { BotMessages } from '@/configs';
 import { config, logger } from '@/services';
 import type { GeminiApiOptions } from '@/types';
-import { deepClone, sleep } from '@/utils';
+import { deepClone, MIN, sleep } from '@/utils';
 import { AppError } from '@/utils/errors';
 import {
   GoogleGenAI,
@@ -15,12 +15,15 @@ import {
 } from '@google/genai';
 
 // 固定的不可重试错误列表
-const NonRetryErrors = [
-  'RESOURCE_EXHAUSTED',
+const FATAL_ERRORS = [
   'Unsupported MIME type',
   'User location is not supported for the API use',
-  'API key not valid',
-  '400 Bad Request',
+
+  'INVALID_ARGUMENT',
+  'FAILED_PRECONDITION',
+  'PERMISSION_DENIED',
+  'NOT_FOUND',
+  'RESOURCE_EXHAUSTED',
 ];
 
 export class GeminiAPI {
@@ -36,7 +39,7 @@ export class GeminiAPI {
       apiKey: config.geminiApiKeys[0] ?? '',
       httpOptions: {
         baseUrl: config.enableKeyRotation ? config.localProxyBaseUrl : config.geminiApiBaseUrl,
-        timeout: 60 * 60_000,
+        timeout: 10 * MIN,
       },
     });
     this.baseConfig = {
@@ -113,7 +116,7 @@ export class GeminiAPI {
         const errorMsg = err instanceof Error ? err.message : String(err);
 
         // 1. 检查是否致命错误 (永远不重试)
-        if (NonRetryErrors.some((fatalMsg) => errorMsg.includes(fatalMsg))) {
+        if (FATAL_ERRORS.some((msg) => errorMsg.includes(msg))) {
           throw err;
         }
 
@@ -166,7 +169,7 @@ export class GeminiAPI {
    * 响应验证：确保内容非空且不仅仅是思考过程
    */
   private isValidResponse(response: GenerateContentResponse): boolean {
-    return !!(response.functionCalls ?? response.text);
+    return !!response.functionCalls || !!response.text;
   }
 
   /**

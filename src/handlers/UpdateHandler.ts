@@ -99,7 +99,7 @@ export class UpdateHandler {
       `Error while handling update ${JSON.stringify({ chatId: chat.id, messageId: message_id })}`,
     );
 
-    const shorten = `<blockquote expandable>${Escaper.html(shortenString(`❌ ${errorMessage}`))}</blockquote>`;
+    const shorten = `❌ 发生错误，请稍后再试\n<blockquote expandable>${Escaper.html(shortenString(errorMessage))}</blockquote>`;
 
     void bot.sendMessage(chat.id, shorten, {
       replyToMessageId: message_id,

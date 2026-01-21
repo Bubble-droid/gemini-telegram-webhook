@@ -1,7 +1,7 @@
 import { UpdateHandler } from '@/handlers';
 import { config, logger } from '@/services';
 import type { InferSchema, JSONSchema } from '@/types';
-import type { FastifyInstance, RawRequestDefaultExpression } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Update } from 'grammy/types';
 
 const WebhookBodySchema = {
@@ -35,15 +35,15 @@ const WebhookHeadersSchema = {
   additionalProperties: true,
 } as const satisfies JSONSchema;
 
-type TWebhookHeaders = RawRequestDefaultExpression['headers'] & InferSchema<typeof WebhookHeadersSchema>;
+type TWebhookHeaders = FastifyRequest['headers'] & InferSchema<typeof WebhookHeadersSchema>;
+
+const updateHandler = new UpdateHandler();
 
 /**
  * @description 为 Fastify 应用程序创建和注册所有路由
  * @param app - Fastify 应用程序实例
  */
 export const registerWebhookRoute = (app: FastifyInstance): void => {
-  const updateHandler = new UpdateHandler();
-
   app.route<{ Body: Update; Headers: TWebhookHeaders }>({
     method: 'POST',
     url: '/webhook',
@@ -54,7 +54,7 @@ export const registerWebhookRoute = (app: FastifyInstance): void => {
 
     handler: async (req, rep) => {
       logger.info(`[Webhook] Incoming update authorized`, {
-        updateId: req.body.update_id, // 假设是 Telegram Update
+        updateId: req.body.update_id,
         type: req.body.message ? 'message' : 'other',
         remoteIp: req.ip,
       });

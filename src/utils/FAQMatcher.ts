@@ -3,6 +3,7 @@ import { logger } from '@/services';
 import type { FaqItem } from '@/types';
 import fs from 'node:fs';
 import path from 'node:path';
+import { readTextFile } from './helpers';
 
 /**
  * 预编译后的 FAQ 条目结构
@@ -33,7 +34,7 @@ class FAQMatcher {
    * 在预编译的数据中寻找匹配项
    * 使用 Arrow Function 确保上下文安全
    */
-  public findFaqMatch = (text: string): MatchResult | null => {
+  public findFaqMatch(text: string): MatchResult | null {
     // 快速路劲：空文本直接返回
     if (!text.trim()) return null;
 
@@ -67,7 +68,7 @@ class FAQMatcher {
     }
 
     return null;
-  };
+  }
 
   public reload() {
     logger.info('Reloading all FAQ data...');
@@ -79,14 +80,14 @@ class FAQMatcher {
    * 初始化并预编译 FAQ 数据
    * @private
    */
-  private initFaqData = (): void => {
+  private initFaqData() {
     if (!fs.existsSync(FAQ_DATA_PATH)) {
       logger.warn(`FAQ 数据文件不存在: ${FAQ_DATA_PATH}`);
       return;
     }
 
     try {
-      const rawData = fs.readFileSync(FAQ_DATA_PATH, 'utf-8');
+      const rawData = readTextFile(FAQ_DATA_PATH);
       const faqData = JSON.parse(rawData) as FaqItem[];
 
       for (const item of faqData) {
@@ -106,7 +107,7 @@ class FAQMatcher {
     } catch (err) {
       logger.error('FAQ 数据预编译失败，请检查 JSON 格式或正则表达式语法。', { err });
     }
-  };
+  }
 
   /**
    * 检查一组正则是否全部匹配文本 (AND Logic)

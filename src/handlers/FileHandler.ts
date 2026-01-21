@@ -17,7 +17,7 @@ const SupportedMimeType = {
   AudioTypes: ['wav', 'mp3', 'aiff', 'aac', 'ogg', 'flac'],
 };
 
-const FileExtensionMime = {
+const FILE_EXT_MIMES = {
   // 文本与代码
   txt: 'text/plain',
 
@@ -78,12 +78,8 @@ const FileExtensionMime = {
   flac: 'audio/flac',
 } as const satisfies Recordable<string>;
 
-type FileExtension = keyof typeof FileExtensionMime;
-type MimeType = (typeof FileExtensionMime)[FileExtension];
-
-const isValidExtension = (ext: string): ext is FileExtension => {
-  return Object.hasOwn(FileExtensionMime, ext);
-};
+type FileExtension = keyof typeof FILE_EXT_MIMES;
+type MimeType = (typeof FILE_EXT_MIMES)[FileExtension];
 
 /**
  * @class FileHandler
@@ -92,6 +88,7 @@ const isValidExtension = (ext: string): ext is FileExtension => {
  */
 class FileHandler {
   private botToken: string;
+  private extMimeMap = new Map<string, MimeType>(Object.entries(FILE_EXT_MIMES));
 
   constructor() {
     this.botToken = config.botToken;
@@ -239,7 +236,7 @@ class FileHandler {
 
       if (fileName !== DEFAULT_FILE_NAME) {
         const ext = this.getExtension(fileName);
-        finalMimeType = isValidExtension(ext) ? FileExtensionMime[ext] : mimeType;
+        finalMimeType = this.extMimeMap.get(ext) ?? mimeType;
         logger.debug(`修正 MIME 类型: ${mimeType} -> ${finalMimeType} (基于扩展名 .${ext})`);
       }
 
@@ -289,7 +286,7 @@ class FileHandler {
     // 1. 优先尝试通过文件名后缀推断更准确的 MIME
     if (!mime_type && file_name) {
       const ext = this.getExtension(file_name);
-      if (isValidExtension(ext)) mime = FileExtensionMime[ext];
+      mime = this.extMimeMap.get(ext);
     }
 
     if (!mime) {

@@ -2,7 +2,8 @@
 .vscode/
 *.code-workspace
 draft/
-
+.lingma/
+.gemini/
 dist/
 
 .github/

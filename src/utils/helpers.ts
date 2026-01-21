@@ -1,23 +1,8 @@
+import { logger } from '@/services';
 import type { Recordable } from '@/types';
 import { randomUUID } from 'node:crypto';
-
-// 1. 用于格式化 YYYY-MM-DD HH:mm:ss 部分 (使用 'sv-SE' + 'Asia/Shanghai' 确保 ISO 格式)
-const timeFormatter = new Intl.DateTimeFormat('sv-SE', {
-  timeZone: 'Asia/Shanghai',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hour12: false,
-});
-
-// 2. 用于获取中文星期几 (使用 'zh-CN' + 'Asia/Shanghai' 确保中文输出)
-const weekdayFormatter = new Intl.DateTimeFormat('zh-CN', {
-  timeZone: 'Asia/Shanghai',
-  weekday: 'short', // 例如: '周一', '周二', ..., '周日'
-});
+import * as fs from 'node:fs';
+import { AppError } from './errors';
 
 /**
  * 将时间格式化为指定的 UTC+8 格式，并包含中文小写数字的星期几。
@@ -26,15 +11,23 @@ const weekdayFormatter = new Intl.DateTimeFormat('zh-CN', {
  * @returns 格式化后的时间字符串 (例如: '2025-12-10 15:34:10 周幺 UTC+8')
  */
 export const formatTime = (time: Date | number | string, pattern = 'YYYY-MM-DD HH:mm:ss'): string => {
-  const date: Date = new Date(time);
+  const date = new Date(time);
 
   if (Number.isNaN(date.getTime())) {
-    console.warn(`[TimeFormatter] Received invalid date: ${String(time)}`);
+    logger.warn(`[TimeFormatter] Received invalid date: ${String(time)}`);
     return 'Invalid Date';
   }
 
-  // --- 1. 格式化日期时间部分 (YYYY-MM-DD HH:mm:ss) ---
-  const partsStr = timeFormatter.format(date);
+  const partsStr = date.toLocaleString('sv-SE', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 
   const tokenMap: Recordable<string> = {
     YYYY: partsStr.substring(0, 4),
@@ -47,8 +40,10 @@ export const formatTime = (time: Date | number | string, pattern = 'YYYY-MM-DD H
 
   const timeStr = pattern.replace(/YYYY|MM|DD|HH|mm|ss/g, (match) => tokenMap[match] ?? '');
 
-  // --- 2. 获取并转换星期几部分 ---
-  const weekdayStrLarge = weekdayFormatter.format(date);
+  const weekdayStrLarge = date.toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    weekday: 'short',
+  });
 
   return `${timeStr} ${weekdayStrLarge} UTC+8`;
 };
@@ -124,3 +119,14 @@ export const MsgPTTL = {
   hour: (hours: number): number => hours * HOUR,
   day: (days: number): number => days * DAY,
 } as const;
+
+export const readTextFile = (path: string): string => {
+  if (!fs.existsSync(path)) {
+    throw new AppError(`File not found: ${path}`);
+  }
+  return fs.readFileSync(path, 'utf-8');
+};
+
+export const writeTextFile = (path: string, content: string) => {
+  fs.writeFileSync(path, content, 'utf-8');
+};

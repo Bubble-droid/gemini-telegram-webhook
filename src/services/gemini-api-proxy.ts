@@ -3,6 +3,10 @@ import { KeyRotator } from '@/utils';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 const ALLOWED_IPS = new Set(['127.0.0.1', '::1', 'localhost']);
+const HOP_TO_HOP_HEADERS = new Set(['host', 'connection', 'content-length', 'transfer-encoding', 'content-encoding']);
+const EXCLUDED_HEADERS = new Set(['content-encoding', 'content-length', 'transfer-encoding']);
+
+const keyRotator = new KeyRotator();
 
 const isLocalRequest = (ip: string): boolean => {
   return ALLOWED_IPS.has(ip);
@@ -10,28 +14,19 @@ const isLocalRequest = (ip: string): boolean => {
 
 const normalizeHeaders = (incomingHeaders: FastifyRequest['headers'], rotatedKey: string): Headers => {
   const headers = new Headers();
-
   for (const [key, value] of Object.entries(incomingHeaders)) {
-    if (!value) continue;
-
-    // 过滤掉不需要透传的 hop-to-hop headers
-    const lowerKey = key.toLowerCase();
-    if (['host', 'connection', 'content-length', 'transfer-encoding'].includes(lowerKey)) {
-      continue;
-    }
-
+    if (value === undefined) continue;
+    // 1. 过滤 Hop-to-hop headers 以及可能导致协议错误的 headers
+    if (HOP_TO_HOP_HEADERS.has(key.toLowerCase())) continue;
     // 处理 string[] 情况
     const headerValue = Array.isArray(value) ? value.join(',') : value;
     headers.set(key, headerValue);
   }
-
   // 强制覆盖 API Key
   headers.set('x-goog-api-key', rotatedKey);
-
+  headers.set('content-type', 'application/json');
   return headers;
 };
-
-const keyRotator = new KeyRotator();
 
 export const handleProxyRequest = async (req: FastifyRequest, rep: FastifyReply): Promise<void> => {
   try {
@@ -41,56 +36,61 @@ export const handleProxyRequest = async (req: FastifyRequest, rep: FastifyReply)
       return;
     }
 
-    // 1. URL 重组 (处理 Query Params)
-    // 使用 URL 构造函数处理路径合并，避免正则替换的边缘情况
-    const originalPath = req.raw.url ?? ''; // raw.url 包含 path + query
+    const originalPath = req.raw.url ?? '';
     const pathWithoutPrefix = originalPath.replace(/^\/gemini/, '');
     const targetUrl = new URL(pathWithoutPrefix, config.geminiApiBaseUrl);
 
-    // 2. Key 轮换
     const rotatedKey = keyRotator.nextKey();
-
-    // 3. Header 处理
     const headers = normalizeHeaders(req.headers, rotatedKey);
 
-    // 4. 日志记录
     logger.info(`[Proxy] Forwarding to Google`, {
       path: targetUrl.pathname,
       keyMask: `${rotatedKey.slice(0, 5)}***${rotatedKey.slice(-5)}`,
     });
-    logger.debug(`Body Forwarding:`, { body: req.body });
+    logger.trace(`Body Forwarding:`, { body: req.body });
 
-    // 5. 发起上游请求
     const upstreamResponse = await fetch(targetUrl.toString(), {
       method: req.method,
       headers,
-      ...(req.body !== undefined && { body: JSON.stringify(req.body) }),
+      ...(req.body != null && {
+        duplex: 'half',
+        body: JSON.stringify(req.body),
+      }),
     });
 
-    // 6. 响应透传处理
+    const responseText = await upstreamResponse.text();
+
+    try {
+      const parsedBody = JSON.parse(responseText) as unknown;
+      logger.trace(`Body Received:`, { body: parsedBody });
+    } catch {
+      logger.trace('Body Received (Raw String)', { body: responseText });
+    }
+
+    // 响应状态码透传
     rep.code(upstreamResponse.status);
 
-    // 6.1 复制响应头
+    // Header 透传
     upstreamResponse.headers.forEach((value, key) => {
-      // 过滤 gzip 等压缩头，因为 fetch 会自动解压，如果透传 gzip 头但内容已解压，客户端会报错
-      if (['content-encoding', 'content-length', 'transfer-encoding'].includes(key)) {
-        return;
-      }
-      void rep.header(key, value);
+      if (EXCLUDED_HEADERS.has(key.toLowerCase())) return;
+      rep.header(key, value);
     });
 
-    if (upstreamResponse.body) {
-      // 将 Web ReadableStream 转换为 Node Stream 并透传给 Fastify
-      rep.send(upstreamResponse.body);
+    if (!responseText.length) {
+      rep.send();
       return;
     }
 
-    rep.send();
+    rep.header('content-type', 'application/json; charset=utf-8');
+    rep.send(responseText);
   } catch (err) {
     logger.error('❌ Gemini Proxy Error', { err });
-    void rep.code(502).send({
-      error: 'Bad Gateway',
-      message: err instanceof Error ? err.message : String(err),
-    });
+    rep
+      .code(502)
+      .type('application/json')
+      .send({
+        error: 'Bad Gateway',
+        message: err instanceof Error ? err.message : String(err),
+      });
   }
 };

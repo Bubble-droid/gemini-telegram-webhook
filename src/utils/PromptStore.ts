@@ -5,6 +5,7 @@ import { logger } from '@/services';
 import type { Recordable } from '@/types';
 import fs from 'node:fs';
 import path from 'node:path';
+import { readTextFile } from './helpers';
 
 const PromptKeys = ['assistant', 'file-search', 'github-toolset', 'built-in-tools', 'chit-chat'] as const;
 
@@ -87,7 +88,7 @@ class PromptStore {
         }
 
         // 同步读取，确保应用启动就绪前数据已加载
-        const content = fs.readFileSync(filePath, 'utf-8');
+        const content = readTextFile(filePath);
 
         // 简单的预处理（如去除首尾空白）
         this.prompts.set(key, content.trim());

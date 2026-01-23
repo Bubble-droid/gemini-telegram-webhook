@@ -16,14 +16,12 @@ import {
 
 // 固定的不可重试错误列表
 const FATAL_ERRORS = [
-  'Unsupported MIME type',
-  'User location is not supported for the API use',
-
   'INVALID_ARGUMENT',
   'FAILED_PRECONDITION',
   'PERMISSION_DENIED',
   'NOT_FOUND',
   'RESOURCE_EXHAUSTED',
+  'UNAVAILABLE',
 ];
 
 export class GeminiAPI {
@@ -39,7 +37,7 @@ export class GeminiAPI {
       apiKey: config.geminiApiKeys[0] ?? '',
       httpOptions: {
         baseUrl: config.enableKeyRotation ? config.localProxyBaseUrl : config.geminiApiBaseUrl,
-        timeout: 10 * MIN,
+        timeout: 5 * MIN,
       },
     });
     this.baseConfig = {

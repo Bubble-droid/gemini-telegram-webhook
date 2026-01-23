@@ -8,12 +8,12 @@
   },
 
   // --- 语言格式化器绑定 (全部交给 Prettier) ---
-  "[typescript]": { "editor.defaultFormatter": "prettier.prettier-vscode" },
-  "[javascript]": { "editor.defaultFormatter": "prettier.prettier-vscode" },
-  "[json]": { "editor.defaultFormatter": "prettier.prettier-vscode" },
-  "[jsonc]": { "editor.defaultFormatter": "prettier.prettier-vscode" },
+  "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[javascript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[jsonc]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
   "[markdown]": {
-    "editor.defaultFormatter": "prettier.prettier-vscode",
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.wordWrap": "on"
   },
 

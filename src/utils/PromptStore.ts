@@ -84,7 +84,7 @@ class PromptStore {
         // 检查文件是否存在
         if (!fs.existsSync(filePath)) {
           logger.warn(`Prompt file not found: ${filePath}`);
-          return;
+          continue;
         }
 
         // 同步读取，确保应用启动就绪前数据已加载

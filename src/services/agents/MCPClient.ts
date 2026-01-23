@@ -49,7 +49,7 @@ export class MCPClient {
         const resolvedHeaders = headers && this.resolvePlaceholders(headers);
         await this.connectRemoteServer(this.serverName, url, resolvedHeaders);
       } else {
-        const { type: _t, command, ...options } = this.serverConfig;
+        const { type, command, ...options } = this.serverConfig;
         await this.connectLocalServer(this.serverName, command, options);
       }
       await this.refreshTools();

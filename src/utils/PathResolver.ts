@@ -138,7 +138,7 @@ const resolveSource = (project: string, relativePath: string, fallback: string):
 
 export const resolvePath = (rawPath: string): string => {
   // 1. 使用正则解析路径结构
-  const match = PATH_REGEX.exec(rawPath.replace(/^\/data/, ''));
+  const match = PATH_REGEX.exec(rawPath.replace(/^\/data\//, ''));
 
   if (!match) {
     return rawPath;

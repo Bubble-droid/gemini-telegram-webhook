@@ -1,4 +1,4 @@
-import { DATA_DIR } from '@/configs/data';
+import { DATA_DIR } from '@/configs/constant';
 import { logger } from '@/services';
 import { bot } from '@/services/apis';
 import type { ApiMethod, ApiParams, Recordable } from '@/types';

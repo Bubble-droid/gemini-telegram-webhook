@@ -1,12 +1,13 @@
-import { config, logger } from '@/services';
+import { logger } from '@/services';
 import { KeyRotator } from '@/utils';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { CONFIG } from './ConfigLoader';
 
 const ALLOWED_IPS = new Set(['127.0.0.1', '::1', 'localhost']);
 const HOP_TO_HOP_HEADERS = new Set(['host', 'connection', 'content-length', 'transfer-encoding', 'content-encoding']);
 const EXCLUDED_HEADERS = new Set(['content-encoding', 'content-length', 'transfer-encoding']);
 
-const keyRotator = new KeyRotator();
+const keyRotator = new KeyRotator(CONFIG.GEMINI_API_KEYS);
 
 const isLocalRequest = (ip: string): boolean => {
   return ALLOWED_IPS.has(ip);
@@ -38,7 +39,7 @@ export const handleProxyRequest = async (req: FastifyRequest, rep: FastifyReply)
 
     const originalPath = req.raw.url ?? '';
     const pathWithoutPrefix = originalPath.replace(/^\/gemini/, '');
-    const targetUrl = new URL(pathWithoutPrefix, config.geminiApiBaseUrl);
+    const targetUrl = new URL(pathWithoutPrefix, CONFIG.GEMINI_API_BASE_URL);
 
     const rotatedKey = keyRotator.nextKey();
     const headers = normalizeHeaders(req.headers, rotatedKey);

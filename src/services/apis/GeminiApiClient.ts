@@ -1,5 +1,6 @@
 import { BotMessages } from '@/configs';
-import { config, logger } from '@/services';
+import { logger } from '@/services';
+import { CONFIG } from '@/services/ConfigLoader';
 import type { GeminiApiOptions } from '@/types';
 import { deepClone, MIN, sleep } from '@/utils';
 import { AppError } from '@/utils/errors';
@@ -12,9 +13,9 @@ import {
   type GenerateContentConfig,
   type GenerateContentResponse,
   type Part,
+  type SafetySetting,
 } from '@google/genai';
 
-// 固定的不可重试错误列表
 const FATAL_ERRORS = [
   'INVALID_ARGUMENT',
   'FAILED_PRECONDITION',
@@ -24,31 +25,36 @@ const FATAL_ERRORS = [
   'UNAVAILABLE',
 ];
 
-export class GeminiAPI {
-  private gemini: GoogleGenAI;
+const GEMINI_CLIENT_TIMEOUT = 5 * MIN;
+const GEMINI_SAFETY_SETTINGS: SafetySetting[] = [
+  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
+];
+
+export class GeminiApiClient {
+  private client: GoogleGenAI;
   private baseConfig: GenerateContentConfig;
-  private defaultGenerateModel = config.modelName;
+  private defaultGenerateModel = CONFIG.GEMINI_MODEL_NAME;
+  private defaultTemperature = CONFIG.MODEL_CONFIG_TEMPERATURE;
 
   private readonly MAX_RETRIES = 3;
   private readonly BASE_RETRY_DELAY_MS: number = 30_000;
 
-  constructor() {
-    this.gemini = new GoogleGenAI({
-      apiKey: config.geminiApiKeys[0] ?? '',
+  constructor(initKey: string) {
+    const { GEMINI_API_BASE_URL: baseUrl, LOCAL_PROXY_BASE_URL: proxyUrl, ENABLE_KEY_ROTATION } = CONFIG;
+    this.client = new GoogleGenAI({
+      apiKey: initKey,
       httpOptions: {
-        baseUrl: config.enableKeyRotation ? config.localProxyBaseUrl : config.geminiApiBaseUrl,
-        timeout: 5 * MIN,
+        baseUrl: ENABLE_KEY_ROTATION ? proxyUrl : baseUrl,
+        timeout: GEMINI_CLIENT_TIMEOUT,
       },
     });
     this.baseConfig = {
-      temperature: config.modelTemperature,
-      safetySettings: [
-        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
-      ],
+      temperature: this.defaultTemperature,
+      safetySettings: GEMINI_SAFETY_SETTINGS,
     };
   }
 
@@ -57,7 +63,7 @@ export class GeminiAPI {
     const fileSearchStores: FileSearchStore[] = [];
 
     do {
-      const response = await this.gemini.fileSearchStores.list({
+      const response = await this.client.fileSearchStores.list({
         config: {
           pageSize: 20,
           ...(nextPageToken && { pageToken: nextPageToken }),
@@ -85,7 +91,7 @@ export class GeminiAPI {
       preview: (systemInstruction?.[0]?.text ?? contents[0]?.parts?.[0]?.text)?.slice(0, 100),
     });
 
-    const client = genClient ?? this.gemini;
+    const client = genClient ?? this.client;
 
     while (retryCount <= this.MAX_RETRIES) {
       try {
@@ -202,4 +208,4 @@ export class GeminiAPI {
   }
 }
 
-export const geminiApi = new GeminiAPI();
+export const geminiClient = new GeminiApiClient(CONFIG.GEMINI_API_KEYS[0]!);

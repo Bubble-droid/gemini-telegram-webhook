@@ -1,7 +1,8 @@
 import { BotMessages } from '@/configs';
 import { mentionHandler, NormalMessageHandler, processCommand } from '@/handlers/messages';
-import { config, logger } from '@/services';
+import { logger } from '@/services';
 import { bot } from '@/services/apis';
+import { CONFIG } from '@/services/ConfigLoader';
 import { MessageCollector, MsgPTTL, sendErrorNotification, shortenString, simplifyUpdateInLogger } from '@/utils';
 import { AppError } from '@/utils/errors';
 import { Escaper } from '@/utils/markdown';
@@ -13,7 +14,6 @@ import { handleCallbackQuery } from './CallbackQueryHandler';
  * 核心更新处理器，负责接收 Telegram Update，进行权限验证、路由分发和错误处理。
  */
 export class UpdateHandler {
-  private readonly allowGroups: number[] = config.allowGroups;
   private messageCollector: MessageCollector;
   private normalMessageHandler: NormalMessageHandler;
 
@@ -76,7 +76,7 @@ export class UpdateHandler {
   private validateGroupPermission(msg: Message): boolean {
     const { chat } = msg;
 
-    if (this.allowGroups.includes(chat.id)) {
+    if (CONFIG.ALLOWED_USAGE_GROUPS.includes(chat.id)) {
       return true;
     }
 

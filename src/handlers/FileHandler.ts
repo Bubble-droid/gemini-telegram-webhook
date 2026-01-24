@@ -1,7 +1,7 @@
-// src/handlers/FileHandler.ts
-
-import { config, logger } from '@/services';
+import { TELEGRAM_API_BASE_URL } from '@/configs/constant';
+import { logger } from '@/services';
 import { bot } from '@/services/apis';
+import { CONFIG } from '@/services/ConfigLoader';
 import type { Recordable } from '@/types';
 import { AppError } from '@/utils/errors';
 import type { Blob as GBlob } from '@google/genai';
@@ -87,12 +87,7 @@ type MimeType = (typeof FILE_EXT_MIMES)[FileExtension];
  *              采用无状态单例模式。
  */
 class FileHandler {
-  private botToken: string;
   private extMimeMap = new Map<string, MimeType>(Object.entries(FILE_EXT_MIMES));
-
-  constructor() {
-    this.botToken = config.botToken;
-  }
 
   /**
    * 处理消息中的附件
@@ -211,7 +206,7 @@ class FileHandler {
     if (!fileResult.ok || !fileResult.data.file_path) {
       throw new AppError(`获取文件路径失败: ${fileId}`, 'TELEGRAM_API_ERROR');
     }
-    const fileUrl = `https://api.telegram.org/file/bot${this.botToken}/${fileResult.data.file_path}`;
+    const fileUrl = this.generateFileUrl(fileResult.data.file_path);
 
     try {
       // 2. 下载文件
@@ -248,6 +243,10 @@ class FileHandler {
       logger.error(`下载文件失败: ${fileUrl}`, { err });
       throw new AppError(msg, 'FILE_DOWNLOAD_ERROR');
     }
+  }
+
+  private generateFileUrl(path: string): string {
+    return `${TELEGRAM_API_BASE_URL}/file/bot${CONFIG.TELEGRAM_BOT_TOKEN}/${path}`;
   }
 
   // --- 特定类型处理器 ---

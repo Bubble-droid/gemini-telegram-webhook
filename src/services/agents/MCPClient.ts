@@ -1,6 +1,7 @@
 import { mcpServers } from '@/configs/mcp-servers';
-import { config, logger } from '@/services';
-import type { Config, Recordable, ServerConfig, ServerName, StandardizedFunctionResponse } from '@/types';
+import { logger } from '@/services';
+import { CONFIG } from '@/services/ConfigLoader';
+import type { EnvConfig, Recordable, ServerConfig, ServerName, StandardizedFunctionResponse } from '@/types';
 import { AppError } from '@/utils/errors';
 import { Type, type FunctionDeclaration, type Tool } from '@google/genai';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -182,7 +183,7 @@ export class MCPClient {
     for (const [key, value] of Object.entries(obj)) {
       if (typeof value === 'string') {
         resolvedObj[key] = value.replace(/\$\{(.*?)\}/g, (match, varName) => {
-          const envVar = config[varName as keyof Config];
+          const envVar = CONFIG[varName as keyof EnvConfig];
           if (envVar) return String(envVar);
           logger.warn(`Environment variable "${varName}" not found for placeholder.`);
           return match;

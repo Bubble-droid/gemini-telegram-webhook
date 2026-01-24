@@ -1,5 +1,3 @@
-// src/configs/faq_data.ts
-
 import type { FaqItem } from '@/types';
 
 /**
@@ -875,6 +873,6 @@ A: 按 \`Ctrl + Shift + F12\` 打开开发者工具控制台即可查看，主�
   },
 ];
 
-/* import fs from 'node:fs';
-import path from 'node:path';
-fs.writeFileSync(path.join('/data', 'faq-data.json'), JSON.stringify(faqData)); */
+/* import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+writeFileSync(join(process.cwd(), 'data', 'faq-data.json'), JSON.stringify(faqData)); */

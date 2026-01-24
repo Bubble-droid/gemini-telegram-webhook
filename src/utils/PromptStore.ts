@@ -1,17 +1,16 @@
 // src/services/PromptStore.ts
 
-import { DATA_DIR } from '@/configs/data';
+import { DATA_DIR } from '@/configs/constant';
 import { logger } from '@/services';
 import type { Recordable } from '@/types';
-import fs from 'node:fs';
-import path from 'node:path';
-import { readTextFile } from './helpers';
+import { join } from 'node:path';
+import { fetchFile, generateRawUrl } from './helpers';
 
-const PromptKeys = ['assistant', 'file-search', 'github-toolset', 'built-in-tools', 'chit-chat'] as const;
+const PROMPT_KEYS = ['assistant', 'file-search', 'github-toolset', 'built-in-tools', 'chit-chat'] as const;
 
-type PromptKey = (typeof PromptKeys)[number];
+type PromptKey = (typeof PROMPT_KEYS)[number];
 
-const PROMPT_DIR = path.join(DATA_DIR, 'prompts');
+const PROMPT_DIR = join(DATA_DIR, 'prompts');
 
 /**
  * @class PromptStore
@@ -21,10 +20,6 @@ const PROMPT_DIR = path.join(DATA_DIR, 'prompts');
 class PromptStore {
   // 缓存存储：Key 是文件名，Value 是文件内容
   private prompts = new Map<string, string>();
-
-  constructor() {
-    this.loadAllPrompts();
-  }
 
   /**
    * 获取原始提示词内容
@@ -49,53 +44,41 @@ class PromptStore {
    */
   public format(key: PromptKey, variables: Recordable<string>): string {
     let content = this.get(key);
-
-    // 简单的模板引擎：将 {{key}} 替换为 value
-    Object.entries(variables).forEach(([varKey, varValue]) => {
-      // 创建正则，全局替换 {{varKey}}
+    for (const [varKey, varValue] of Object.entries(variables)) {
       const regex = new RegExp(`{{${varKey}}}`, 'g');
       content = content.replace(regex, varValue);
-    });
-
+    }
     return content;
   }
 
   /**
    * 重新加载提示词 (用于不重启服务更新提示词)
    */
-  public reload(): void {
+  public async reload() {
     logger.info('Reloading all prompts...');
     this.prompts.clear();
-    this.loadAllPrompts();
+    await this.loadAllPrompts();
   }
 
   /**
    * 加载所有预设的提示词文件到内存
    * @private
    */
-  private loadAllPrompts(): void {
-    // 这里列出你需要加载的文件名列表
-    // 也可以改为 fs.readdirSync 自动扫描，但显式列出更安全、更类型友好
-
-    for (const key of PromptKeys) {
+  private async loadAllPrompts() {
+    for (const key of PROMPT_KEYS) {
       try {
-        const filePath = path.join(PROMPT_DIR, `${key}.md`);
+        const filePath = join(PROMPT_DIR, `${key}.md`);
+        const url = generateRawUrl(filePath);
 
-        // 检查文件是否存在
-        if (!fs.existsSync(filePath)) {
-          logger.warn(`Prompt file not found: ${filePath}`);
-          continue;
-        }
+        const content = await fetchFile(url, 'text', {
+          method: 'GET',
+          redirect: 'follow',
+        });
 
-        // 同步读取，确保应用启动就绪前数据已加载
-        const content = readTextFile(filePath);
-
-        // 简单的预处理（如去除首尾空白）
         this.prompts.set(key, content.trim());
-
         logger.info(`Loaded prompt: ${key} (${content.length} chars)`);
       } catch (err) {
-        logger.error(`Failed to load prompt: ${key}`, { err });
+        logger.warn(`Failed to load prompt: ${key}`, { err });
       }
     }
   }

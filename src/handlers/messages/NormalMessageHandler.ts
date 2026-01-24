@@ -1,6 +1,7 @@
 import { BotCommands } from '@/configs';
 import { ChitChatHandler, mentionHandler } from '@/handlers/messages';
-import { config, logger } from '@/services';
+import { logger } from '@/services';
+import { CONFIG } from '@/services/ConfigLoader';
 import { faqMatcher, MsgPTTL, type ResponseContext } from '@/utils';
 import { toHtml } from '@/utils/markdown';
 
@@ -9,8 +10,6 @@ import { toHtml } from '@/utils/markdown';
  *              采用无状态单例模式，包含正则缓存优化。
  */
 export class NormalMessageHandler {
-  private readonly botName = config.botName;
-
   private chitChatHandler: ChitChatHandler;
 
   constructor() {
@@ -22,7 +21,7 @@ export class NormalMessageHandler {
 
     if (await this.handleCommandAlias(ctx)) return;
 
-    const isReplyToBot = ctx.messages.some((m) => m.reply_to_message?.from?.username === this.botName);
+    const isReplyToBot = ctx.messages.some((m) => m.reply_to_message?.from?.username === CONFIG.TELEGRAM_BOT_USERNAME);
     if (isReplyToBot) {
       logger.info('handling reply to bot', { chatId: ctx.chat.id, userId: ctx.user.id });
       await mentionHandler.handle(ctx);

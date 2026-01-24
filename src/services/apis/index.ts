@@ -1,2 +1,2 @@
-export * from './GeminiAPI';
+export * from './GeminiApiClient';
 export * from './TelegramBotAPI';

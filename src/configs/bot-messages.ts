@@ -1,6 +1,4 @@
-// src/configs/bot_messages.ts
-
-import { config } from '@/services';
+import { CONFIG } from '@/services/ConfigLoader';
 import type { Recordable } from '@/types';
 import type { InlineKeyboardButton, InlineKeyboardMarkup } from 'grammy/types';
 
@@ -10,7 +8,7 @@ import type { InlineKeyboardButton, InlineKeyboardMarkup } from 'grammy/types';
 export const BotMessages = {
   // 支持动态替换的 Start 文案
   getStartText: (): string => {
-    const { modelName, botName } = config;
+    const { GEMINI_MODEL_NAME: modelName, TELEGRAM_BOT_USERNAME: botName } = CONFIG;
     return `
 🤖 当前使用模型：\`${modelName}\`
 

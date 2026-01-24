@@ -1,6 +1,6 @@
-import { config } from '@/services';
 import type { TelegramBotAPI } from '@/services/apis';
 import { bot } from '@/services/apis';
+import { CONFIG } from '@/services/ConfigLoader';
 import type { ApiResult, ExtractMethods } from '@/types';
 import type { CallbackQuery, Chat, Message, MessageEntity, User } from 'grammy/types';
 import { AppError } from './errors';
@@ -15,7 +15,7 @@ export class ResponseContext {
   public readonly primaryMessage: Message;
   public lastMessageId: number | undefined;
 
-  private readonly botName = config.botName;
+  private readonly botName = CONFIG.TELEGRAM_BOT_USERNAME;
   private readonly replyToMessageId: number;
   private readonly messageIdToEdit: number;
 

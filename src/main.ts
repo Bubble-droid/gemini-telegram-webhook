@@ -1,12 +1,19 @@
 import { buildApp } from '@/app';
-import { config, logger } from '@/services';
+import { logger } from '@/services';
 import { bot } from '@/services/apis';
+import { CONFIG } from './services/ConfigLoader';
+import { faqMatcher, promptStore } from './utils';
 
 /**
  * 启动 Fastify 服务器
  */
 const start = async (): Promise<void> => {
-  const { listenHost, listenPort } = config;
+  const {
+    WEBHOOK_RECEIVE_URL: url,
+    WEBHOOK_SECRET_TOKEN: secret_token,
+    SERVER_LISTEN_HOST: host,
+    SERVER_LISTEN_PORT: port,
+  } = CONFIG;
   const server = buildApp();
 
   // --- 1. 定义控制优雅退出的标志 ---
@@ -41,13 +48,14 @@ const start = async (): Promise<void> => {
   process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
   process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
 
-  await bot.setWebhook(config.webhookUrl, {
-    secret_token: config.secretToken,
-  });
+  await promptStore.reload();
+  await faqMatcher.reload();
+
+  await bot.setWebhook(url, { secret_token });
 
   // --- 3. 启动服务器 ---
   try {
-    await server.listen({ host: listenHost, port: listenPort });
+    await server.listen({ host, port });
   } catch (err) {
     logger.fatal('Server startup failed', { err });
     process.exit(1);

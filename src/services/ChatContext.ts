@@ -1,7 +1,6 @@
 // src/services/ChatContext.ts
 
-import { DATA_DIR } from '@/configs/data';
-import { config } from '@/services/ConfigLoader';
+import { DATA_DIR } from '@/configs/constant';
 import { logger } from '@/services/LoggerService';
 import type { ChitChatState, Recordable } from '@/types';
 import { HOUR } from '@/utils';
@@ -10,6 +9,7 @@ import { LowSync } from 'lowdb';
 import { JSONFileSync } from 'lowdb/node';
 import fs from 'node:fs';
 import path from 'node:path';
+import { CONFIG } from './ConfigLoader';
 
 interface ContextItem {
   data: unknown;
@@ -26,14 +26,10 @@ const CLEANUP_INTERVAL = 6 * HOUR;
 
 export class ChatContext {
   private db: LowSync<DatabaseSchema>;
-  private maxContextCount: number;
-  private expirationTtl: number;
   private cleanupTimer?: NodeJS.Timeout;
+  private expirationTtl = CONFIG.CONTEXT_TTL_DAY * 24 * HOUR;
 
   constructor() {
-    this.maxContextCount = config.maxContextLength;
-    this.expirationTtl = config.contextsExpirationTtl;
-
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
@@ -71,7 +67,7 @@ export class ChatContext {
 
     const history: Content[] = [...this.get(chatId, userId)];
 
-    const excess = history.length + contexts.length - this.maxContextCount;
+    const excess = history.length + contexts.length - CONFIG.MAX_CONTEXT_LENGTH;
 
     if (excess > 0) {
       history.splice(0, excess);

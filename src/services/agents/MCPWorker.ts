@@ -1,7 +1,8 @@
 import { logger } from '@/services';
-import { chatAgent, type MCPClient } from '@/services/agents';
 import type { CallBackFns, GeminiApiOptions, StandardizedFunctionResponse, ToolExecutorFn } from '@/types';
 import { FunctionCallingConfigMode, ThinkingLevel, type Content, type GenerateContentConfig } from '@google/genai';
+import { chatAgent } from './ChatAgent';
+import type { MCPClient } from './MCPClient';
 
 /**
  * @description 负责管理一次 MCP 子任务的完整生命周期。

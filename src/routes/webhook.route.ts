@@ -1,5 +1,6 @@
 import { UpdateHandler } from '@/handlers';
-import { config, logger } from '@/services';
+import { logger } from '@/services';
+import { CONFIG } from '@/services/ConfigLoader';
 import type { InferSchema, JSONSchema } from '@/types';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Update } from 'grammy/types';
@@ -28,7 +29,7 @@ const WebhookBodySchema = {
 const WebhookHeadersSchema = {
   type: 'object',
   properties: {
-    'x-telegram-bot-api-secret-token': { type: 'string', const: config.secretToken },
+    'x-telegram-bot-api-secret-token': { type: 'string', const: CONFIG.WEBHOOK_SECRET_TOKEN },
     'content-type': { type: 'string', const: 'application/json' },
   },
   required: ['x-telegram-bot-api-secret-token', 'content-type'],

@@ -1,5 +1,7 @@
-import { chatContext, config, logger } from '@/services';
-import { geminiApi } from '@/services/apis';
+import { CHITCHAT_MODEL } from '@/configs/constant';
+import { chatContext, logger } from '@/services';
+import { geminiClient } from '@/services/apis';
+import { CONFIG } from '@/services/ConfigLoader';
 import type { ChitChatState, Recordable } from '@/types';
 import type { ResponseContext } from '@/utils';
 import { formatTime, handleMediaFiles, hasImage, MsgPTTL, promptStore } from '@/utils';
@@ -128,7 +130,6 @@ const formatContextToMarkdown = (ctx: Message): string => {
  *              采用 Map 实现的 Chat ID 粒度状态管理，以支持单例复用。
  */
 export class ChitChatHandler {
-  private readonly chitChatModel = 'gemma-3-27b-it';
   private locks = new Map<number, Promise<void>>();
 
   /**
@@ -187,8 +188,8 @@ export class ChitChatHandler {
    */
   private async getGeminiResponse(state: ChitChatState): Promise<string | null> {
     const systemPrompt = promptStore.format('chit-chat', {
-      selfId: String(config.botId),
-      selfName: config.botName,
+      selfId: String(CONFIG.TELEGRAM_BOT_ID),
+      selfName: CONFIG.TELEGRAM_BOT_USERNAME,
       currentTime: formatTime(Date.now()),
     });
 
@@ -202,8 +203,8 @@ export class ChitChatHandler {
     ];
 
     try {
-      const response = await geminiApi.generate(fullContents, {
-        genModel: this.chitChatModel,
+      const response = await geminiClient.generate(fullContents, {
+        genModel: CHITCHAT_MODEL,
         genConfig: {
           temperature: 1.0,
         },

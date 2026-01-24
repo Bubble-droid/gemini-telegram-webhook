@@ -1,180 +1,143 @@
-// src/services/ConfigLoader.ts
-
-import type { Config, Env } from '@/types';
+import { GEMINI_API_BASE_URL, GEMINI_GENERATE_MODEL } from '@/configs/constant';
+import type { EnvConfig, ExtractAndMakeRequired, RawEnv, StringifyProps } from '@/types';
 import { AppError } from '@/utils/errors';
 import type { LogLevel } from 'fastify';
 import { isIP } from 'node:net';
 
-const LogLevels = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const;
+const LOG_LEVELS = new Set<LogLevel>(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']);
 
-/**
- * @class ConfigLoader
- * @description 负责在应用程序启动阶段一次性加载、解析和验证所有环境变量。
- *              确保 Config 对象不可变且类型安全。
- */
-export class ConfigLoader {
-  // 1. 定义默认值常量
-  private readonly DEFAULT_LISTEN_HOST = '127.0.0.1';
-  private readonly DEFAULT_LISTEN_PORT = 39001;
-  private readonly DEFAULT_LOG_LEVEL: LogLevel = 'info';
-  private readonly DEFAULT_GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com';
-  private readonly DEFAULT_LOCAL_PROXY_BASE_URL = `http://127.0.0.1:${this.DEFAULT_LISTEN_PORT}/gemini`;
-  private readonly DEFAULT_MODEL_NAME = 'gemini-3-flash-preview';
-  private readonly DEFAULT_MODEL_CONFIG_TEMPERATURE = 1.0;
-  private readonly DEFAULT_MAX_API_CALL_ROUNDS = 16;
-  private readonly DEFAULT_REQUEST_LIMIT_SECOND = 20;
-  private readonly DEFAULT_CONTEXT_EXPIRATION_DAY = 7;
-  private readonly DEFAULT_MAX_CONTEXT_LENGTH = 8;
-  private readonly REQUIRED_ENV_VARS: (keyof Env)[] = [
-    'GEMINI_API_KEYS',
-    'GITHUB_ACCESS_TOKEN',
-    'WEBHOOK_RECEIVE_URL',
-    'WEBHOOK_SECRET_TOKEN',
-    'TELEGRAM_BOT_TOKEN',
-    'TELEGRAM_BOT_ID',
-    'TELEGRAM_BOT_USERNAME',
-    'TELEGRAM_BOT_ADMIN_ID',
-    'ALLOWED_USAGE_GROUPS',
-  ];
-  private readonly config: Config;
-  private readonly env: Env;
+const REQUIRED_ENV_VARS: (keyof RawEnv)[] = [
+  'GEMINI_API_KEYS',
+  'GITHUB_ACCESS_TOKEN',
+  'GITHUB_REPOSITORY',
+  'WEBHOOK_RECEIVE_URL',
+  'WEBHOOK_SECRET_TOKEN',
+  'TELEGRAM_BOT_TOKEN',
+  'TELEGRAM_BOT_ID',
+  'TELEGRAM_BOT_USERNAME',
+  'TELEGRAM_BOT_OWNER_ID',
+  'ALLOWED_USAGE_GROUPS',
+];
+
+const DEFAULT_ENV = {
+  SERVER_LISTEN_HOST: '127.0.0.1',
+  SERVER_LISTEN_PORT: 39001,
+  SERVER_LOG_LEVEL: 'info',
+
+  ENABLE_KEY_ROTATION: false,
+  GEMINI_API_BASE_URL: GEMINI_API_BASE_URL,
+  LOCAL_PROXY_BASE_URL: `http://127.0.0.1:39001/gemini`,
+
+  GEMINI_MODEL_NAME: GEMINI_GENERATE_MODEL,
+  MODEL_CONFIG_TEMPERATURE: 1.0,
+
+  MAX_API_CALL_ROUNDS: 16,
+  REQUEST_LIMIT_SECOND: 20,
+
+  CONTEXT_TTL_DAY: 7,
+  MAX_CONTEXT_LENGTH: 8,
+} as const satisfies ExtractAndMakeRequired<RawEnv>;
+
+type Split<T extends 'string' | 'number'> = T extends 'string' ? string[] : number[];
+
+const splitArray = <T extends 'string' | 'number'>(val: string | undefined, type: T): Split<T> => {
+  if (!val?.trim().length) return [];
+  return val.split(',').flatMap((s) => {
+    const trimmed = s.trim();
+    if (!trimmed.length) return [];
+    const value = type === 'string' ? trimmed : Number(trimmed);
+    return [value];
+  }) as Split<T>;
+};
+
+const parseListenHost = (val: string | undefined): string => {
+  if (!val?.trim().length) return DEFAULT_ENV.SERVER_LISTEN_HOST;
+  const host = val.trim();
+  if (isIP(host) === 0) {
+    throw new AppError(`环境变量 SERVER_LISTEN_HOST 无效："${host}" 不是有效的 IPv4 或 IPv6 地址`);
+  }
+  return host;
+};
+
+const parsePort = (val: string | undefined): number => {
+  if (!val?.trim().length) return DEFAULT_ENV.SERVER_LISTEN_PORT;
+  if (!/^\d+$/.test(val)) {
+    throw new AppError(`环境变量 SERVER_LISTEN_PORT 无效："${val}" 不是纯数字`);
+  }
+  const n = Number.parseInt(val, 10);
+  if (n < 1 || n > 65535) {
+    throw new AppError(`环境变量 SERVER_LISTEN_PORT 超出范围：${n}，应在 1-65535 之间`);
+  }
+  return n;
+};
+
+const parseLogLevel = (val: string | undefined): LogLevel => {
+  const levelRaw = val?.trim().toLowerCase() as LogLevel | undefined;
+  if (!levelRaw?.length) return DEFAULT_ENV.SERVER_LOG_LEVEL;
+  if (LOG_LEVELS.has(levelRaw)) return levelRaw;
+  throw new AppError(`环境变量 SERVER_LOGGER_LEVEL 非法："${val}"。可选值为 ${[...LOG_LEVELS].join(', ')}`);
+};
+
+class ConfigLoader {
+  private readonly env: StringifyProps<RawEnv>;
+  private readonly config: EnvConfig;
 
   constructor() {
-    this.env = process.env as unknown as Env;
+    this.env = process.env as StringifyProps<RawEnv>;
     this.validateRequiredEnv();
-    this.config = this.buildConfig();
+    this.config = this.parseEnv();
     Object.freeze(this.config);
   }
 
-  /**
-   * 获取配置对象
-   * @public
-   * @returns {Config} 已初始化的配置对象
-   */
-  public load(): Config {
+  public load(): EnvConfig {
     return this.config;
   }
 
-  /**
-   * 验证所有必须的环境变量是否已设置
-   * @private
-   */
   private validateRequiredEnv(): void {
-    const missing = this.REQUIRED_ENV_VARS.filter((key) => {
-      const val = this.env[key];
-      return !val || val.trim() === '';
-    });
-
+    const missing = REQUIRED_ENV_VARS.filter((key) => !this.env[key]?.trim().length);
     if (missing.length > 0) {
-      throw new AppError(`启动失败，缺少必要环境变量：${missing.join(', ')}`);
+      throw new AppError(`启动失败，缺少必要的环境变量：${missing.join(', ')}`);
     }
   }
 
-  /**
-   * 核心构建逻辑：将所有 ENV 转换为 Config
-   * @private
-   */
-  private buildConfig(): Config {
+  private parseEnv(): EnvConfig {
     return {
-      listenHost: this.parseListenHost(this.env.SERVER_LISTEN_HOST),
-      listenPort: this.parsePort(this.env.SERVER_LISTEN_PORT),
-      logLevel: this.parseLoggerLevel(this.env.SERVER_LOG_LEVEL),
+      GEMINI_API_KEYS: splitArray(this.getEnv('GEMINI_API_KEYS'), 'string'),
 
-      enableKeyRotation: this.env.ENABLE_KEY_ROTATION === 'true',
-      geminiApiBaseUrl: this.env.GEMINI_API_BASE_URL ?? this.DEFAULT_GEMINI_API_BASE_URL,
-      localProxyBaseUrl: this.env.LOCAL_PROXY_BASE_URL ?? this.DEFAULT_LOCAL_PROXY_BASE_URL,
+      GITHUB_ACCESS_TOKEN: this.getEnv('GITHUB_ACCESS_TOKEN'),
+      GITHUB_REPOSITORY: this.getEnv('GITHUB_REPOSITORY'),
 
-      geminiApiKeys: this.parseStringArray(this.getEnv('GEMINI_API_KEYS')),
+      WEBHOOK_RECEIVE_URL: this.getEnv('WEBHOOK_RECEIVE_URL'),
+      WEBHOOK_SECRET_TOKEN: this.getEnv('WEBHOOK_SECRET_TOKEN'),
 
-      modelName: this.env.GEMINI_MODEL_NAME ?? this.DEFAULT_MODEL_NAME,
-      modelTemperature: Number(this.env.MODEL_CONFIG_TEMPERATURE) || this.DEFAULT_MODEL_CONFIG_TEMPERATURE,
+      TELEGRAM_BOT_TOKEN: this.getEnv('TELEGRAM_BOT_TOKEN'),
+      TELEGRAM_BOT_ID: Number(this.getEnv('TELEGRAM_BOT_ID')),
+      TELEGRAM_BOT_USERNAME: this.getEnv('TELEGRAM_BOT_USERNAME'),
+      TELEGRAM_BOT_OWNER_ID: Number(this.getEnv('TELEGRAM_BOT_OWNER_ID')),
+      ALLOWED_USAGE_GROUPS: splitArray(this.getEnv('ALLOWED_USAGE_GROUPS'), 'number'),
 
-      maxApiCallRounds: Number(this.env.MAX_API_CALL_ROUNDS) || this.DEFAULT_MAX_API_CALL_ROUNDS,
-      requestRateLimit: (Number(this.env.REQUEST_LIMIT_SECOND) || this.DEFAULT_REQUEST_LIMIT_SECOND) * 1_000,
+      SERVER_LISTEN_HOST: parseListenHost(this.env.SERVER_LISTEN_HOST),
+      SERVER_LISTEN_PORT: parsePort(this.env.SERVER_LISTEN_PORT),
+      SERVER_LOG_LEVEL: parseLogLevel(this.env.SERVER_LOG_LEVEL),
 
-      contextsExpirationTtl:
-        (Number(this.env.CONTEXT_EXPIRATION_DAY) || this.DEFAULT_CONTEXT_EXPIRATION_DAY) * 24 * 60 * 60,
-      maxContextLength: Number(this.env.MAX_CONTEXT_LENGTH) || this.DEFAULT_MAX_CONTEXT_LENGTH,
+      ENABLE_KEY_ROTATION: this.env.ENABLE_KEY_ROTATION === 'true',
+      GEMINI_API_BASE_URL: this.env.GEMINI_API_BASE_URL ?? DEFAULT_ENV.GEMINI_API_BASE_URL,
+      LOCAL_PROXY_BASE_URL: this.env.LOCAL_PROXY_BASE_URL ?? DEFAULT_ENV.LOCAL_PROXY_BASE_URL,
 
-      githubToken: this.getEnv('GITHUB_ACCESS_TOKEN'),
+      GEMINI_MODEL_NAME: this.env.GEMINI_MODEL_NAME ?? DEFAULT_ENV.GEMINI_MODEL_NAME,
+      MODEL_CONFIG_TEMPERATURE: Number(this.env.MODEL_CONFIG_TEMPERATURE) || DEFAULT_ENV.MODEL_CONFIG_TEMPERATURE,
 
-      webhookUrl: this.getEnv('WEBHOOK_RECEIVE_URL'),
-      secretToken: this.getEnv('WEBHOOK_SECRET_TOKEN'),
-      botToken: this.getEnv('TELEGRAM_BOT_TOKEN'),
-      botApiUrl: `https://api.telegram.org/bot${this.env.TELEGRAM_BOT_TOKEN}`,
-
-      botId: Number(this.getEnv('TELEGRAM_BOT_ID')),
-      botName: this.getEnv('TELEGRAM_BOT_USERNAME'),
-      adminId: Number(this.getEnv('TELEGRAM_BOT_ADMIN_ID')),
-      allowGroups: this.parseNumberArray(this.env.ALLOWED_USAGE_GROUPS),
+      MAX_API_CALL_ROUNDS: Number(this.env.MAX_API_CALL_ROUNDS) || DEFAULT_ENV.MAX_API_CALL_ROUNDS,
+      REQUEST_LIMIT_SECOND: Number(this.env.REQUEST_LIMIT_SECOND) || DEFAULT_ENV.REQUEST_LIMIT_SECOND,
+      CONTEXT_TTL_DAY: Number(this.env.CONTEXT_TTL_DAY) || DEFAULT_ENV.CONTEXT_TTL_DAY,
+      MAX_CONTEXT_LENGTH: Number(this.env.MAX_CONTEXT_LENGTH) || DEFAULT_ENV.MAX_CONTEXT_LENGTH,
     };
   }
 
-  /**
-   * 安全获取必须存在的环境变量（辅助方法，避免类型断言）
-   */
-  private getEnv(key: keyof Env): string {
-    // 前面 validateRequiredEnv 已经保证了这些值存在
-    return this.env[key] ?? '';
-  }
-
-  /**
-   * 解析逗号分隔的数字字符串数组
-   * @param val "123, 456"
-   */
-  private parseNumberArray(val: string | undefined): number[] {
-    if (!val || val.trim() === '') return [];
-    return val
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s !== '') // 过滤空字符串，防止 Number('') 变成 0
-      .map((s) => Number(s))
-      .filter((n) => !Number.isNaN(n)); // 过滤无效数字
-  }
-
-  private parseStringArray(val: string | undefined): string[] {
-    if (!val || val.trim().length === 0) return [];
-    return val
-      .split(',')
-      .map((k) => k.trim())
-      .filter((k) => k.length > 0);
-  }
-
-  // --- 以下为原有的验证逻辑，稍作保留和优化 ---
-
-  private parseListenHost(val: string | undefined): string {
-    const host = val?.trim() ?? this.DEFAULT_LISTEN_HOST;
-    if (isIP(host) === 0) {
-      throw new AppError(`环境变量 SERVER_LISTEN_HOST 无效："${host}" 不是有效的 IPv4 或 IPv6 地址`);
-    }
-    return host;
-  }
-
-  private parsePort(val: string | undefined): number {
-    if (!val || val.trim() === '') {
-      return this.DEFAULT_LISTEN_PORT;
-    }
-    if (!/^\d+$/.test(val)) {
-      throw new AppError(`环境变量 SERVER_LISTEN_PORT 无效："${val}" 不是纯数字`);
-    }
-    const n = Number.parseInt(val, 10);
-    if (n < 1 || n > 65535) {
-      throw new AppError(`环境变量 SERVER_LISTEN_PORT 超出范围：${n}，应在 1-65535 之间`);
-    }
-    return n;
-  }
-
-  private parseLoggerLevel(val: string | undefined): LogLevel {
-    const levelRaw = val?.trim().toLowerCase();
-    if (!levelRaw) {
-      return this.DEFAULT_LOG_LEVEL;
-    }
-    if (LogLevels.includes(levelRaw as LogLevel)) {
-      return levelRaw as LogLevel;
-    }
-    throw new AppError(`环境变量 SERVER_LOGGER_LEVEL 非法："${val}"。可选值为 ${LogLevels.join(', ')}`);
+  private getEnv(key: keyof RawEnv): string {
+    return this.env[key]!;
   }
 }
 
 const configLoader = new ConfigLoader();
-export const config = configLoader.load();
+export const CONFIG = configLoader.load();

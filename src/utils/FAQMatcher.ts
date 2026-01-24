@@ -1,9 +1,8 @@
-import { DATA_DIR } from '@/configs/data';
+import { DATA_DIR } from '@/configs/constant';
 import { logger } from '@/services';
 import type { FaqItem } from '@/types';
-import fs from 'node:fs';
-import path from 'node:path';
-import { readTextFile } from './helpers';
+import { join } from 'node:path';
+import { fetchFile, generateRawUrl } from './helpers';
 
 /**
  * 预编译后的 FAQ 条目结构
@@ -20,15 +19,11 @@ interface MatchResult {
   matches: string[];
 }
 
-const FAQ_DATA_PATH = path.join(DATA_DIR, 'faq-data.json');
+const FAQ_DATA_PATH = join(DATA_DIR, 'faq-data.json');
 
 class FAQMatcher {
   // 使用 Set 存储编译后的条目，虽然迭代速度与数组相当，但在动态添加/删除规则时具有 O(1) 优势
   private readonly compiledFaqs = new Set<CompiledFaqItem>();
-
-  constructor() {
-    this.initFaqData();
-  }
 
   /**
    * 在预编译的数据中寻找匹配项
@@ -70,25 +65,26 @@ class FAQMatcher {
     return null;
   }
 
-  public reload() {
+  public async reload() {
     logger.info('Reloading all FAQ data...');
     this.compiledFaqs.clear();
-    this.initFaqData();
+    await this.initFaqData();
   }
 
   /**
    * 初始化并预编译 FAQ 数据
    * @private
    */
-  private initFaqData() {
-    if (!fs.existsSync(FAQ_DATA_PATH)) {
-      logger.warn(`FAQ 数据文件不存在: ${FAQ_DATA_PATH}`);
-      return;
-    }
+  private async initFaqData() {
+    const url = generateRawUrl(FAQ_DATA_PATH);
 
     try {
-      const rawData = readTextFile(FAQ_DATA_PATH);
-      const faqData = JSON.parse(rawData) as FaqItem[];
+      const faqData = (await fetchFile(url, 'json', {
+        method: 'GET',
+        redirect: 'follow',
+      })) as unknown as FaqItem[];
+
+      // 遍历 FAQ 数据，预编译正则表达式
 
       for (const item of faqData) {
         // 构建编译后的对象

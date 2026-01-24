@@ -1,6 +1,7 @@
 import { BotMessages } from '@/configs';
-import { chatContext, config, logger, processQuestion } from '@/services';
+import { chatContext, logger, processQuestion } from '@/services';
 import { bot } from '@/services/apis';
+import { CONFIG } from '@/services/ConfigLoader';
 import type { ResponseContext } from '@/utils';
 import { handleMediaFiles, hasFile, MsgPTTL, rateLimiter, sendFormattedMessage } from '@/utils';
 import type { Content, GenerateContentResponse, Part } from '@google/genai';
@@ -12,8 +13,8 @@ import type { Message } from 'grammy/types';
  *              采用无状态单例模式，所有状态通过 Context 传递。
  */
 class MentionHandler {
-  private readonly botName = config.botName;
-  private readonly adminId = config.adminId;
+  private readonly botName = CONFIG.TELEGRAM_BOT_USERNAME;
+  private readonly ownerId = CONFIG.TELEGRAM_BOT_OWNER_ID;
   private readonly processingLocks = new Set<string>();
 
   // 处理消息组入口
@@ -81,7 +82,7 @@ class MentionHandler {
   private checkRateLimiting(ctx: ResponseContext): boolean {
     const checkResult = rateLimiter.check(ctx.chat.id);
 
-    if (checkResult.canProceed || ctx.user.id === this.adminId) return true;
+    if (checkResult.canProceed || ctx.user.id === this.ownerId) return true;
 
     logger.warn(`Rate limit exceeded for chat ${ctx.chat.id}. Retry after ${checkResult.retryAfterSeconds} seconds.`);
 
@@ -209,8 +210,7 @@ class MentionHandler {
   ): Promise<void> {
     await sendFormattedMessage(response.text ?? '', ctx);
 
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-non-null-asserted-optional-chain
-    completeContents.push(response.candidates?.[0]?.content!);
+    completeContents.push(response.candidates![0]!.content!);
 
     chatContext.update(ctx.chat.id, ctx.user.id, completeContents);
   }

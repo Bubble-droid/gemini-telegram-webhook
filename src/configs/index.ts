@@ -1,5 +1,3 @@
-// src/config/index.ts
-
 export * from './bot-commands';
 export * from './bot-messages';
 export * from './faq-data';

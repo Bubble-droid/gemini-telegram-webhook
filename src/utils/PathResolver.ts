@@ -1,3 +1,4 @@
+import { GITHUB_BASE_URL } from '@/configs/constant';
 import { logger } from '@/services';
 import type { Recordable } from '@/types';
 import { URL } from 'node:url';
@@ -16,12 +17,6 @@ interface ResolverConfig {
   docs: Recordable<ProjectConfig>;
   source: Recordable<ProjectConfig>;
 }
-
-// ----------------------------------------------------------------------
-// Constants & Configuration (常量与配置)
-// ----------------------------------------------------------------------
-
-const GITHUB_BASE = 'https://github.com';
 
 // 预定义通用的路径转换函数
 const Transforms = {
@@ -57,7 +52,7 @@ const Transforms = {
 const StandardDocPipeline = [Transforms.removeMdExtension, Transforms.removeIndex, Transforms.ensureTrailingSlash];
 
 // 核心配置表
-const CONFIG: ResolverConfig = {
+const RESOLVE_CONFIG: ResolverConfig = {
   docs: {
     'gui-for-cores': {
       baseUrl: 'https://gui-for-cores.github.io',
@@ -76,29 +71,29 @@ const CONFIG: ResolverConfig = {
       transforms: [Transforms.enSuffixToPrefix, ...StandardDocPipeline],
     },
     anytls: {
-      baseUrl: `${GITHUB_BASE}/anytls/anytls-go/blob/main`,
+      baseUrl: `${GITHUB_BASE_URL}/anytls/anytls-go/blob/main`,
       transforms: [Transforms.normalizeStart],
     },
   },
   source: {
     'gui-for-singbox': {
-      baseUrl: GITHUB_BASE,
+      baseUrl: GITHUB_BASE_URL,
       repoPrefix: '/GUI-for-Cores/GUI.for.SingBox/blob/main',
     },
     'gui-for-clash': {
-      baseUrl: GITHUB_BASE,
+      baseUrl: GITHUB_BASE_URL,
       repoPrefix: '/GUI-for-Cores/GUI.for.Clash/blob/main',
     },
     'plugin-hub': {
-      baseUrl: GITHUB_BASE,
+      baseUrl: GITHUB_BASE_URL,
       repoPrefix: '/GUI-for-Cores/Plugin-Hub/blob/main',
     },
     'sing-box': {
-      baseUrl: GITHUB_BASE,
+      baseUrl: GITHUB_BASE_URL,
       repoPrefix: '/SagerNet/sing-box/blob/dev-next',
     },
     mihomo: {
-      baseUrl: GITHUB_BASE,
+      baseUrl: GITHUB_BASE_URL,
       repoPrefix: '/MetaCubeX/mihomo/blob/Alpha',
     },
   },
@@ -107,7 +102,7 @@ const CONFIG: ResolverConfig = {
 const PATH_REGEX = /^(documents|sourcecode)\/([^/]+)(\/.*)?$/;
 
 const resolveDocs = (project: string, relativePath: string, fallback: string): string => {
-  const config = CONFIG.docs[project];
+  const config = RESOLVE_CONFIG.docs[project];
   if (!config) return fallback;
 
   // 应用转换管道 (Pipeline Pattern)
@@ -124,7 +119,7 @@ const resolveDocs = (project: string, relativePath: string, fallback: string): s
 };
 
 const resolveSource = (project: string, relativePath: string, fallback: string): string => {
-  const config = CONFIG.source[project];
+  const config = RESOLVE_CONFIG.source[project];
   if (!config) return fallback;
 
   try {
@@ -143,7 +138,7 @@ const resolveSource = (project: string, relativePath: string, fallback: string):
 
 export const resolvePath = (rawPath: string): string => {
   // 1. 使用正则解析路径结构
-  const match = PATH_REGEX.exec(rawPath);
+  const match = PATH_REGEX.exec(rawPath.replace(/^\/data/, ''));
 
   if (!match) {
     return rawPath;

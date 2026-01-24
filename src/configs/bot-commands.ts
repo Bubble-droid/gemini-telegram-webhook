@@ -1,7 +1,8 @@
 // src/configs/bot_commands.ts
 
 import { BotMessages, Keyboards } from '@/configs';
-import { chatContext, config } from '@/services';
+import { chatContext } from '@/services';
+import { CONFIG } from '@/services/ConfigLoader';
 import type { MaybePromise } from '@/types';
 import { faqMatcher, MsgPTTL, promptStore } from '@/utils';
 import { toHtml } from '@/utils/markdown';
@@ -18,7 +19,7 @@ interface BotCommandAction extends BotCommand {
 }
 
 const canPerformAction = (ctx: ResponseContext): boolean => {
-  if (ctx.user.id === config.adminId) return true;
+  if (ctx.user.id === CONFIG.TELEGRAM_BOT_OWNER_ID) return true;
   void ctx.reply(BotMessages.unauthorized, { deleteAfterMs: MsgPTTL['3m'] });
   return false;
 };
@@ -67,7 +68,7 @@ export const BotCommands = [
     description: '重载所有系统指令',
     action: async ({ ctx }) => {
       if (!canPerformAction(ctx)) return;
-      promptStore.reload();
+      await promptStore.reload();
       await ctx.reply('All prompts reloaded', {
         deleteAfterMs: MsgPTTL['3m'],
       });
@@ -78,7 +79,7 @@ export const BotCommands = [
     description: '重载所有 FAQ 数据',
     action: async ({ ctx }) => {
       if (!canPerformAction(ctx)) return;
-      faqMatcher.reload();
+      await faqMatcher.reload();
       await ctx.reply('All FAQ reloaded', {
         deleteAfterMs: MsgPTTL['3m'],
       });

@@ -1,10 +1,10 @@
-// src/utils/rate_limiter.ts
-
-import { config, logger } from '@/services'; // 假设 logger 是 Log 的实例或别名
+import { logger } from '@/services'; // 假设 logger 是 Log 的实例或别名
+import { CONFIG } from '@/services/ConfigLoader';
+import { MIN } from './helpers';
 
 const DEFAULT_RATE_LIMIT = 20 * 1000;
 // 清理周期：每 5 分钟清理一次过期数据
-const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+const CLEANUP_INTERVAL_MS = 5 * MIN;
 
 interface NotRateLimit {
   canProceed: true;
@@ -18,7 +18,7 @@ interface HasRateLimiter {
 type RateLimiterCheckResult = NotRateLimit | HasRateLimiter;
 
 class RateLimiter {
-  private readonly rateLimit = config.requestRateLimit || DEFAULT_RATE_LIMIT;
+  private readonly rateLimit = CONFIG.REQUEST_LIMIT_SECOND * 1000 || DEFAULT_RATE_LIMIT;
   // 直接使用 number 作为 key，减少字符串 GC 压力
   private timestampMap = new Map<number, number>();
 

@@ -1,12 +1,12 @@
-// src/configs/tool_executors.ts
-
 import { logger } from '@/services';
-import { chatAgent, MCPClient, performTask } from '@/services/agents';
-import { geminiApi } from '@/services/apis';
+import { geminiClient } from '@/services/apis';
 import type { FileStoreName, GeminiApiOptions, ToolExecutorsMap } from '@/types';
 import { addCitations, promptStore } from '@/utils';
 import type { Content, GenerateContentConfig, Tool } from '@google/genai';
 import { ThinkingLevel } from '@google/genai';
+import { chatAgent } from './ChatAgent';
+import { MCPClient } from './MCPClient';
+import { performTask } from './MCPWorker';
 
 const githubClient = new MCPClient('github-toolset');
 
@@ -16,7 +16,7 @@ export const ToolExecutors: ToolExecutorsMap = {
 
     const contents: Content[] = [{ role: 'user', parts: [{ text: args.prompt }] }];
 
-    const fileSearchStores = await geminiApi.listFileSearchStores();
+    const fileSearchStores = await geminiClient.listFileSearchStores();
 
     const names = fileSearchStores.flatMap((s) => {
       return args.fileStores.includes(s.displayName as FileStoreName) && s.name ? [s.name] : [];

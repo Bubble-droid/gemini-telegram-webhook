@@ -1,7 +1,6 @@
-// src/utils/error_notification.ts
-
-import { config, logger } from '@/services';
+import { logger } from '@/services';
 import { bot } from '@/services/apis';
+import { CONFIG } from '@/services/ConfigLoader';
 import { formatTime, shortenString } from '@/utils';
 import { AppError } from '@/utils/errors';
 import { Escaper } from './markdown';
@@ -12,10 +11,10 @@ import { Escaper } from './markdown';
  * @param context - 错误发生的上下文描述 (例如函数名)。
  */
 export const sendErrorNotification = (error: unknown, context = 'N/A'): void => {
-  const { adminId } = config;
+  const { TELEGRAM_BOT_OWNER_ID: ownerId } = CONFIG;
 
   // 1. 如果未配置管理员 ID，记录警告并直接返回
-  if (!adminId) {
+  if (!ownerId) {
     logger.warn('Admin ID is not configured, skipping error notification.', {
       context,
     });
@@ -47,7 +46,7 @@ export const sendErrorNotification = (error: unknown, context = 'N/A'): void => 
       `🛠 <b>堆栈追踪:</b>\n<pre><code class="language-javascript">${safeStack}</code></pre>`;
 
     // 5. 发送消息
-    void bot.sendMessage(adminId, htmlMessage, {
+    void bot.sendMessage(ownerId, htmlMessage, {
       parse_mode: 'HTML',
     });
 

@@ -1,7 +1,7 @@
 import { BotMessages } from '@/configs';
 import { logger } from '@/services';
-import { geminiApi } from '@/services/apis';
-import { config } from '@/services/ConfigLoader';
+import { CONFIG } from '@/services/ConfigLoader';
+import { geminiClient } from '@/services/apis';
 import type { ChatAgentOptions } from '@/types';
 import { sleep } from '@/utils';
 import { AppError } from '@/utils/errors';
@@ -11,12 +11,12 @@ export const chatAgent = async (
   contents: Content[],
   options: ChatAgentOptions = {},
 ): Promise<GenerateContentResponse> => {
-  const { maxRounds = config.maxApiCallRounds, geminiApiOptions, toolExecutor, onStatusUpdate } = options;
+  const { maxRounds = CONFIG.MAX_API_CALL_ROUNDS, geminiApiOptions, toolExecutor, onStatusUpdate } = options;
   let round = 0;
   while (round < maxRounds) {
     logger.debug(`[ChatAgent] Round ${round + 1} started.`);
 
-    const response = await geminiApi.generate(contents, geminiApiOptions);
+    const response = await geminiClient.generate(contents, geminiApiOptions);
 
     if (response.candidates?.[0]?.content) contents.push(response.candidates[0].content);
 
@@ -78,7 +78,7 @@ export const chatAgent = async (
 
       contents.push({ role: 'user', parts: toolResults });
 
-      await sleep(config.requestRateLimit);
+      await sleep(CONFIG.REQUEST_LIMIT_SECOND * 1000);
 
       void onStatusUpdate?.(BotMessages.thinking);
 

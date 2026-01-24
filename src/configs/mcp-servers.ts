@@ -5,7 +5,7 @@ export const mcpServers = {
     type: 'http',
     url: 'https://api.githubcopilot.com/mcp/x/all/readonly',
     headers: {
-      authorization: 'Bearer ${githubToken}',
+      authorization: 'Bearer ${GITHUB_ACCESS_TOKEN}',
     },
   },
 } as const satisfies McpServer;

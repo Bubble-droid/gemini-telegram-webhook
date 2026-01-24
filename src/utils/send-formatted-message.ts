@@ -12,7 +12,7 @@ import { MsgPTTL } from './helpers';
 const sendTextChunks = async (textChunks: string[], ctx: ResponseContext, mode?: Extract<ParseMode, 'HTML'>) => {
   const italicOpenTag = mode === 'HTML' ? '<i>' : '';
   const italicCloseTag = mode === 'HTML' ? '</i>' : '';
-  const warningText = `\n\n⚠️ ${italicOpenTag}本 AI 回答仅供参考，可能存在不准确之处，请自行判断。${italicCloseTag}`;
+  const warningText = `\n\n⚠️ ${italicOpenTag}AI 的回答仅供参考，可能存在不准确之处，请自行判断。${italicCloseTag}`;
 
   const sentMessageIds: number[] = [];
 

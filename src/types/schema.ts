@@ -1,5 +1,6 @@
 import type { Type } from '@google/genai';
-import type { Evaluate, Recordable } from './common';
+import type { Recordable } from './common';
+import type { Evaluate } from './utils';
 
 export type JSONSchemaType = 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array' | 'null';
 export type JSONSchema =

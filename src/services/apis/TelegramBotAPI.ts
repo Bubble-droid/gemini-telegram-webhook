@@ -1,4 +1,6 @@
-import { config, logger } from '@/services';
+import { TELEGRAM_API_BASE_URL } from '@/configs/constant';
+import { logger } from '@/services';
+import { CONFIG } from '@/services/ConfigLoader';
 import type {
   ApiErrorResult,
   ApiMethod,
@@ -41,7 +43,6 @@ const isMessageIdProperty = (data: unknown): data is MessageIdProperty => {
 };
 
 export class TelegramBotAPI {
-  private readonly baseUrl = 'https://api.telegram.org';
   private readonly token: string;
 
   constructor(token: string) {
@@ -292,7 +293,7 @@ export class TelegramBotAPI {
   }
 
   private generateApiUrl(method: ApiMethod): string {
-    return `${this.baseUrl}/bot${this.token}/${method}`;
+    return `${TELEGRAM_API_BASE_URL}/bot${this.token}/${method}`;
   }
 
   private request(method: ApiMethod, params: Recordable | FormData): Promise<Response> {
@@ -429,4 +430,4 @@ export class TelegramBotAPI {
   }
 }
 
-export const bot = new TelegramBotAPI(config.botToken);
+export const bot = new TelegramBotAPI(CONFIG.TELEGRAM_BOT_TOKEN);

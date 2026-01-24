@@ -1,13 +1,14 @@
-import { config, logger } from '@/services';
+import { logger } from '@/services';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { registerProxyRoute, registerWebhookRoute } from './routes';
+import { CONFIG } from './services/ConfigLoader';
 import { MIN } from './utils';
 
 /**
  * @description 构建 Fastify 应用程序实例
  */
 export const buildApp = (): FastifyInstance => {
-  const { logLevel } = config;
+  const { SERVER_LOG_LEVEL: logLevel, ENABLE_KEY_ROTATION } = CONFIG;
 
   logger.init({ logLevel });
 
@@ -52,7 +53,7 @@ export const buildApp = (): FastifyInstance => {
 
   registerWebhookRoute(app);
 
-  if (config.enableKeyRotation) {
+  if (ENABLE_KEY_ROTATION) {
     registerProxyRoute(app);
   }
 

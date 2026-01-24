@@ -1,15 +1,16 @@
-import { config, logger } from '@/services';
+import { logger } from '@/services';
 import { AppError } from './errors';
+import { getStrHeadEnd } from './helpers';
 
 export class KeyRotator {
   // 存储解析后的 API 密钥列表
   private readonly keys: string[];
+  private currentKey: string | undefined;
 
-  // 当前使用的密钥索引指针
   private currentIndex = 0;
 
-  constructor() {
-    this.keys = config.geminiApiKeys;
+  constructor(keys: string[]) {
+    this.keys = keys;
     logger.info(`KeyRotator 初始化完成，共加载 ${this.keys.length} 个密钥。`);
   }
 
@@ -24,14 +25,14 @@ export class KeyRotator {
    */
   public nextKey(): string {
     // 获取当前指针指向的密钥
-    const currentKey = this.keys[this.currentIndex];
+    this.currentKey = this.keys[this.currentIndex];
 
-    if (!currentKey) {
+    if (!this.currentKey) {
       throw new AppError('No API keys available.');
     }
 
     // 生成密钥 ID (取前 5 位用于日志脱敏展示)
-    const keyId = `${currentKey.substring(0, 5)}...${currentKey.substring(currentKey.length - 5)}`;
+    const keyId = getStrHeadEnd(this.currentKey, 5);
 
     // 记录日志 (生产环境建议设为 debug 级别以减少噪音)
     logger.debug(`使用密钥: ${keyId} (Index: ${this.currentIndex})`);
@@ -40,7 +41,7 @@ export class KeyRotator {
     // (0 + 1) % 3 = 1 -> (1 + 1) % 3 = 2 -> (2 + 1) % 3 = 0
     this.currentIndex = (this.currentIndex + 1) % this.keys.length;
 
-    return currentKey;
+    return this.currentKey;
   }
 
   /**

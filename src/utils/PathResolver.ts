@@ -1,15 +1,16 @@
-import { GITHUB_BASE_URL } from '@/configs/constant';
+import { DATA_DIR, GITHUB_BASE_URL } from '@/configs/constant';
 import { logger } from '@/services';
 import type { Recordable } from '@/types';
+import { join } from 'node:path';
+import { env } from 'node:process';
 import { URL } from 'node:url';
+import { fetchFile, generateRawUrl, invertObject, readTextFile } from './helpers';
 
 type PathTransformFn = (path: string) => string;
 
 interface ProjectConfig {
   baseUrl: string;
-  // 用于 sourcecode 类型的可选前缀 (如 /SagerNet/sing-box/blob/dev-next)
   repoPrefix?: string;
-  // 自定义路径转换管道
   transforms?: PathTransformFn[];
 }
 
@@ -18,102 +19,161 @@ interface ResolverConfig {
   source: Recordable<ProjectConfig>;
 }
 
-// 预定义通用的路径转换函数
+const PATH_REGEX = /(documents|sourcecode)\/([^/]+)(\/.*)?$/;
+
 const Transforms = {
+  // 1. Normalize: Remove leading slashes
+  normalizeStart: (p: string): string => p.replace(/^\/+/, ''),
+
+  // 2. Remove .md extension (Must happen BEFORE locale processing)
   removeMdExtension: (p: string): string => p.replace(/\.md$/, ''),
 
-  removeIndex: (p: string): string => p.replace(/index$/, ''),
-
-  ensureTrailingSlash: (p: string): string => (p.endsWith('/') || p === '' ? p : `${p}/`),
-
-  removeLeadingEn: (p: string): string => p.replace(/^\/?en\//, ''), // 处理 gui-for-cores 的 en 前缀
-
-  // 处理 sing-box/hysteria2 的 .zh 后缀 -> /zh 前缀
+  // 3. Locale: Convert .zh suffix to zh/ prefix
+  // Input: "path/to/file.zh" (after .md removal) -> Output: "zh/path/to/file"
   zhSuffixToPrefix: (p: string): string => {
     if (p.endsWith('.zh')) {
-      return `/zh/${p.replace(/\.zh$/, '')}`;
+      return `zh/${p.slice(0, -3)}`;
     }
     return p;
   },
 
-  // 处理 mihomo 的 .en 后缀 -> /en 前缀
+  // 4. Locale: Convert .en suffix to en/ prefix
   enSuffixToPrefix: (p: string): string => {
     if (p.endsWith('.en')) {
-      return `/en/${p.replace(/\.en$/, '')}`;
+      return `en/${p.slice(0, -3)}`;
     }
     return p;
   },
 
-  // 标准化路径开头（移除开头的 /）
-  normalizeStart: (p: string): string => p.replace(/^\/+/, ''),
+  // 5. Locale: Remove leading "en/" (legacy support)
+  removeLeadingEn: (p: string): string => p.replace(/^en\//, ''),
+
+  // 6. Clean Index: Remove 'index' from end of path
+  // Handles: "index", "path/index", "zh/index" -> "", "path/", "zh/"
+  removeIndex: (p: string): string => p.replace(/(^|\/)index$/, '$1'),
+
+  // 7. Finalize: Ensure trailing slash for directory-style URLs
+  ensureTrailingSlash: (p: string): string => {
+    if (p === '') return ''; // Empty path relies on safeJoinUrl to add root slash
+    return p.endsWith('/') ? p : `${p}/`;
+  },
 };
 
-// 组合常用的文档处理管道
-const StandardDocPipeline = [Transforms.removeMdExtension, Transforms.removeIndex, Transforms.ensureTrailingSlash];
+const RawFilePipeline = [Transforms.normalizeStart];
 
-// 核心配置表
 const RESOLVE_CONFIG: ResolverConfig = {
   docs: {
     'gui-for-cores': {
       baseUrl: 'https://gui-for-cores.github.io',
-      transforms: [Transforms.removeLeadingEn, ...StandardDocPipeline],
+      transforms: [
+        Transforms.normalizeStart,
+        Transforms.removeMdExtension,
+        Transforms.removeLeadingEn, // Special case
+        Transforms.removeIndex,
+        Transforms.ensureTrailingSlash,
+      ],
     },
     'sing-box': {
       baseUrl: 'https://sing-box.sagernet.org',
-      transforms: [Transforms.zhSuffixToPrefix, ...StandardDocPipeline],
+      transforms: [
+        Transforms.normalizeStart,
+        Transforms.removeMdExtension,
+        Transforms.zhSuffixToPrefix, // .zh -> zh/
+        Transforms.removeIndex,
+        Transforms.ensureTrailingSlash,
+      ],
     },
     hysteria2: {
       baseUrl: 'https://v2.hysteria.network',
-      transforms: [Transforms.zhSuffixToPrefix, ...StandardDocPipeline],
+      transforms: [
+        Transforms.normalizeStart,
+        Transforms.removeMdExtension,
+        Transforms.zhSuffixToPrefix, // .zh -> zh/
+        Transforms.removeIndex,
+        Transforms.ensureTrailingSlash,
+      ],
     },
     mihomo: {
       baseUrl: 'https://wiki.metacubex.one',
-      transforms: [Transforms.enSuffixToPrefix, ...StandardDocPipeline],
+      transforms: [
+        Transforms.normalizeStart,
+        Transforms.removeMdExtension,
+        Transforms.enSuffixToPrefix, // .en -> en/
+        Transforms.removeIndex,
+        Transforms.ensureTrailingSlash,
+      ],
     },
     anytls: {
       baseUrl: `${GITHUB_BASE_URL}/anytls/anytls-go/blob/main`,
-      transforms: [Transforms.normalizeStart],
+      // anytls points to source blobs, so we MUST keep extensions
+      transforms: RawFilePipeline,
     },
   },
   source: {
     'gui-for-singbox': {
       baseUrl: GITHUB_BASE_URL,
-      repoPrefix: '/GUI-for-Cores/GUI.for.SingBox/blob/main',
+      repoPrefix: 'GUI-for-Cores/GUI.for.SingBox/blob/main',
     },
     'gui-for-clash': {
       baseUrl: GITHUB_BASE_URL,
-      repoPrefix: '/GUI-for-Cores/GUI.for.Clash/blob/main',
+      repoPrefix: 'GUI-for-Cores/GUI.for.Clash/blob/main',
     },
     'plugin-hub': {
       baseUrl: GITHUB_BASE_URL,
-      repoPrefix: '/GUI-for-Cores/Plugin-Hub/blob/main',
+      repoPrefix: 'GUI-for-Cores/Plugin-Hub/blob/main',
     },
     'sing-box': {
       baseUrl: GITHUB_BASE_URL,
-      repoPrefix: '/SagerNet/sing-box/blob/dev-next',
+      repoPrefix: 'SagerNet/sing-box/blob/dev-next',
     },
     mihomo: {
       baseUrl: GITHUB_BASE_URL,
-      repoPrefix: '/MetaCubeX/mihomo/blob/Alpha',
+      repoPrefix: 'MetaCubeX/mihomo/blob/Alpha',
     },
   },
 };
 
-const PATH_REGEX = /^(documents|sourcecode)\/([^/]+)(\/.*)?$/;
+const FILE_ID_PATH = join(DATA_DIR, 'file-id-map.json');
+
+const loadFileIdMap = async (): Promise<Map<string, string>> => {
+  let fileIds: Recordable<string> = {};
+  if (env['NODE_ENV'] === 'development') {
+    const data = await readTextFile(FILE_ID_PATH);
+    fileIds = JSON.parse(data) as unknown as Recordable<string>;
+  } else {
+    const url = generateRawUrl(FILE_ID_PATH);
+    fileIds = (await fetchFile(url, 'json', {
+      method: 'GET',
+      redirect: 'follow',
+    })) as unknown as Recordable<string>;
+  }
+  const idToFile = invertObject(fileIds);
+  return new Map(Object.entries(idToFile));
+};
+
+const FILE_ID_MAP = await loadFileIdMap();
+
+const safeJoinUrl = (baseUrl: string, relativePath: string): string => {
+  const base = new URL(baseUrl);
+  const cleanRelative = relativePath.replace(/^\/+/, '');
+
+  const separator = base.pathname.endsWith('/') ? '' : '/';
+
+  base.pathname = `${base.pathname}${separator}${cleanRelative}`.replace(/\/\//g, '/');
+  return base.toString();
+};
 
 const resolveDocs = (project: string, relativePath: string, fallback: string): string => {
   const config = RESOLVE_CONFIG.docs[project];
   if (!config) return fallback;
 
-  // 应用转换管道 (Pipeline Pattern)
+  // Execute Pipeline
   const finalPath = (config.transforms ?? []).reduce((path, transform) => transform(path), relativePath);
 
   try {
-    // 某些 docUrl 已经是完整路径（如 anytls），new URL 会正确处理
-    const url = new URL(finalPath, config.baseUrl);
-    return url.toString();
+    return safeJoinUrl(config.baseUrl, finalPath);
   } catch (err) {
-    logger.warn(`Invalid URL construction: ${config.baseUrl} + ${finalPath}`, { err });
+    logger.warn(`Invalid URL in resolveDocs: ${config.baseUrl} + ${finalPath}`, { err });
     return fallback;
   }
 };
@@ -123,37 +183,38 @@ const resolveSource = (project: string, relativePath: string, fallback: string):
   if (!config) return fallback;
 
   try {
-    // 组合完整路径部分
-    const fullPath = `${config.repoPrefix ?? ''}/${relativePath}`;
-    // 清理可能出现的重复斜杠 (// -> /)，但保留协议部分的 ://
-    const cleanPath = fullPath.replace(/([^:]\/)\/+/g, '$1');
+    const prefix = (config.repoPrefix ?? '').replace(/^\/+|\/+$/g, '');
+    const cleanRelative = relativePath.replace(/^\/+/, '');
+    const combinedPath = prefix ? `${prefix}/${cleanRelative}` : cleanRelative;
 
-    const url = new URL(cleanPath, config.baseUrl);
-    return url.toString();
+    return safeJoinUrl(config.baseUrl, combinedPath);
   } catch (err) {
-    logger.warn(`Invalid URL construction: ${config.baseUrl} + ${config.repoPrefix} + ${relativePath}`, { err });
+    logger.warn(`Invalid URL in resolveSource`, { err });
     return fallback;
   }
 };
 
-export const resolvePath = (rawPath: string): string => {
-  // 1. 使用正则解析路径结构
-  const match = PATH_REGEX.exec(rawPath.replace(/^\/data\//, ''));
+export const resolvePath = (rawId: string): string => {
+  const cleanId = rawId.split('-0-0-')[1];
+  if (!cleanId) return 'N/A';
+  logger.debug(`Resolving path for ID: ${cleanId}`);
 
-  if (!match) {
-    return rawPath;
-  }
+  const rawPath = FILE_ID_MAP.get(cleanId);
+  if (!rawPath) return 'N/A';
+  logger.debug(`Found path: ${rawPath}`);
 
-  const [, category, project = '', restPath] = match;
-  // restPath 可能为 undefined 或以 / 开头，标准化为无前导 /
+  const cleanPath = rawPath.replace(/^\/data\//, '').replace(/^\/+/, '');
+  const match = PATH_REGEX.exec(cleanPath);
+
+  if (!match) return rawPath;
+
+  const [, category, project, restPath] = match;
   const rawRelativePath = restPath ? restPath.substring(1) : '';
 
-  // 2. 分发处理逻辑
-
   if (category === 'documents') {
-    return resolveDocs(project, rawRelativePath, rawPath);
+    return resolveDocs(project!, rawRelativePath, rawPath);
   } else if (category === 'sourcecode') {
-    return resolveSource(project, rawRelativePath, rawPath);
+    return resolveSource(project!, rawRelativePath, rawPath);
   }
 
   return rawPath;

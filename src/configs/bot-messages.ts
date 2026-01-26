@@ -1,6 +1,7 @@
 import { CONFIG } from '@/services/ConfigLoader';
 import type { Recordable } from '@/types';
 import type { InlineKeyboardButton, InlineKeyboardMarkup } from 'grammy/types';
+import { CHITCHAT_MODELS, GENERATE_MODELS } from './constant';
 
 /**
  * 集中管理机器人的回复文本
@@ -8,9 +9,10 @@ import type { InlineKeyboardButton, InlineKeyboardMarkup } from 'grammy/types';
 export const BotMessages = {
   // 支持动态替换的 Start 文案
   getStartText: (): string => {
-    const { GEMINI_MODEL_NAME: modelName, TELEGRAM_BOT_USERNAME: botName } = CONFIG;
+    const { TELEGRAM_BOT_USERNAME: botName } = CONFIG;
     return `
-🤖 当前使用模型：\`${modelName}\`
+💡 思考模型：${GENERATE_MODELS.map((m) => `\`${m}\``).join(', ')}
+🗣️ 闲谈模型：${CHITCHAT_MODELS.map((m) => `\`${m}\``).join(', ')}
 
 ✨ 你好！你可以通过以下方式与我互动，我能理解上下文并深度解析多媒体内容：
 

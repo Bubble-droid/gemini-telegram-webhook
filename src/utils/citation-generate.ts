@@ -89,7 +89,7 @@ export const addCitations = (response: GenerateContentResponse): string => {
 
         if (url) {
           // 格式化为 Markdown: [索引](链接或标题)
-          return `[[参${chunkIndex + 1}]](${url})`;
+          return `[参${chunkIndex + 1}](${url})`;
         }
         return null;
       })

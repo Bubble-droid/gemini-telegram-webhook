@@ -1,13 +1,16 @@
 import { logger } from '@/services';
-import { KeyRotator } from '@/utils';
+import { deepClone, generateStrMask, ListRotator } from '@/utils';
+import { GoogleGenAI, type GenerateContentConfig } from '@google/genai';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { CONFIG } from './ConfigLoader';
+
+type GeminiApiRequestBody = Pick<GenerateContentConfig, 'tools'>;
 
 const ALLOWED_IPS = new Set(['127.0.0.1', '::1', 'localhost']);
 const HOP_TO_HOP_HEADERS = new Set(['host', 'connection', 'content-length', 'transfer-encoding', 'content-encoding']);
 const EXCLUDED_HEADERS = new Set(['content-encoding', 'content-length', 'transfer-encoding']);
 
-const keyRotator = new KeyRotator(CONFIG.GEMINI_API_KEYS);
+const keyRotator = new ListRotator(CONFIG.GEMINI_API_KEYS);
 
 const isLocalRequest = (ip: string): boolean => {
   return ALLOWED_IPS.has(ip);
@@ -29,6 +32,31 @@ const normalizeHeaders = (incomingHeaders: FastifyRequest['headers'], rotatedKey
   return headers;
 };
 
+const refreshFileSearchStoreNames = async <T extends GeminiApiRequestBody>(currentKey: string, body: T): Promise<T> => {
+  const copyBody = deepClone(body);
+  if (!copyBody.tools?.some((t) => 'fileSearch' in t)) return copyBody;
+
+  const client = new GoogleGenAI({ apiKey: currentKey });
+  const stores = await client.fileSearchStores.list({ config: { pageSize: 20 } });
+
+  copyBody.tools = copyBody.tools.map((tool) => {
+    if ('fileSearch' in tool) {
+      const displayNames = tool.fileSearch.fileSearchStoreNames;
+      return {
+        fileSearch: {
+          ...tool.fileSearch,
+          fileSearchStoreNames: stores.page.flatMap((s) => {
+            return displayNames?.includes(s.displayName!) && s.name ? [s.name] : [];
+          }),
+        },
+      };
+    }
+    return tool;
+  });
+
+  return copyBody;
+};
+
 export const handleProxyRequest = async (req: FastifyRequest, rep: FastifyReply): Promise<void> => {
   try {
     if (!isLocalRequest(req.ip)) {
@@ -41,21 +69,24 @@ export const handleProxyRequest = async (req: FastifyRequest, rep: FastifyReply)
     const pathWithoutPrefix = originalPath.replace(/^\/gemini/, '');
     const targetUrl = new URL(pathWithoutPrefix, CONFIG.GEMINI_API_BASE_URL);
 
-    const rotatedKey = keyRotator.nextKey();
+    const rotatedKey = keyRotator.next();
     const headers = normalizeHeaders(req.headers, rotatedKey);
+
+    const body = req.body;
+    const refreshedBody = body ? await refreshFileSearchStoreNames(rotatedKey, body) : null;
 
     logger.info(`[Proxy] Forwarding to Google`, {
       path: targetUrl.pathname,
-      keyMask: `${rotatedKey.slice(0, 5)}***${rotatedKey.slice(-5)}`,
+      keyMask: generateStrMask(rotatedKey, 5),
     });
-    logger.trace(`Body Forwarding:`, { body: req.body });
+    logger.trace(`Body Forwarding:`, { body });
 
     const upstreamResponse = await fetch(targetUrl.toString(), {
       method: req.method,
       headers,
-      ...(req.body != null && {
+      ...(refreshedBody && {
         duplex: 'half',
-        body: JSON.stringify(req.body),
+        body: JSON.stringify(refreshedBody),
       }),
     });
 

@@ -1,6 +1,6 @@
+import { FILE_SEARCH_MODEL } from '@/configs/constant';
 import { logger } from '@/services';
-import { geminiClient } from '@/services/apis';
-import type { FileStoreName, GeminiApiOptions, ToolExecutorsMap } from '@/types';
+import type { GeminiApiOptions, ToolExecutorsMap } from '@/types';
 import { addCitations, promptStore } from '@/utils';
 import type { Content, GenerateContentConfig, Tool } from '@google/genai';
 import { ThinkingLevel } from '@google/genai';
@@ -12,29 +12,25 @@ const githubClient = new MCPClient('github-toolset');
 
 export const ToolExecutors: ToolExecutorsMap = {
   use_file_search: async (args, { onStatusUpdate } = {}) => {
+    const { prompt, fileStores } = args;
+    if (!fileStores.length) {
+      logger.warn(`No file stores provided.`);
+      return { response: { error: 'No file stores provided.' } };
+    }
+
     const systemPrompt = promptStore.get('file-search');
 
-    const contents: Content[] = [{ role: 'user', parts: [{ text: args.prompt }] }];
-
-    const fileSearchStores = await geminiClient.listFileSearchStores();
-
-    const names = fileSearchStores.flatMap((s) => {
-      return args.fileStores.includes(s.displayName as FileStoreName) && s.name ? [s.name] : [];
-    });
-
-    if (names.length !== args.fileStores.length) {
-      logger.warn(`No found file search stores.`);
-      return { response: { error: 'No found file search stores. (Missing some stores or not creation)' } };
-    }
+    const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
 
     const config: GenerateContentConfig = {
       temperature: 1.0,
       thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
       systemInstruction: [{ text: systemPrompt }],
-      tools: [{ fileSearch: { fileSearchStoreNames: names } }],
+      tools: [{ fileSearch: { fileSearchStoreNames: fileStores } }],
     };
 
     const geminiApiOptions: GeminiApiOptions = {
+      genModel: FILE_SEARCH_MODEL,
       genConfig: config,
       ...(onStatusUpdate && { onStatusUpdate }),
     };
@@ -58,18 +54,24 @@ export const ToolExecutors: ToolExecutorsMap = {
     return { response: result };
   },
 
-  'use_built-in_tools': async (args, { onStatusUpdate } = {}) => {
-    const systemPrompt = promptStore.get('built-in-tools');
+  use_builtin_tools: async (args, { onStatusUpdate } = {}) => {
+    const { prompt, tools } = args;
+    if (!tools.length) {
+      logger.warn(`No tools provided.`);
+      return { response: { error: 'No tools provided.' } };
+    }
 
-    const contents: Content[] = [{ role: 'user', parts: [{ text: args.prompt }] }];
+    const systemPrompt = promptStore.get('builtin-tools');
 
-    const tools: Tool[] = args.tools.map((t) => ({ [t]: {} }));
+    const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
+
+    const toolSchemas: Tool[] = tools.map((t) => Object.fromEntries([[t, {}]]));
 
     const config: GenerateContentConfig = {
       temperature: 1.0,
       thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
       systemInstruction: [{ text: systemPrompt }],
-      tools,
+      tools: toolSchemas,
     };
 
     const geminiApiOptions: GeminiApiOptions = {

@@ -23,7 +23,6 @@ export interface RawEnv {
   GEMINI_API_BASE_URL?: string;
   LOCAL_PROXY_BASE_URL?: string;
 
-  GEMINI_MODEL_NAME?: string;
   MODEL_CONFIG_TEMPERATURE?: number;
 
   MAX_API_CALL_ROUNDS?: number;

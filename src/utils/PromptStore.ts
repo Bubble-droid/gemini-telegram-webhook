@@ -4,9 +4,10 @@ import { DATA_DIR } from '@/configs/constant';
 import { logger } from '@/services';
 import type { Recordable } from '@/types';
 import { join } from 'node:path';
-import { fetchFile, generateRawUrl } from './helpers';
+import { env } from 'node:process';
+import { fetchFile, generateRawUrl, readTextFile } from './helpers';
 
-const PROMPT_KEYS = ['assistant', 'file-search', 'github-toolset', 'built-in-tools', 'chit-chat'] as const;
+const PROMPT_KEYS = ['assistant', 'file-search', 'github-toolset', 'builtin-tools', 'chitchat'] as const;
 
 type PromptKey = (typeof PROMPT_KEYS)[number];
 
@@ -66,14 +67,18 @@ class PromptStore {
    */
   private async loadAllPrompts() {
     for (const key of PROMPT_KEYS) {
+      const filePath = join(PROMPT_DIR, `${key}.md`);
       try {
-        const filePath = join(PROMPT_DIR, `${key}.md`);
-        const url = generateRawUrl(filePath);
-
-        const content = await fetchFile(url, 'text', {
-          method: 'GET',
-          redirect: 'follow',
-        });
+        let content = '';
+        if (env['NODE_ENV'] === 'development') {
+          content = await readTextFile(filePath);
+        } else {
+          const url = generateRawUrl(filePath);
+          content = await fetchFile(url, 'text', {
+            method: 'GET',
+            redirect: 'follow',
+          });
+        }
 
         this.prompts.set(key, content.trim());
         logger.info(`Loaded prompt: ${key} (${content.length} chars)`);

@@ -14,6 +14,10 @@ Your data overrides static documentation.
 <workflow>
 **Step 1: Parse & Plan**
 - Identify the target: `SagerNet/sing-box` (Core), `GUI.for.SingBox` (Client), or `Plugin-Hub`.
+- **Target Exclusion Check (Issues Disabled)**:
+  - **Blacklist**: `GUI-for-Cores/GUI.for.SingBox` AND `GUI-for-Cores/GUI.for.Clash`.
+  - **Rule**: You MUST NOT execute `search_issues` on these targets. (They will return invalid/empty results).
+  - **Correction**: If target is in Blacklist, force switch to `search_code` OR change target to Core repos (`sing-box` / `mihomo`).
 - Determine type: `Issue` (Bug/Feat) or `Code` (Logic verification).
 
 **Step 2: Execution Strategy (Search -> Read Loop)**

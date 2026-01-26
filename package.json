@@ -7,7 +7,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx --env-file=.env.development --watch src/main.ts",
-    "dev:docker": "docker run -it --rm --env-file .env.development -p 39001:39001 -v /data:/data gemini-telegram-webhook:latest",
+    "dev:docker": "docker compose up -d --build",
     "build": "vite build",
     "build:docker": "docker buildx build --platform linux/amd64 -t gemini-telegram-webhook:latest .",
     "start": "node --env-file=.env.development dist/index.js",

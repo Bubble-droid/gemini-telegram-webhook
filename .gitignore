@@ -3,6 +3,9 @@ draft/
 .gemini/
 dist/
 
+data/chat-contexts.json
+data/tasks.json
+
 # Logs
 logs
 *.log

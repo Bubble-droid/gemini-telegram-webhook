@@ -2,7 +2,8 @@ import { DATA_DIR } from '@/configs/constant';
 import { logger } from '@/services';
 import type { FaqItem } from '@/types';
 import { join } from 'node:path';
-import { fetchFile, generateRawUrl } from './helpers';
+import { env } from 'node:process';
+import { fetchFile, generateRawUrl, readTextFile } from './helpers';
 
 /**
  * 预编译后的 FAQ 条目结构
@@ -21,7 +22,7 @@ interface MatchResult {
 
 const FAQ_DATA_PATH = join(DATA_DIR, 'faq-data.json');
 
-class FAQMatcher {
+class FaqMatcher {
   // 使用 Set 存储编译后的条目，虽然迭代速度与数组相当，但在动态添加/删除规则时具有 O(1) 优势
   private readonly compiledFaqs = new Set<CompiledFaqItem>();
 
@@ -76,15 +77,18 @@ class FAQMatcher {
    * @private
    */
   private async initFaqData() {
-    const url = generateRawUrl(FAQ_DATA_PATH);
-
     try {
-      const faqData = (await fetchFile(url, 'json', {
-        method: 'GET',
-        redirect: 'follow',
-      })) as unknown as FaqItem[];
-
-      // 遍历 FAQ 数据，预编译正则表达式
+      let faqData: FaqItem[] = [];
+      if (env['NODE_ENV'] === 'development') {
+        const data = await readTextFile(FAQ_DATA_PATH);
+        faqData = JSON.parse(data) as unknown as FaqItem[];
+      } else {
+        const url = generateRawUrl(FAQ_DATA_PATH);
+        faqData = (await fetchFile(url, 'json', {
+          method: 'GET',
+          redirect: 'follow',
+        })) as unknown as FaqItem[];
+      }
 
       for (const item of faqData) {
         // 构建编译后的对象
@@ -131,4 +135,4 @@ class FAQMatcher {
   };
 }
 
-export const faqMatcher = new FAQMatcher();
+export const faqMatcher = new FaqMatcher();

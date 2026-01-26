@@ -13,10 +13,11 @@ export const chatAgent = async (
 ): Promise<GenerateContentResponse> => {
   const { maxRounds = CONFIG.MAX_API_CALL_ROUNDS, geminiApiOptions, toolExecutor, onStatusUpdate } = options;
   let round = 0;
+  let response: GenerateContentResponse;
   while (round < maxRounds) {
     logger.debug(`[ChatAgent] Round ${round + 1} started.`);
 
-    const response = await geminiClient.generate(contents, geminiApiOptions);
+    response = await geminiClient.generate(contents, geminiApiOptions);
 
     if (response.candidates?.[0]?.content) contents.push(response.candidates[0].content);
 
@@ -89,5 +90,5 @@ export const chatAgent = async (
     logger.info(`[ChatAgent] Task completed`, { rounds: round + 1 });
     return response;
   }
-  throw new AppError(`Max conversation rounds (${maxRounds}) reached.`);
+  throw new AppError(`Max conversation rounds (${maxRounds}) reached. Response: ${JSON.stringify(response!)}`);
 };

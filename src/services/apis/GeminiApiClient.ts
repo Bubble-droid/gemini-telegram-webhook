@@ -1,19 +1,22 @@
 import { BotMessages } from '@/configs';
+import { GENERATE_MODELS } from '@/configs/constant';
 import { logger } from '@/services';
 import { CONFIG } from '@/services/ConfigLoader';
 import type { GeminiApiOptions } from '@/types';
-import { deepClone, MIN, sleep } from '@/utils';
+import { deepClone, ListRotator, MIN, sleep } from '@/utils';
 import { AppError } from '@/utils/errors';
 import {
   GoogleGenAI,
   HarmBlockThreshold,
   HarmCategory,
+  ThinkingLevel,
   type Content,
   type FileSearchStore,
   type GenerateContentConfig,
   type GenerateContentResponse,
   type Part,
   type SafetySetting,
+  type ThinkingConfig,
 } from '@google/genai';
 
 const FATAL_ERRORS = [
@@ -36,8 +39,8 @@ const GEMINI_SAFETY_SETTINGS: SafetySetting[] = [
 
 export class GeminiApiClient {
   private client: GoogleGenAI;
+  private models = new ListRotator(GENERATE_MODELS);
   private baseConfig: GenerateContentConfig;
-  private defaultGenerateModel = CONFIG.GEMINI_MODEL_NAME;
   private defaultTemperature = CONFIG.MODEL_CONFIG_TEMPERATURE;
 
   private readonly MAX_RETRIES = 3;
@@ -92,17 +95,30 @@ export class GeminiApiClient {
     });
 
     const client = genClient ?? this.client;
+    const model = genModel ?? this.models.next();
+    const thinkingConfig: ThinkingConfig = model.startsWith('gemini-3')
+      ? {
+          thinkingLevel: ThinkingLevel.HIGH,
+        }
+      : {
+          thinkingBudget: -1,
+        };
+
+    if (onStatusUpdate) {
+      void onStatusUpdate(BotMessages.thinking);
+    }
 
     while (retryCount <= this.MAX_RETRIES) {
       try {
         logger.debug('Request Contents: ', { contents: this.simplifyContentsInLogger(contents) });
         // 1. 发起请求
         const response = await client.models.generateContent({
-          model: genModel ?? this.defaultGenerateModel,
+          model,
           contents,
           config: {
             ...this.baseConfig,
             ...genConfig,
+            ...(genConfig?.thinkingConfig && { thinkingConfig }),
           },
         });
 

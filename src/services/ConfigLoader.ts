@@ -1,4 +1,4 @@
-import { GEMINI_API_BASE_URL, GEMINI_GENERATE_MODEL } from '@/configs/constant';
+import { GEMINI_API_BASE_URL } from '@/configs/constant';
 import type { EnvConfig, ExtractAndMakeRequired, RawEnv, StringifyProps } from '@/types';
 import { AppError } from '@/utils/errors';
 import type { LogLevel } from 'fastify';
@@ -28,7 +28,6 @@ const DEFAULT_ENV = {
   GEMINI_API_BASE_URL: GEMINI_API_BASE_URL,
   LOCAL_PROXY_BASE_URL: `http://127.0.0.1:39001/gemini`,
 
-  GEMINI_MODEL_NAME: GEMINI_GENERATE_MODEL,
   MODEL_CONFIG_TEMPERATURE: 1.0,
 
   MAX_API_CALL_ROUNDS: 16,
@@ -124,7 +123,6 @@ class ConfigLoader {
       GEMINI_API_BASE_URL: this.env.GEMINI_API_BASE_URL ?? DEFAULT_ENV.GEMINI_API_BASE_URL,
       LOCAL_PROXY_BASE_URL: this.env.LOCAL_PROXY_BASE_URL ?? DEFAULT_ENV.LOCAL_PROXY_BASE_URL,
 
-      GEMINI_MODEL_NAME: this.env.GEMINI_MODEL_NAME ?? DEFAULT_ENV.GEMINI_MODEL_NAME,
       MODEL_CONFIG_TEMPERATURE: Number(this.env.MODEL_CONFIG_TEMPERATURE) || DEFAULT_ENV.MODEL_CONFIG_TEMPERATURE,
 
       MAX_API_CALL_ROUNDS: Number(this.env.MAX_API_CALL_ROUNDS) || DEFAULT_ENV.MAX_API_CALL_ROUNDS,

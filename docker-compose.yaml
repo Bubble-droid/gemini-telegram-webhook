@@ -1,0 +1,16 @@
+services:
+  gemini-bot:
+    image: gemini-telegram-webhook:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gemini-bot
+    ports:
+      - "39001:39001"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env.development
+    stdin_open: true
+    tty: true
+    restart: unless-stopped

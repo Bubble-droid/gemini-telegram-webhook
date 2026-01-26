@@ -1,7 +1,7 @@
 // src/configs/function-declarations.ts
 
 import type { FileStoreName } from '@/types';
-import { Type, type FunctionDeclaration } from '@google/genai';
+import { Type, type FunctionDeclaration, type Tool } from '@google/genai';
 
 export const FileStores = {
   documents: ['gui-for-cores', 'sing-box', 'mihomo', 'hysteria2', 'anytls'],
@@ -58,7 +58,7 @@ export const functionDeclarations = [
     },
   },
   {
-    name: 'use_built-in_tools',
+    name: 'use_builtin_tools',
     description:
       'This tool can call built-in tools provided by Google Gemini, supporting Google Search (real-time online queries), code execution (complex calculations through Python code), and URL context (fetch the content of web pages). Multiple tools can be used together. (e.g., using URL context and Google Search simultaneously allows you to find relevant information online through the search function, then use the URL context tool to gain a deeper understanding of the found web pages)',
     parameters: {
@@ -75,7 +75,10 @@ export const functionDeclarations = [
           items: {
             type: Type.STRING,
             description: 'Name of the tool.',
-            enum: ['googleSearch', 'codeExecution', 'urlContext'],
+            enum: ['googleSearch', 'codeExecution', 'urlContext'] satisfies (keyof Pick<
+              Tool,
+              'googleSearch' | 'codeExecution' | 'urlContext'
+            >)[],
           },
           minItems: '1',
         },

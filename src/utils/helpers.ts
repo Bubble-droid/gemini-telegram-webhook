@@ -161,8 +161,16 @@ export const generateRawUrl = (path: string): string => {
   return `${GITHUB_RAW_URL}/${CONFIG.GITHUB_REPOSITORY}/refs/heads/main/${path.startsWith('/') ? path.slice(1) : path}`;
 };
 
-export const getStrHeadEnd = (str: string, len: number): string => {
-  if (len <= 0) return '...';
+export const generateStrMask = (str: string, len: number, mask = '***'): string => {
+  if (len <= 0) return mask;
   if (str.length <= len * 2) return str;
-  return `${str.slice(0, len)}...${str.slice(-len)}`;
+  return `${str.slice(0, len)}${mask}${str.slice(-len)}`;
+};
+
+export const invertObject = <T extends Record<PropertyKey, PropertyKey>>(
+  obj: T | undefined,
+): { [K in keyof T as T[K]]: K } => {
+  if (!obj) return {} as { [K in keyof T as T[K]]: K };
+  const inverted = Object.entries(obj).map(([key, value]) => [value, key]);
+  return Object.fromEntries(inverted) as { [K in keyof T as T[K]]: K };
 };

@@ -44,6 +44,7 @@ export const performTask = async (
     };
 
     const result = await chatAgent(contents, {
+      maxRounds: 8,
       geminiApiOptions,
       toolExecutor: workerToolExecutor,
       ...(onStatusUpdate && { onStatusUpdate }),

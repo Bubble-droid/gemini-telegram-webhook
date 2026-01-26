@@ -1,10 +1,10 @@
-import { CHITCHAT_MODEL } from '@/configs/constant';
+import { CHITCHAT_MODELS } from '@/configs/constant';
 import { chatContext, logger } from '@/services';
 import { geminiClient } from '@/services/apis';
 import { CONFIG } from '@/services/ConfigLoader';
 import type { ChitChatState, Recordable } from '@/types';
 import type { ResponseContext } from '@/utils';
-import { formatTime, handleMediaFiles, hasImage, MsgPTTL, promptStore } from '@/utils';
+import { formatTime, handleMediaFiles, hasImage, ListRotator, MsgPTTL, promptStore } from '@/utils';
 import { toHtml } from '@/utils/markdown';
 import type { Content, Part } from '@google/genai';
 import type { Chat, Message, MessageOrigin, User } from 'grammy/types';
@@ -131,6 +131,7 @@ const formatContextToMarkdown = (ctx: Message): string => {
  */
 export class ChitChatHandler {
   private locks = new Map<number, Promise<void>>();
+  private models = new ListRotator(CHITCHAT_MODELS);
 
   /**
    * 处理消息组
@@ -187,7 +188,7 @@ export class ChitChatHandler {
    * 调用 Gemini 服务生成响应。
    */
   private async getGeminiResponse(state: ChitChatState): Promise<string | null> {
-    const systemPrompt = promptStore.format('chit-chat', {
+    const systemPrompt = promptStore.format('chitchat', {
       selfId: String(CONFIG.TELEGRAM_BOT_ID),
       selfName: CONFIG.TELEGRAM_BOT_USERNAME,
       currentTime: formatTime(Date.now()),
@@ -204,7 +205,7 @@ export class ChitChatHandler {
 
     try {
       const response = await geminiClient.generate(fullContents, {
-        genModel: CHITCHAT_MODEL,
+        genModel: this.models.next(),
         genConfig: {
           temperature: 1.0,
         },

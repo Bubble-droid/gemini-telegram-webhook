@@ -3,7 +3,7 @@ import type { MaybePromise, Recordable } from './common';
 
 export type CommonToolResult<R> = MaybePromise<StandardizedFunctionResponse<R>>;
 
-export type StatusUpdateCallback = (text: string) => MaybePromise<void>;
+export type StatusUpdateCallback = (text: string) => MaybePromise<unknown>;
 
 export type ToolExecutorFn<R = unknown> = (name: string, args?: Recordable) => CommonToolResult<R>;
 

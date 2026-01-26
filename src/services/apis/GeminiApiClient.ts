@@ -95,20 +95,17 @@ export class GeminiApiClient {
     });
 
     const client = genClient ?? this.client;
-    const model = genModel ?? this.models.next();
-    const thinkingConfig: ThinkingConfig = model.startsWith('gemini-3')
-      ? {
-          thinkingLevel: ThinkingLevel.HIGH,
-        }
-      : {
-          thinkingBudget: -1,
-        };
-
-    if (onStatusUpdate) {
-      void onStatusUpdate(BotMessages.thinking);
-    }
 
     while (retryCount <= this.MAX_RETRIES) {
+      const model = genModel ?? this.models.next();
+      const thinkingConfig: ThinkingConfig = model.startsWith('gemini-3')
+        ? {
+            thinkingLevel: ThinkingLevel.HIGH,
+          }
+        : {
+            thinkingBudget: -1,
+          };
+
       try {
         logger.debug('Request Contents: ', { contents: this.simplifyContentsInLogger(contents) });
         // 1. 发起请求
@@ -171,14 +168,11 @@ export class GeminiApiClient {
           msg = `网络或接口波动，将在${delaySeconds} 秒后进行第 ${retryCount} 次重试...\n原因: \n\`\`\`txt\n${reason}\n\`\`\``;
         }
 
-        void onStatusUpdate(msg);
+        await onStatusUpdate(msg);
 
-        // 等待
         await sleep(delayMs);
 
-        void onStatusUpdate(BotMessages.thinking);
-
-        // 进入下一次循环
+        await onStatusUpdate(BotMessages.thinking);
       }
     }
 
@@ -189,7 +183,7 @@ export class GeminiApiClient {
    * 响应验证：确保内容非空且不仅仅是思考过程
    */
   private isValidResponse(response: GenerateContentResponse): boolean {
-    return !!response.functionCalls || !!response.text;
+    return !!response.functionCalls?.length || !!response.text?.length;
   }
 
   /**

@@ -177,7 +177,7 @@ export class ChitChatHandler {
   /**
    * 记录用户消息并裁剪历史记录，确保不会超出上限。
    */
-  private recordMessage(state: ChitChatState, content: Content): void {
+  private storage(state: ChitChatState, content: Content): void {
     if (state.context.length > HISTORY_LIMIT) {
       state.context.shift();
     }
@@ -187,7 +187,7 @@ export class ChitChatHandler {
   /**
    * 调用 Gemini 服务生成响应。
    */
-  private async getGeminiResponse(state: ChitChatState): Promise<string | null> {
+  private async chat(state: ChitChatState): Promise<string | null> {
     const systemPrompt = promptStore.format('chitchat', {
       selfId: String(CONFIG.TELEGRAM_BOT_ID),
       selfName: CONFIG.TELEGRAM_BOT_USERNAME,
@@ -211,14 +211,14 @@ export class ChitChatHandler {
         },
       });
 
-      if (/silence/gi.test(response.text ?? '')) {
+      if (/silence/gi.test(response.text!)) {
         logger.info(`[ChitChatHandler] Model keep silence.`);
         return null;
       }
 
-      if (response.candidates?.[0]?.content) this.recordMessage(state, response.candidates[0].content);
+      this.storage(state, response.candidates![0]!.content!);
 
-      return response.text ?? null;
+      return response.text!;
     } catch (err) {
       logger.error('[ChitChatHandler] Gemini API failed', { err });
       return null;
@@ -368,7 +368,7 @@ export class ChitChatHandler {
       parts: messageParts,
     };
 
-    this.recordMessage(state, messageContent);
+    this.storage(state, messageContent);
 
     // 3. 计算注意力分
     const weight = ctx.messages.map((m) => this.calculateMessageWeight(m)).reduce((a, b) => a + b, 0);
@@ -383,7 +383,7 @@ export class ChitChatHandler {
         return false;
       }
 
-      const responseText = await this.getGeminiResponse(state);
+      const responseText = await this.chat(state);
 
       if (!responseText) {
         state.currentScore = state.currentScore / 2;

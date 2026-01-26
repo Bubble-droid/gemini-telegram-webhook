@@ -50,7 +50,7 @@ export const chatAgent = async (
 
         if (updated !== updateText && onStatusUpdate) {
           logger.debug(`[UI] Updating status for tool: ${name}`);
-          void onStatusUpdate(updateText);
+          await onStatusUpdate(updateText);
           updated = updateText;
         }
 
@@ -81,7 +81,7 @@ export const chatAgent = async (
 
       await sleep(CONFIG.REQUEST_LIMIT_SECOND * 1000);
 
-      void onStatusUpdate?.(BotMessages.thinking);
+      if (updated) await onStatusUpdate?.(BotMessages.thinking);
 
       round++;
 

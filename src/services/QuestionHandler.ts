@@ -21,7 +21,7 @@ export const processQuestion = async (contents: Content[], ctx: ResponseContext)
 
   // 1. 定义 UI 更新回调 (用于重试和工具执行)
   const updateStatus: StatusUpdateCallback = (text) => {
-    void ctx.edit(toHtml(text), { parse_mode: 'HTML' });
+    return ctx.edit(toHtml(text), { parse_mode: 'HTML' });
   };
 
   const customToolExecutor: ToolExecutorFn = (name, args) => {

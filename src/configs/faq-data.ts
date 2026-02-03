@@ -1,10 +1,5 @@
-import type { FaqItem } from '@/types';
+import type { FaqItem } from '@shared/types/data';
 
-/**
- * @const faqData
- * @description 存储所有 FAQ 问答对及其匹配的正则表达式模式。
- *              规则的顺序至关重要：越具体的规则应越靠前，越通用的规则应越靠后。
- */
 export const faqData: FaqItem[] = [
   // ⚙️ B.2.1 常规与界面 (General & UI)
   {
@@ -872,7 +867,3 @@ A: 按 \`Ctrl + Shift + F12\` 打开开发者工具控制台即可查看，主�
 `,
   },
 ];
-
-/* import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-writeFileSync(join(process.cwd(), 'data', 'faq-data.json'), JSON.stringify(faqData)); */

@@ -1,4 +1,4 @@
-import type { McpServer } from '@/types';
+import type { McpServer } from '@llm/types/mcp';
 
 export const mcpServers = {
   'github-toolset': {

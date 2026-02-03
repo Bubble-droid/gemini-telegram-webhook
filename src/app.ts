@@ -1,18 +1,12 @@
-import { logger } from '@/services';
-import Fastify, { type FastifyInstance } from 'fastify';
-import { registerProxyRoute, registerWebhookRoute } from './routes';
-import { CONFIG } from './services/ConfigLoader';
-import { MIN } from './utils';
+import { logger } from '@shared/core/logger';
+import { ms } from '@shared/utils/helpers';
+import { fastify, type FastifyInstance } from 'fastify';
 
 /**
  * @description 构建 Fastify 应用程序实例
  */
-export const buildApp = (): FastifyInstance => {
-  const { SERVER_LOG_LEVEL: logLevel, ENABLE_KEY_ROTATION } = CONFIG;
-
-  logger.init({ logLevel });
-
-  const app = Fastify({
+const buildApp = (): FastifyInstance => {
+  const app = fastify({
     logger: {
       enabled: true,
       level: 'trace',
@@ -40,7 +34,7 @@ export const buildApp = (): FastifyInstance => {
     },
     trustProxy: true,
     bodyLimit: 104857600,
-    keepAliveTimeout: 5 * MIN,
+    keepAliveTimeout: ms.min(5),
   });
 
   app.get('/ping', async (_req, rep) => {
@@ -50,12 +44,6 @@ export const buildApp = (): FastifyInstance => {
   app.setNotFoundHandler(async (_req, rep) => {
     rep.code(404).type('application/json').send({ code: 404, message: 'Not Found' });
   });
-
-  registerWebhookRoute(app);
-
-  if (ENABLE_KEY_ROTATION) {
-    registerProxyRoute(app);
-  }
 
   app.setErrorHandler(async (error, _req, rep) => {
     let statusCode = 500;
@@ -84,3 +72,5 @@ export const buildApp = (): FastifyInstance => {
 
   return app;
 };
+
+export default buildApp;

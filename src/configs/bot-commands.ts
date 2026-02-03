@@ -1,17 +1,16 @@
-// src/configs/bot_commands.ts
-
-import { BotMessages, Keyboards } from '@/configs';
-import { chatContext } from '@/services';
-import { CONFIG } from '@/services/ConfigLoader';
-import type { MaybePromise } from '@/types';
-import { faqMatcher, MsgPTTL, promptStore } from '@/utils';
-import { toHtml } from '@/utils/markdown';
-import type { ResponseContext } from '@/utils/ResponseContext';
+import { chatHistory } from '@data/chat-history';
+import { faqMatcher } from '@data/faq-matcher';
+import { promptStore } from '@data/prompt-store';
+import { CONFIG } from '@shared/core/config';
+import type { MaybePromise } from '@shared/types/common';
+import { ms } from '@shared/utils/helpers';
+import type { ResponseContext } from '@telegram/bot/response-context';
+import { toHtml } from '@telegram/markdown';
 import type { BotCommand } from 'grammy/types';
+import { BotMessages, Keyboards } from './bot-messages';
 
 interface CommandActionArgs {
   ctx: ResponseContext;
-  cleanText?: string;
 }
 
 interface BotCommandAction extends BotCommand {
@@ -20,7 +19,7 @@ interface BotCommandAction extends BotCommand {
 
 const canPerformAction = (ctx: ResponseContext): boolean => {
   if (ctx.user.id === CONFIG.TELEGRAM_BOT_OWNER_ID) return true;
-  void ctx.reply(BotMessages.unauthorized, { deleteAfterMs: MsgPTTL['3m'] });
+  void ctx.reply(BotMessages.unauthorized, { deleteAfterMs: ms['3m'] });
   return false;
 };
 
@@ -32,7 +31,7 @@ export const BotCommands = [
       await ctx.reply(toHtml(BotMessages.getStartText()), {
         parse_mode: 'HTML',
         reply_markup: Keyboards.getStart(ctx.user.id),
-        deleteAfterMs: MsgPTTL['3m'],
+        deleteAfterMs: ms['3m'],
       });
     },
   },
@@ -43,7 +42,7 @@ export const BotCommands = [
       await ctx.reply(toHtml(BotMessages.faqSimplified), {
         parse_mode: 'HTML',
         reply_markup: Keyboards.getBackToStart(ctx.user.id),
-        deleteAfterMs: MsgPTTL['5m'],
+        deleteAfterMs: ms['5m'],
       });
     },
   },
@@ -51,13 +50,12 @@ export const BotCommands = [
     command: 'clear',
     description: '清理对话历史',
     action: async ({ ctx }) => {
+      const { chat, user } = ctx;
       await ctx.reply(BotMessages.clearing);
-
-      chatContext.clear(ctx.chat.id, ctx.user.id);
-
+      chatHistory.clear(chat.id, user.id);
       await ctx.edit(BotMessages.cleared, {
-        reply_markup: Keyboards.getBackToStart(ctx.user.id),
-        deleteAfterMs: MsgPTTL['3m'],
+        reply_markup: Keyboards.getBackToStart(user.id),
+        deleteAfterMs: ms['3m'],
       });
     },
   },
@@ -70,7 +68,7 @@ export const BotCommands = [
       if (!canPerformAction(ctx)) return;
       await promptStore.reload();
       await ctx.reply('All prompts reloaded', {
-        deleteAfterMs: MsgPTTL['3m'],
+        deleteAfterMs: ms['3m'],
       });
     },
   },
@@ -81,7 +79,7 @@ export const BotCommands = [
       if (!canPerformAction(ctx)) return;
       await faqMatcher.reload();
       await ctx.reply('All FAQ reloaded', {
-        deleteAfterMs: MsgPTTL['3m'],
+        deleteAfterMs: ms['3m'],
       });
     },
   },

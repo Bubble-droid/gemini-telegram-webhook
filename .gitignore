@@ -3,8 +3,9 @@ draft/
 .gemini/
 dist/
 
-data/chat-contexts.json
+data/chat-history.json
 data/tasks.json
+data/memories.json
 
 # Logs
 logs

@@ -1,5 +1,5 @@
-import { handleProxyRequest } from '@/services';
-import type { InferSchema, JSONSchema } from '@/types';
+import { handleProxyRequest } from '@services/gemini-api-proxy';
+import type { InferSchema, JSONSchema } from '@shared/types/schema';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 const ProxyHeadersSchema = {
@@ -19,7 +19,6 @@ export const registerProxyRoute = (app: FastifyInstance): void => {
     schema: {
       headers: ProxyHeadersSchema,
     },
-
     handler: handleProxyRequest,
   });
 };

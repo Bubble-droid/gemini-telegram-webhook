@@ -1,10 +1,13 @@
-import { logger } from '@/services';
-import { deepClone, generateStrMask, ListRotator } from '@/utils';
 import { GoogleGenAI, type GenerateContentConfig } from '@google/genai';
+import { CONFIG } from '@shared/core/config';
+import { logger } from '@shared/core/logger';
+import type { HttpMethod } from '@shared/types/http';
+import { deepClone, generateStrMask, ms } from '@shared/utils/helpers';
+import { httpRequest } from '@shared/utils/http';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { CONFIG } from './ConfigLoader';
+import { ListRotator } from './list-rotator';
 
-type GeminiApiRequestBody = Pick<GenerateContentConfig, 'tools'>;
+type GeminiApiRequestBody = Pick<GenerateContentConfig, 'systemInstruction' | 'tools'>;
 
 const ALLOWED_IPS = new Set(['127.0.0.1', '::1', 'localhost']);
 const HOP_TO_HOP_HEADERS = new Set(['host', 'connection', 'content-length', 'transfer-encoding', 'content-encoding']);
@@ -67,54 +70,51 @@ export const handleProxyRequest = async (req: FastifyRequest, rep: FastifyReply)
 
     const originalPath = req.raw.url ?? '';
     const pathWithoutPrefix = originalPath.replace(/^\/gemini/, '');
-    const targetUrl = new URL(pathWithoutPrefix, CONFIG.GEMINI_API_BASE_URL);
+    const targetUrl = new URL(pathWithoutPrefix, CONFIG.GOOGLE_AI_BASE_URL);
 
     const rotatedKey = keyRotator.next();
     const headers = normalizeHeaders(req.headers, rotatedKey);
 
-    const body = req.body;
+    const body = req.body as GeminiApiRequestBody | undefined;
     const refreshedBody = body ? await refreshFileSearchStoreNames(rotatedKey, body) : null;
 
     logger.info(`[Proxy] Forwarding to Google`, {
       path: targetUrl.pathname,
       keyMask: generateStrMask(rotatedKey, 5),
     });
-    logger.trace(`Body Forwarding:`, { body });
+    logger.trace(`Body Forwarding:`, { body: { ...body, systemInstruction: '[MASKED]' } });
 
-    const upstreamResponse = await fetch(targetUrl.toString(), {
-      method: req.method,
+    const {
+      status,
+      headers: resHeaders,
+      data,
+    } = await httpRequest(targetUrl.toString(), {
+      method: req.method as HttpMethod,
       headers,
       ...(refreshedBody && {
         duplex: 'half',
         body: JSON.stringify(refreshedBody),
       }),
+      responseType: 'text',
+      timeout: ms.min(5),
     });
 
-    const responseText = await upstreamResponse.text();
-
-    try {
-      const parsedBody = JSON.parse(responseText) as unknown;
-      logger.trace(`Body Received:`, { body: parsedBody });
-    } catch {
-      logger.trace('Body Received (Raw String)', { body: responseText });
-    }
-
     // 响应状态码透传
-    rep.code(upstreamResponse.status);
+    rep.code(status);
 
     // Header 透传
-    upstreamResponse.headers.forEach((value, key) => {
+    resHeaders.forEach((value, key) => {
       if (EXCLUDED_HEADERS.has(key.toLowerCase())) return;
       rep.header(key, value);
     });
 
-    if (!responseText.length) {
+    if (!data.length) {
       rep.send();
       return;
     }
 
     rep.header('content-type', 'application/json; charset=utf-8');
-    rep.send(responseText);
+    rep.send(data);
   } catch (err) {
     logger.error('❌ Gemini Proxy Error', { err });
     rep

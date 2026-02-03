@@ -16,10 +16,13 @@ export default defineConfig({
       input: 'src/main.ts',
       output: {
         format: 'esm',
-        entryFileNames: 'index.js',
+        entryFileNames: 'index.mjs',
         inlineDynamicImports: true,
       },
     },
   },
-  ssr: { noExternal: true, target: 'node' },
+  ssr: {
+    noExternal: true,
+    target: 'node',
+  },
 });

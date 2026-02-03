@@ -1,18 +1,13 @@
-import { CONFIG } from '@/services/ConfigLoader';
-import type { Recordable } from '@/types';
+import { CONFIG } from '@shared/core/config';
+import { GEMINI_MODELS } from '@shared/core/constants';
+import type { Recordable } from '@shared/types/common';
 import type { InlineKeyboardButton, InlineKeyboardMarkup } from 'grammy/types';
-import { CHITCHAT_MODELS, GENERATE_MODELS } from './constant';
 
-/**
- * 集中管理机器人的回复文本
- */
 export const BotMessages = {
-  // 支持动态替换的 Start 文案
   getStartText: (): string => {
     const { TELEGRAM_BOT_USERNAME: botName } = CONFIG;
     return `
-💡 思考模型：${GENERATE_MODELS.map((m) => `\`${m}\``).join(', ')}
-🗣️ 闲谈模型：${CHITCHAT_MODELS.map((m) => `\`${m}\``).join(', ')}
+💡 思考模型：${GEMINI_MODELS.map((m) => `\`${m}\``).join(', ')}
 
 ✨ 你好！你可以通过以下方式与我互动，我能理解上下文并深度解析多媒体内容：
 
@@ -113,20 +108,14 @@ A: 请按以下顺序排查：
 A: 原因是 TUN 在 macOS 上无法发往局域网的 DNS 请求。请将你 Mac 的系统 DNS 修改为任意公共 DNS 服务器（如 \`8.8.8.8\`）。
 `.trim(),
 
-  unsupportedChatType: '不支持私聊与频道，请在群组内使用此机器人。',
-
   callbackFailed: '❌ 回调查询处理失败，请稍后再试',
 
-  unauthorizedGroup: '❌ 群组未授权！',
-
-  pendingRequest: '⏳ 你已经有一个请求在处理中，请等待完成后再试...',
+  pendingRequest: '⏳ 你有一个请求在处理中，请等待完成后再试...',
 
   invalidContents: '❌ 未能从消息中提取到有效内容，请检查消息格式。',
 
-  // 清理过程中的文案
   clearing: '🗑 正在清理记忆...',
 
-  // 清理完成文案
   cleared: '✅ 记忆已重置。',
 
   uploading: '📄 File uploading...',
@@ -135,8 +124,6 @@ A: 原因是 TUN 在 macOS 上无法发往局域网的 DNS 请求。请将你 Ma
 
   unauthorized: '🚫 你没有权限执行此操作。',
 };
-
-// --- 通用键盘布局 ---
 
 type TKeyBoards = Recordable<(userId: number) => InlineKeyboardMarkup>;
 

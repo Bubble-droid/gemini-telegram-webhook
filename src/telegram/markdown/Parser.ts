@@ -1,16 +1,36 @@
-import type { AstNode, NodeType } from '@shared/types/markdown';
+import type { AstNode, NodeType } from '@shared/types/markdown.js';
+
+// 补充类型定义，以便代码可直接运行/检查
+interface CodeBlockMatchGroups {
+  delimiter: string;
+  language: string;
+  content: string;
+}
 
 /**
  * 将自定义 Markdown 转换为抽象语法树 (AST) 的解析器。
  */
 export class Parser {
-  private text: string;
+  private readonly text: string;
   private pos = 0;
-  // 定义所有可能的标记符，用于文本解析
-  private readonly markers = ['**', '__', '~~', '||', '`', '[', ']', '(', ')', '```', '\n', '>'];
+
+  // ========================================================================
+  // 1. 预编译正则 (Performance Optimization)
+  // 使用 'y' (Sticky) 标志，配合 lastIndex 实现高性能扫描
+  // ========================================================================
+
+  // 匹配 3-6 个反引号，支持同行结束，支持命名捕获
+  private readonly regexCodeBlock =
+    /^\s*(?<delimiter>`{3,6})(?<language>\w*)\s*\n?(?<content>[\s\S]+?)\s*\k<delimiter>/my;
+
+  // 匹配行内代码 `code`
+  private readonly regexInlineCode = /`(?<content>[^`]+)`/y;
+
+  // 定义所有可能的标记符，用于文本解析加速
+  private readonly markers = ['**', '__', '~~', '||', '`', '[', ']', '(', ')', '```', '\n', '>', '>>'];
 
   constructor(text: string) {
-    // 规范化换行符，便于处理
+    // 规范化换行符
     this.text = text.replace(/\r\n/g, '\n');
   }
 
@@ -22,6 +42,8 @@ export class Parser {
     const nodes: AstNode[] = [];
     while (!endCondition(this.pos)) {
       const startPos = this.pos;
+
+      // 尝试各种解析器
       const node =
         this.parseCodeBlock() ??
         this.parseBlockquote() ??
@@ -38,7 +60,7 @@ export class Parser {
         nodes.push(node);
       }
 
-      // 如果位置没有前进，说明解析陷入死循环，强制前进一位并当作文本处理
+      // 死循环保护：如果位置没有前进，强制消耗一个字符
       if (this.pos === startPos) {
         if (!endCondition(this.pos)) {
           nodes.push({ type: 'text', content: this.text[this.pos] ?? '' });
@@ -50,22 +72,26 @@ export class Parser {
   }
 
   private match(s: string): boolean {
-    return this.text.substring(this.pos).startsWith(s);
+    return this.text.startsWith(s, this.pos); // 使用 startsWith 的第二个参数避免 substring
   }
 
+  /**
+   * 通用标记对解析器 (如 **bold**)
+   */
   private parseWithMarkers(type: NodeType, marker: string): AstNode | null {
     if (!this.match(marker)) return null;
     const startPos = this.pos;
     this.pos += marker.length;
 
-    const children = this.parseUntil((p) => this.text.substring(p).startsWith(marker) || p >= this.text.length);
+    // 寻找闭合标记
+    const children = this.parseUntil((p) => this.text.startsWith(marker, p) || p >= this.text.length);
 
     if (this.match(marker)) {
       this.pos += marker.length;
       return { type, children };
     }
 
-    // 如果没有找到闭合标记，则回溯，将整个部分视为纯文本
+    // 回溯
     this.pos = startPos;
     return null;
   }
@@ -74,24 +100,55 @@ export class Parser {
   private parseUnderline = (): AstNode | null => this.parseWithMarkers('underline', '__');
   private parseStrikethrough = (): AstNode | null => this.parseWithMarkers('strikethrough', '~~');
   private parseSpoiler = (): AstNode | null => this.parseWithMarkers('spoiler', '||');
+
   private parseNewline = (): AstNode | null => {
     if (!this.match('\n')) return null;
     this.pos++;
     return { type: 'newline' };
   };
 
+  /**
+   * [优化] 行内代码解析
+   */
   private parseInlineCode(): AstNode | null {
-    const match = /^`([^`]+?)`/.exec(this.text.substring(this.pos));
-    if (!match) return null;
+    if (!this.text.startsWith('`', this.pos)) return null;
+
+    this.regexInlineCode.lastIndex = this.pos;
+    const match = this.regexInlineCode.exec(this.text);
+
+    if (!match?.groups) {
+      return null;
+    }
+
     this.pos += match[0].length;
-    return { type: 'inline_code', content: match[1] ?? '' };
+    return { type: 'inline_code', content: match.groups['content']! };
   }
 
+  /**
+   * [核心重构] 代码块解析器
+   * 使用命名捕获组和 sticky 正则
+   */
   private parseCodeBlock(): AstNode | null {
-    const match = /^```(\w*)\s*([\s\S]+?)\s*```/m.exec(this.text.substring(this.pos));
-    if (!match) return null;
+    // 1. 设置正则起始位置
+    this.regexCodeBlock.lastIndex = this.pos;
+
+    // 2. 执行匹配
+    const match = this.regexCodeBlock.exec(this.text);
+
+    // 3. 校验匹配结果及分组
+    if (!match?.groups) return null;
+
+    // 4. 类型安全的解构
+    const { language, content } = match.groups as unknown as CodeBlockMatchGroups;
+
+    // 5. 更新位置
     this.pos += match[0].length;
-    return { type: 'code_block', lang: match[1] ?? undefined, content: match[2] ?? '' };
+
+    return {
+      type: 'code_block',
+      lang: language || undefined,
+      content: content,
+    };
   }
 
   private parseLink(): AstNode | null {
@@ -118,94 +175,82 @@ export class Parser {
     return { type: 'link', href, children };
   }
 
-  /**
-   * 主引用块解析器，遵循“最具体优先”原则。
-   * 优先尝试解析可展开引用块 (>>)，如果失败，再尝试解析普通引用块 (>).
-   */
   private parseBlockquote(): AstNode | null {
     return this._parseBlockquoteOfType('>>') ?? this._parseBlockquoteOfType('>');
   }
 
-  /**
-   * [核心重构] 辅助方法，用于解析特定类型的连续多行引用块。
-   * @param marker - 要匹配的标记符 ('>' 或 '>>')。
-   */
   private _parseBlockquoteOfType(marker: '>' | '>>'): AstNode | null {
     const startPos = this.pos;
+    const isExpandableQuote = marker === '>>';
 
-    // 1. 严格的行首检查
     if (startPos > 0 && this.text[startPos - 1] !== '\n') {
       return null;
     }
 
-    const isSimpleQuote = marker === '>';
-    const isExpandableQuote = marker === '>>';
+    // 2. 构造或引用动态正则
+    // ^\s{0,3} 匹配可选的缩进
+    // 使用 'y' 确保从当前 pos 开始匹配
+    const lineRegex = isExpandableQuote ? /^\s{0,3}>>/my : /^\s{0,3}>(?!>)/my; // 使用负向先行断言，确保 > 不会误匹配 >>
 
-    // 2. 区分 '>' 和 '>>' 的严格检查
-    if (isSimpleQuote && this.text.substring(startPos).startsWith('>>')) {
-      // 如果我们正在寻找'>'，但实际上遇到了'>>'，则此解析器应失败，
-      // 以便让更具体的 '>>' 解析器接管。
-      return null;
-    }
-    if (!this.text.substring(startPos).startsWith(marker)) {
-      return null;
-    }
+    lineRegex.lastIndex = startPos;
+    const match = lineRegex.exec(this.text);
+
+    if (!match) return null;
 
     const lines: string[] = [];
     let currentPos = startPos;
 
-    // 3. 逐行消耗与合并
+    // 3. 逐行收集内容
     while (currentPos < this.text.length) {
-      // 检查当前行是否是行首
-      if (currentPos > 0 && this.text[currentPos - 1] !== '\n') {
-        break; // 不是新行的开始，块结束
-      }
+      lineRegex.lastIndex = currentPos;
+      const currentMatch = lineRegex.exec(this.text);
 
-      // 再次进行严格检查，确保行标记正确
-      const lineStartsWithDouble = this.text.substring(currentPos).startsWith('>>');
-      if (isExpandableQuote && !lineStartsWithDouble) {
-        break; // 正在寻找'>>'，但当前行不是，块结束
-      }
-      if (isSimpleQuote && lineStartsWithDouble) {
-        break; // 正在寻找'>'，但遇到了'>>'，块结束
-      }
-      if (!this.text.substring(currentPos).startsWith(marker)) {
-        break; // 标记不匹配，块结束
-      }
+      if (!currentMatch) break;
 
-      // 寻找行尾
+      // 找到当前行结束位置
       const endOfLine = this.text.indexOf('\n', currentPos);
       const lineEndPos = endOfLine === -1 ? this.text.length : endOfLine;
 
-      // 提取内容（移除标记和紧随其后的空格）
-      const contentStartPos = currentPos + marker.length + (this.text[currentPos + marker.length] === ' ' ? 1 : 0);
-      lines.push(this.text.substring(contentStartPos, lineEndPos));
+      // 提取内容：
+      // match[0].length 包含了缩进和标记符
+      // 检查标记符后是否有空格，如果有则跳过一个空格
+      let contentStart = currentPos + currentMatch[0].length;
+      if (this.text[contentStart] === ' ') {
+        contentStart++;
+      }
 
-      // 移动到下一行的开头
+      lines.push(this.text.substring(contentStart, lineEndPos));
+
+      // 移动到下一行开头（跳过换行符）
       currentPos = lineEndPos + 1;
     }
 
-    if (lines.length === 0) {
-      this.pos = startPos; // 回溯
-      return null;
-    }
+    if (lines.length === 0) return null;
 
-    // 4. 【关键】一次性推进主解析器的位置
+    // 4. 更新主解析器进度
     this.pos = currentPos;
 
-    // 5. 递归解析合并后的内容
+    // 5. 递归解析内部内容
     const innerContent = lines.join('\n');
     const innerParser = new Parser(innerContent);
     const children = innerParser.parse().children ?? [];
 
-    return { type: 'blockquote', expandable: isExpandableQuote, children };
+    return {
+      type: 'blockquote',
+      expandable: isExpandableQuote, // 使用变量
+      children,
+    };
   }
 
+  /**
+   * 纯文本解析
+   * 优化逻辑：只扫描到最近的 marker 或父级结束条件
+   */
   private parseText(endCondition: (pos: number) => boolean): AstNode | null {
     const startPos = this.pos;
     let endPos = this.text.length;
 
-    // 找到下一个标记的最近位置
+    // 优化：不再使用 substring 查找，而是利用 indexOf 的第二个参数
     for (const marker of this.markers) {
       const markerPos = this.text.indexOf(marker, this.pos);
       if (markerPos !== -1) {
@@ -213,12 +258,14 @@ export class Parser {
       }
     }
 
-    // 确保不会越过父节点的结束条件
-    let parentEndPos = this.pos;
-    while (!endCondition(parentEndPos) && parentEndPos < this.text.length) {
-      parentEndPos++;
+    // 检查父级结束条件
+    // 注意：这里简单的循环检查可能在长文本中较慢，但在 AST 解析中通常是必要的
+    // 如果 endCondition 比较复杂，这里可以优化，但通常它是基于字符比对的
+    let checkPos = this.pos;
+    while (checkPos < endPos && !endCondition(checkPos)) {
+      checkPos++;
     }
-    endPos = Math.min(endPos, parentEndPos);
+    endPos = Math.min(endPos, checkPos);
 
     if (endPos > startPos) {
       this.pos = endPos;

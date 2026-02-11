@@ -1,8 +1,8 @@
-import { DATA_DIR, LONG_TERM_MEMORY_FILE } from '@shared/core/constants';
-import { logger } from '@shared/core/logger';
+import { DATA_DIR, LONG_TERM_MEMORY_FILE } from '@shared/core/constants.js';
+import { logger } from '@shared/core/logger.js';
 import type { LowSync } from 'lowdb';
 import path from 'node:path';
-import { loadLowdb } from './data-load';
+import { loadLowdb } from './data-load.js';
 
 type TgUserId = `tg_${string}`;
 
@@ -54,7 +54,7 @@ class LongTermMemory {
 
     if (!userMemories?.length) {
       const cannotMsg = `Cannot retrieve memories: User ${userId} not added any memory.`;
-      logger.warn(`[LongTermMemory] ${cannotMsg}`);
+      logger.info(`[LongTermMemory] ${cannotMsg}`);
       return cannotMsg;
     }
 

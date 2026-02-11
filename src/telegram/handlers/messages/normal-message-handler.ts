@@ -1,45 +1,34 @@
-import { BotCommands } from '@configs/bot-commands';
-import { faqMatcher } from '@data/faq-matcher';
-import { logger } from '@shared/core/logger';
-import { ms } from '@shared/utils/helpers';
-import type { ResponseContext } from '@telegram/bot/response-context';
-import { toHtml } from '@telegram/markdown';
-import type { Message } from 'grammy/types';
-import type { ChitchatHandler } from './chitchat-handler';
-import type { MentionHandler } from './mention-handler';
+import { BotCommands } from '@configs/bot-commands.js';
+import { faqMatcher } from '@data/faq-matcher.js';
+import { logger } from '@shared/core/logger.js';
+import { ms } from '@shared/utils/helpers.js';
+import type { ResponseContext } from '@telegram/bot/response-context.js';
+import { toHtml } from '@telegram/markdown/index.js';
+import type { ChitchatHandler } from './chitchat-handler.js';
 
 interface Handlers {
-  mentionHandler: MentionHandler;
   chitchatHandler: ChitchatHandler;
 }
 
 export class NormalMessageHandler {
-  private mention: MentionHandler;
   private chitchat: ChitchatHandler;
 
   constructor(handlers: Handlers) {
-    this.mention = handlers.mentionHandler;
     this.chitchat = handlers.chitchatHandler;
   }
 
-  public async handle(ctx: ResponseContext, messages: Message[]): Promise<void> {
+  public async handle(ctx: ResponseContext) {
     logger.debug('Received normal message', { chatId: ctx.chat.id, userId: ctx.user.id });
 
-    if (ctx.isReplyToBot) {
-      logger.info('handling reply to bot', { chatId: ctx.chat.id, userId: ctx.user.id });
-      await this.mention.handle(ctx, messages);
-      return;
-    }
-
     if (ctx.isCommandAlias) {
-      await this.handleCommandAlias(ctx, messages);
+      await this.handleCommandAlias(ctx);
       return;
     }
 
     try {
       if (await this.handleKeywordReply(ctx)) return;
 
-      if (await this.chitchat.handle(ctx, messages)) return;
+      if (await this.chitchat.handle(ctx)) return;
     } catch (err) {
       logger.error(`[NormalMessageHandler] Passive processing error`, { err });
     }
@@ -49,20 +38,11 @@ export class NormalMessageHandler {
    * 处理 :ask 等指令别名
    * @private
    */
-  private async handleCommandAlias(ctx: ResponseContext, messages: Message[]) {
+  private async handleCommandAlias(ctx: ResponseContext) {
     const cleanText = ctx.text?.slice(1).trim();
-
-    if (cleanText?.startsWith('ask')) {
-      await this.mention.handle(ctx, messages);
-      return;
-    }
-
     const targetCommand = BotCommands.find((cmd) => cleanText?.startsWith(cmd.command));
-
     if (!targetCommand) return;
-
     logger.info(`Handling command alias: ${targetCommand.command}`, { chatId: ctx.chat.id });
-
     await targetCommand.action({ ctx });
   }
 

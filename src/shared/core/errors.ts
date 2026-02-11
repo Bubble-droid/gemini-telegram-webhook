@@ -1,8 +1,8 @@
-import { formatTime, shortenString } from '@shared/utils/helpers';
-import type { ResponseContext } from '@telegram/bot/response-context';
-import { Escaper } from '@telegram/markdown/Escaper';
-import { CONFIG } from './config';
-import { logger } from './logger';
+import { formatTime, shortenString } from '@shared/utils/helpers.js';
+import type { ResponseContext } from '@telegram/bot/response-context.js';
+import { Escaper } from '@telegram/markdown/Escaper.js';
+import { CONFIG } from './config.js';
+import { logger } from './logger.js';
 
 export class AppError extends Error {
   constructor(message: string) {
@@ -87,10 +87,30 @@ export class ConfigError extends AppError {
   }
 }
 
-export class ApiError extends AppError {
+export class AuthError extends AppError {
   constructor(message: string) {
     super(message);
-    this.name = 'ApiError';
+    this.name = 'AuthError';
+  }
+}
+
+export class GeminiApiError extends AppError {
+  constructor(
+    message: string,
+    public originalError?: Error,
+  ) {
+    super(message);
+    this.name = 'GeminiApiError';
+  }
+}
+
+export class OpenAiApiError extends AppError {
+  constructor(
+    message: string,
+    public originalError?: Error,
+  ) {
+    super(message);
+    this.name = 'OpenAiApiError';
   }
 }
 
@@ -101,9 +121,26 @@ export class AgentError extends AppError {
   }
 }
 
+export class McpError extends AppError {
+  constructor(
+    message: string,
+    public serverName?: string,
+  ) {
+    super(message);
+    this.name = 'McpError';
+  }
+}
+
 export class DataError extends AppError {
   constructor(message: string) {
     super(message);
     this.name = 'DataError';
+  }
+}
+
+export class TelegramError extends AppError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TelegramError';
   }
 }

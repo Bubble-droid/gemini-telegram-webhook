@@ -1,10 +1,13 @@
-import type { FUNCTION_TOOLS } from '@configs/function-tools';
-import type { InferSchema } from '@shared/types/schema';
-import type { BaseToolResult } from './agent';
+import { getFunctionTools } from '@configs/function-tools.js';
+import type { InferSchema } from '@shared/types/schema.js';
+import type { ResponseContext } from '@telegram/bot/response-context.js';
+import type { BaseToolResult, StatusUpdateCallback } from './agent.js';
 
-export type ToolName = (typeof FUNCTION_TOOLS)[number]['name'];
+const _FUNCTION_TOOLS = getFunctionTools([]);
 
-type GetToolDef<TName extends ToolName> = Extract<(typeof FUNCTION_TOOLS)[number], { name: TName }>;
+export type ToolName = (typeof _FUNCTION_TOOLS)[number]['name'];
+
+type GetToolDef<TName extends ToolName> = Extract<(typeof _FUNCTION_TOOLS)[number], { name: TName }>;
 
 type InferToolArgs<TName extends ToolName> =
   GetToolDef<TName> extends { parametersJsonSchema: infer TParams } ? InferSchema<TParams> : undefined;
@@ -14,3 +17,5 @@ type ToolCaller<TName extends ToolName> = (args: InferToolArgs<TName>) => BaseTo
 export type ToolCallers = {
   [K in ToolName]: ToolCaller<K>;
 };
+
+export type ToolCallerInjectedDeps = (ctx: ResponseContext, onStatusUpdate?: StatusUpdateCallback) => ToolCallers;

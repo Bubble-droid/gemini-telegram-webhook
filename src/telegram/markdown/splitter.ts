@@ -1,5 +1,5 @@
-import type { AstNode } from '@shared/types/markdown';
-import type { Generator } from './Generator';
+import type { AstNode } from '@shared/types/markdown.js';
+import type { Generator } from './Generator.js';
 
 const MAX_CONTENT_LENGTH = 4000;
 

@@ -1,10 +1,10 @@
 import { type ThinkingConfig } from '@google/genai';
-import { ApiError } from '@shared/core/errors';
-import { ms } from '@shared/utils/helpers';
+import type { OpenAiClientParams } from '@llm/types/agent.js';
+import { OpenAiApiError } from '@shared/core/errors.js';
+import { ms } from '@shared/utils/helpers.js';
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources';
 import type { ChatCompletion } from 'openai/resources.js';
-import type { ChatCompletionCreateParamsBase } from 'openai/resources/chat/completions.mjs';
 
 interface ExtraGoogleParams {
   google: {
@@ -16,7 +16,7 @@ interface ExtraGoogleParams {
   };
 }
 
-interface BaseParams extends Omit<ChatCompletionCreateParamsBase, 'messages'> {
+interface BaseParams extends OpenAiClientParams {
   extra_body?: ExtraGoogleParams;
 }
 
@@ -35,7 +35,7 @@ export class OpenAiClient {
 
   public async chatCompletion(
     messages: ChatCompletionMessageParam[],
-    params?: Omit<ChatCompletionCreateParamsBase, 'messages'>,
+    params?: OpenAiClientParams,
   ): Promise<ChatCompletion> {
     try {
       return await this.client.chat.completions.create({
@@ -46,7 +46,7 @@ export class OpenAiClient {
         stream: false,
       });
     } catch (err) {
-      throw new ApiError(`Failed to request to OpenAI API. ${err instanceof Error ? err.message : 'Unknown Error'}`);
+      throw new OpenAiApiError(`Failed to request to OpenAI API. ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 }

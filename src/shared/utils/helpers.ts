@@ -1,8 +1,8 @@
-import { CONFIG } from '@shared/core/config';
-import { DAY, GITHUB_RAW_URL, HOUR, MIN, SEC } from '@shared/core/constants';
-import { logger } from '@shared/core/logger';
-import type { Recordable } from '@shared/types/common';
-import { randomUUID } from 'node:crypto';
+import { CONFIG } from '@shared/core/config.js';
+import { DAY, GITHUB_RAW_URL, HOUR, MIN, SEC } from '@shared/core/constants.js';
+import { logger } from '@shared/core/logger.js';
+import type { Recordable } from '@shared/types/common.js';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 
@@ -155,4 +155,31 @@ export const uniqueByProperty = <T, K extends keyof T>(list: T[], key: K): T[] =
     }
   }
   return [...map.values()];
+};
+
+export const decodeToString = (base64: string): string => {
+  return Buffer.from(base64, 'base64').toString('utf-8');
+};
+
+export const shuffleArray = <T>(array: T[]): T[] => {
+  if (!array.length) return [];
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
+  }
+  return shuffled;
+};
+
+export const verifyToken = (incomingToken: string | undefined, storedToken: string | undefined): boolean => {
+  if (!incomingToken?.length || !storedToken?.length) {
+    return false;
+  }
+  const incomingHash = createHash('sha256').update(incomingToken).digest();
+  const storedHash = createHash('sha256').update(storedToken).digest();
+  return timingSafeEqual(incomingHash, storedHash);
+};
+
+export const makeFile = (content: string | Buffer, name: string, type: string): File => {
+  return new File([content], name, { type });
 };

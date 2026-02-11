@@ -1,13 +1,12 @@
 import type { Content } from '@google/genai';
-import { CONFIG } from '@shared/core/config';
-import { CHAT_HISTORY_FILE, DATA_DIR } from '@shared/core/constants';
-import { logger } from '@shared/core/logger';
-import type { Recordable } from '@shared/types/common';
-import type { ChitchatState } from '@shared/types/telegram';
-import { ms } from '@shared/utils/helpers';
+import { CHAT_HISTORY_FILE, DATA_DIR } from '@shared/core/constants.js';
+import { logger } from '@shared/core/logger.js';
+import type { Recordable } from '@shared/types/common.js';
+import type { ChitchatState } from '@shared/types/telegram.js';
+import { ms } from '@shared/utils/helpers.js';
 import type { LowSync } from 'lowdb';
 import path from 'node:path';
-import { loadLowdb } from './data-load';
+import { loadLowdb } from './data-load.js';
 
 interface HistoryItem {
   data: unknown;
@@ -18,6 +17,9 @@ interface DatabaseSchema {
   history: Recordable<HistoryItem>;
 }
 
+const HISTORY_TTL_DAY = 7;
+const MAX_HISTORY_LENGTH = 16;
+
 const HISTORY_FILE_PATH = path.join(DATA_DIR, CHAT_HISTORY_FILE);
 const DEFAULT_HISTORY_DATA = { history: {} };
 const CLEANUP_INTERVAL = ms.hour(6);
@@ -25,7 +27,7 @@ const CLEANUP_INTERVAL = ms.hour(6);
 class ChatHistory {
   private db: LowSync<DatabaseSchema>;
   private cleanupTimer?: NodeJS.Timeout;
-  private expirationTtl = ms.day(CONFIG.HISTORY_TTL_DAY);
+  private expirationTtl = ms.day(HISTORY_TTL_DAY);
 
   constructor() {
     this.db = loadLowdb<DatabaseSchema>(HISTORY_FILE_PATH, DEFAULT_HISTORY_DATA);
@@ -48,7 +50,7 @@ class ChatHistory {
   public update(chatId: number, userId: number, contents: Content[]) {
     const key = this.generateUserKey(chatId, userId);
     const history: Content[] = [...this.get(chatId, userId)];
-    const excess = history.length + contents.length - CONFIG.MAX_HISTORY_LENGTH;
+    const excess = history.length + contents.length - MAX_HISTORY_LENGTH;
 
     if (excess > 0) {
       history.splice(0, excess);

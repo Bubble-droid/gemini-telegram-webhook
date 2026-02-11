@@ -3,9 +3,6 @@
     {
       "path": "./",
     },
-    {
-      "path": "../openai-api-client",
-    },
   ],
   "settings": {
     "typescript.format.enable": false,

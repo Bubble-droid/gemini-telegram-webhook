@@ -1,4 +1,4 @@
-import type { Recordable } from './common';
+import type { Recordable } from './common.js';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 

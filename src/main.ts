@@ -1,40 +1,41 @@
-import buildApp from '@app';
-import { FUNCTION_TOOLS } from '@configs/function-tools';
-import { faqMatcher } from '@data/faq-matcher';
-import { pathResolver } from '@data/path-resolver';
-import { promptStore } from '@data/prompt-store';
-import { GeminiAgent } from '@llm/agent/gemini-agent';
-import { OpenAiAgent } from '@llm/agent/openai-agent';
-import { GeminiApiClient } from '@llm/client/gemini-api-client';
-import { OpenAiClient } from '@llm/client/openai-client';
-import { convertToOpenAiTool } from '@llm/lib/converter';
-import { createToolCaller } from '@llm/tool/tool-call';
-import type { ToolName } from '@llm/types/tool';
-import { registerProxyRoute } from '@routes/gemini.route';
-import { registerWebhookRoute } from '@routes/webhook.route';
-import { FileHandler } from '@services/file-service';
-import { MessageCollector } from '@services/message-collector';
-import { RateLimiter } from '@services/rate-limiter';
-import { TaskScheduler } from '@services/task-scheduler';
-import { CONFIG } from '@shared/core/config';
+import buildApp from '@app.js';
+import { faqMatcher } from '@data/faq-matcher.js';
+import { pathResolver } from '@data/path-resolver.js';
+import { promptStore } from '@data/prompt-store.js';
+import { GeminiAgent } from '@llm/agent/gemini-agent.js';
+import { GeminiApiClient } from '@llm/client/gemini-api-client.js';
+import { McpClient } from '@llm/mcp/mcp-client.js';
+import { createToolCaller } from '@llm/tool/tool-caller.js';
+import { registerCliProxyRoute } from '@routes/cli.route.js';
+import { registerGeminiProxyRoute } from '@routes/gemini.route.js';
+import { registerWebhookRoute } from '@routes/webhook.route.js';
+import { FileHandler } from '@services/file-service.js';
+import { MessageCollector } from '@services/message-collector.js';
+import { TaskScheduler } from '@services/task-scheduler.js';
+import { CONFIG } from '@shared/core/config.js';
 import {
-  DEFAULT_TEMPERATURE,
-  DYNAMIC_THINKING_CONFIG,
-  GEMINI_SAFETY_SETTINGS,
-  OPENAI_MODEL,
-} from '@shared/core/constants';
-import { logger } from '@shared/core/logger';
-import { ms } from '@shared/utils/helpers';
-import { TelegramBotApi } from '@telegram/bot/telegram-bot-api';
-import { ChitchatHandler } from '@telegram/handlers/messages/chitchat-handler';
-import { MentionHandler } from '@telegram/handlers/messages/mention-handler';
-import { NormalMessageHandler } from '@telegram/handlers/messages/normal-message-handler';
-import { UpdateHandler } from '@telegram/handlers/update-handler';
+  CLI_PROXY_BASE_URL,
+  DATA_DIR,
+  GEMINI_API_SAFETY_SETTINGS,
+  GEMINI_CLIENT_BASE_CONFIG,
+  GEMINI_PROXY_BASE_URL,
+  MCP_SERVERS_FILE,
+} from '@shared/core/constants.js';
+import { logger } from '@shared/core/logger.js';
+import { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
+import { TelegramPoller } from '@telegram/bot/telegram-poller.js';
+import { handleCallbackQuery } from '@telegram/handlers/callback-query-handler.js';
+import { ChitchatHandler } from '@telegram/handlers/messages/chitchat-handler.js';
+import { handleBotCommand } from '@telegram/handlers/messages/command-handler.js';
+import { MentionHandler } from '@telegram/handlers/messages/mention-handler.js';
+import { NormalMessageHandler } from '@telegram/handlers/messages/normal-message-handler.js';
+import { UpdateHandler } from '@telegram/handlers/update-handler.js';
+import path from 'node:path';
 
-/**
- * 启动 Fastify 服务器
- */
-const start = async (): Promise<void> => {
+const MCP_SERVERS_PATH = path.join(DATA_DIR, MCP_SERVERS_FILE);
+const BOT_UPDATE_MODE = process.env['NODE_ENV'] === 'development' ? 'polling' : 'webhook';
+
+const start = async () => {
   const {
     WEBHOOK_RECEIVE_URL: url,
     WEBHOOK_SECRET_TOKEN: secret_token,
@@ -45,115 +46,91 @@ const start = async (): Promise<void> => {
 
   logger.init({ logLevel });
 
+  const mcpClient = new McpClient(MCP_SERVERS_PATH);
+  await mcpClient.discoverMcpServers();
+
   const bot = new TelegramBotApi(CONFIG.TELEGRAM_BOT_TOKEN);
   const taskScheduler = new TaskScheduler(bot);
   bot.setScheduler(taskScheduler);
 
+  const geminiApiClient = new GeminiApiClient(CONFIG.PROXY_AUTH_TOKEN, GEMINI_PROXY_BASE_URL, {
+    ...GEMINI_CLIENT_BASE_CONFIG,
+    enableEnhancedCivicAnswers: true,
+    safetySettings: GEMINI_API_SAFETY_SETTINGS,
+  });
+  const geminiCliClient = new GeminiApiClient(CONFIG.PROXY_AUTH_TOKEN, CLI_PROXY_BASE_URL, GEMINI_CLIENT_BASE_CONFIG);
+  const geminiApiAgent = new GeminiAgent(geminiApiClient);
+  const geminiCliAgent = new GeminiAgent(geminiCliClient);
+  const toolCaller = createToolCaller({ geminiApiAgent, geminiCliAgent, mcpClient });
+
   const fileHandler = new FileHandler(bot);
-
-  const geminiClient = new GeminiApiClient(CONFIG.LOCAL_PROXY_BASE_URL, {
-    temperature: DEFAULT_TEMPERATURE,
-    safetySettings: GEMINI_SAFETY_SETTINGS,
-    thinkingConfig: DYNAMIC_THINKING_CONFIG,
-  });
-  const geminiAgent = new GeminiAgent(geminiClient);
-
-  const openaiClient = new OpenAiClient(CONFIG.OPENAI_API_KEY, CONFIG.OPENAI_BASE_URL, {
-    model: OPENAI_MODEL,
-    temperature: DEFAULT_TEMPERATURE,
-    tools: FUNCTION_TOOLS.map(convertToOpenAiTool),
-    tool_choice: 'auto',
-    extra_body: {
-      google: {
-        thinking_config: {
-          thinking_budget: -1,
-        },
-      },
-    },
-  });
-  const openaiAgent = new OpenAiAgent(openaiClient, (name, args) => {
-    return createToolCaller(bot, geminiAgent, () => {
-      /*  */
-    })[name as ToolName](args as never);
-  });
-
-  const rateLimiter = new RateLimiter(ms.sec(CONFIG.REQUEST_LIMIT_SECOND));
   const messageCollector = new MessageCollector();
+  const mentionHandler = new MentionHandler({ fileHandler, geminiCliAgent, toolCaller, mcpClient });
+  const chitchatHandler = new ChitchatHandler({ fileHandler, geminiCliAgent, toolCaller, mcpClient });
+  const normalMessageHandler = new NormalMessageHandler({ chitchatHandler });
 
-  const mentionHandler = new MentionHandler({
-    limiter: rateLimiter,
-    fileHandler,
-    agent: geminiAgent,
+  const updateHandler = new UpdateHandler(bot);
+
+  updateHandler.onUpdate('callback_query', async (ctx) => {
+    await handleCallbackQuery(ctx);
+  });
+  updateHandler.onUpdate('message', (ctx) => {
+    messageCollector.append(ctx.message);
+  });
+  updateHandler.onUpdate('message', async (ctx) => {
+    if (ctx.isBotCommand) {
+      await handleBotCommand(ctx);
+      return;
+    }
+
+    if (ctx.isBotMentioned || ctx.isReplyToBot || ctx.isMentionAlias) {
+      const messages = await messageCollector.getMessages(ctx.message);
+      await mentionHandler.handle(ctx, messages);
+      return;
+    }
+
+    await normalMessageHandler.handle(ctx);
   });
 
-  const chitchatHandler = new ChitchatHandler(openaiAgent, fileHandler);
-
-  const normalMessageHandler = new NormalMessageHandler({
-    mentionHandler,
-    chitchatHandler,
-  });
-
-  const updateHandler = new UpdateHandler(bot, {
-    messageCollector,
-    mentionHandler,
-    normalMessageHandler,
-  });
-
-  logger.info(`运行环境：${process.env['NODE_ENV']}`);
+  logger.info(`Environment: ${process.env['NODE_ENV']}`);
+  logger.info(`Bot Mode: ${BOT_UPDATE_MODE.toUpperCase()}`);
 
   const server = buildApp();
 
   registerWebhookRoute(server, updateHandler);
-  registerProxyRoute(server);
+  registerGeminiProxyRoute(server);
+  registerCliProxyRoute(server);
 
   await pathResolver.loadFileIdMap();
   await promptStore.reload();
   await faqMatcher.reload();
 
-  await bot.setWebhook(url, { secret_token });
-
-  // --- 1. 定义控制优雅退出的标志 ---
-  let isShuttingDown = false;
-
-  // --- 2. 定义优雅退出逻辑 ---
-  const gracefulShutdown = async (signal: string) => {
-    // 检查标志，确保只执行一次
-    if (isShuttingDown) {
-      logger.warn(`系统信号 ${signal} 被忽略，服务器正在关闭中...`);
-      return;
-    }
-    isShuttingDown = true;
-    logger.info(`收到系统信号 ${signal}，正在优雅关闭服务器...`);
+  if (BOT_UPDATE_MODE === 'webhook') {
+    registerWebhookRoute(server, updateHandler);
+    await bot.setWebhook(url, true, {
+      secret_token,
+      allowed_updates: ['message', 'callback_query'],
+    });
 
     try {
-      // server.close() 会触发 Fastify 的 onClose 钩子
-      // 停止接收新 HTTP 请求，等待现有请求完成
-
-      await server.close();
-      logger.info('🚀 服务器已安全关闭 (Graceful Shutdown Completed)');
-      process.exit(0);
+      await server.listen({ host, port });
     } catch (err) {
-      logger.error('服务器关闭过程中发生错误', { err });
+      logger.fatal('Server startup failed in Webhook mode', { err });
       process.exit(1);
     }
-  };
+  } else {
+    try {
+      await server.listen({ host, port });
+    } catch (err) {
+      logger.fatal('Server startup failed in Polling mode', { err });
+      process.exit(1);
+    }
 
-  // --- 2. 注册信号监听 ---
-  // SIGINT: 通常是 Ctrl+C
-  // SIGTERM: 通常是 Docker/Kubernetes 的停止命令
-  process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
-  process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
-
-  // --- 3. 启动服务器 ---
-  try {
-    await server.listen({ host, port });
-  } catch (err) {
-    logger.fatal('Server startup failed', { err });
-    process.exit(1);
+    const poller = new TelegramPoller(bot, updateHandler);
+    await poller.start();
   }
 };
 
-// 捕获未处理的 Promise 拒绝 (兜底)
 process.on('unhandledRejection', (err) => {
   logger.error('Unhandled Rejection:', { err });
   process.exit(1);

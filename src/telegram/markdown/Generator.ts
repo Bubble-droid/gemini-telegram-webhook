@@ -1,5 +1,5 @@
-import type { AstNode, NodeType } from '@shared/types/markdown';
-import { Escaper } from './Escaper';
+import type { AstNode, NodeType } from '@shared/types/markdown.js';
+import { Escaper } from './Escaper.js';
 
 /**
  * AST 生成器基类，负责将 AST 转换为字符串。

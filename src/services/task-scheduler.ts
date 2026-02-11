@@ -1,11 +1,11 @@
-import { loadLowdb } from '@data/data-load';
-import { DATA_DIR, SCHEDULED_TASK_FILE } from '@shared/core/constants';
-import { HttpError } from '@shared/core/errors';
-import { logger } from '@shared/core/logger';
-import type { Recordable } from '@shared/types/common';
-import type { ApiMethod, ApiParams } from '@shared/types/telegram';
-import { deepClone, formatTime, generateUuid } from '@shared/utils/helpers';
-import type { TelegramBotApi } from '@telegram/bot/telegram-bot-api';
+import { loadLowdb } from '@data/data-load.js';
+import { DATA_DIR, SCHEDULED_TASK_FILE } from '@shared/core/constants.js';
+import { HttpError } from '@shared/core/errors.js';
+import { logger } from '@shared/core/logger.js';
+import type { Recordable } from '@shared/types/common.js';
+import type { ApiMethod, ApiParams } from '@shared/types/telegram.js';
+import { deepClone, formatTime, generateUuid } from '@shared/utils/helpers.js';
+import type { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
 import type { LowSync } from 'lowdb';
 import path from 'node:path';
 

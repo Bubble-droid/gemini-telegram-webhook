@@ -1,10 +1,10 @@
-import { BotCommands } from '@configs/bot-commands';
-import { CONFIG } from '@shared/core/config';
-import { DataError } from '@shared/core/errors';
-import type { ApiResult } from '@shared/types/telegram';
-import type { ExtractMethods } from '@shared/types/utils';
-import { hasFile, hasImage } from '@shared/utils/message';
-import type { TelegramBotApi } from '@telegram/bot/telegram-bot-api';
+import { BotCommands } from '@configs/bot-commands.js';
+import { CONFIG } from '@shared/core/config.js';
+import { DataError } from '@shared/core/errors.js';
+import type { ApiResult } from '@shared/types/telegram.js';
+import type { ExtractMethods } from '@shared/types/utils.js';
+import { hasFile, hasImage } from '@shared/utils/message.js';
+import type { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
 import type { CallbackQuery, Chat, Message, MessageEntity, Update, User } from 'grammy/types';
 
 type BotApiMethod = ExtractMethods<TelegramBotApi>;
@@ -113,10 +113,13 @@ export class ResponseContext {
     return !!this.botCommandEntity;
   }
 
+  public get isMentionAlias(): boolean {
+    return !!this.text?.startsWith(`:ask`);
+  }
+
   public get isCommandAlias(): boolean {
     if (!this.text?.startsWith(':')) return false;
     const alias = this.text.slice(1).split(' ')[0];
-    if (alias === 'ask') return true;
     return BotCommands.some((c) => c.command === alias);
   }
 

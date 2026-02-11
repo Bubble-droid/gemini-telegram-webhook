@@ -1,24 +1,14 @@
-import { handleProxyRequest } from '@services/gemini-api-proxy';
-import type { InferSchema, JSONSchema } from '@shared/types/schema';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { handleGeminiProxyRequest } from '@proxy/gemini/handle-gemini-request.js';
+import type { FastifyInstance } from 'fastify';
+import { checkAuthToken, checkIpWhitelist } from './guards.js';
+import { ProxyHeadersSchema, type TProxyHeaders } from './route-schema.js';
 
-const ProxyHeadersSchema = {
-  type: 'object',
-  properties: {
-    'x-goog-api-key': { type: 'string' },
-    'content-type': { type: 'string' },
-  },
-  required: ['x-goog-api-key', 'content-type'],
-  additionalProperties: true,
-} as const satisfies JSONSchema;
-
-type TProxyHeaders = FastifyRequest['headers'] & InferSchema<typeof ProxyHeadersSchema>;
-
-export const registerProxyRoute = (app: FastifyInstance): void => {
-  app.all<{ Headers: TProxyHeaders }>('/gemini/*', {
-    schema: {
-      headers: ProxyHeadersSchema,
-    },
-    handler: handleProxyRequest,
+export const registerGeminiProxyRoute = (app: FastifyInstance) => {
+  app.route<{ Headers: TProxyHeaders }>({
+    method: 'POST',
+    url: '/gemini/v1beta/models/:modelAndMethod',
+    schema: { headers: ProxyHeadersSchema },
+    preHandler: [checkIpWhitelist, checkAuthToken('x-goog-api-key')],
+    handler: handleGeminiProxyRequest,
   });
 };

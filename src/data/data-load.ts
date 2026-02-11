@@ -1,6 +1,6 @@
-import { DATA_DIR } from '@shared/core/constants';
-import { generateRawUrl, readTextFile } from '@shared/utils/helpers';
-import { httpRequest } from '@shared/utils/http';
+import { DATA_DIR } from '@shared/core/constants.js';
+import { generateRawUrl, readTextFile } from '@shared/utils/helpers.js';
+import { httpRequest } from '@shared/utils/http.js';
 import { LowSync } from 'lowdb';
 import { JSONFileSync } from 'lowdb/node';
 import { existsSync, mkdirSync } from 'node:fs';

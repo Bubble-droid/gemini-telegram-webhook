@@ -1,8 +1,8 @@
-import { DATA_DIR, FAQ_DATA_FILE } from '@shared/core/constants';
-import { logger } from '@shared/core/logger';
-import type { FaqItem } from '@shared/types/data';
+import { DATA_DIR, FAQ_DATA_FILE } from '@shared/core/constants.js';
+import { logger } from '@shared/core/logger.js';
+import type { FaqItem } from '@shared/types/data.js';
 import path from 'node:path';
-import { loadData } from './data-load';
+import { loadData } from './data-load.js';
 
 /**
  * 预编译后的 FAQ 条目结构

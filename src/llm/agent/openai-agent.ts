@@ -1,16 +1,16 @@
 import type { FunctionCall } from '@google/genai';
-import type { OpenAiClient } from '@llm/client/openai-client';
-import type { ToolCall } from '@llm/types/agent';
-import { AgentError } from '@shared/core/errors';
-import { logger } from '@shared/core/logger';
-import type { Recordable } from '@shared/types/common';
+import type { OpenAiClient } from '@llm/client/openai-client.js';
+import type { OpenAiClientParams, ToolCall } from '@llm/types/agent.js';
+import { AgentError } from '@shared/core/errors.js';
+import { logger } from '@shared/core/logger.js';
+import type { Recordable } from '@shared/types/common.js';
+import { delay, ms } from '@shared/utils/helpers.js';
 import type {
   ChatCompletionMessage,
   ChatCompletionMessageParam,
   ChatCompletionToolMessageParam,
 } from 'openai/resources';
 import type { ChatCompletionContentPart } from 'openai/resources.js';
-import type { ChatCompletionCreateParamsBase } from 'openai/resources/chat/completions.mjs';
 
 const createToolResponse = (id: string, content: unknown): ChatCompletionToolMessageParam => {
   return {
@@ -48,12 +48,12 @@ export class OpenAiAgent {
 
   public async run(
     messages: ChatCompletionMessageParam[],
-    params?: Omit<ChatCompletionCreateParamsBase, 'messages'>,
+    params?: OpenAiClientParams,
   ): Promise<ChatCompletionMessage> {
     const agentMsgs = [...messages];
     let completionMessage: ChatCompletionMessage | undefined;
     do {
-      logger.trace(`OpenAI Agent Messages:`, {
+      logger.trace(`OpenAI Agent request messages:`, {
         requestMessage: agentMsgs.map((m): ChatCompletionMessageParam => {
           if (m.role === 'user' && Array.isArray(m.content)) {
             return {
@@ -66,7 +66,7 @@ export class OpenAiAgent {
       });
       const res = await this.client.chatCompletion(messages, params);
       completionMessage = res.choices[0]?.message;
-      logger.trace(`OpenAI Agent Response:`, { completionMessage });
+      logger.trace(`OpenAI Agent completion response:`, { completion: res });
 
       if (!completionMessage) {
         throw new AgentError('OpenAI Agent response is empty');
@@ -107,6 +107,8 @@ export class OpenAiAgent {
         }),
       );
       agentMsgs.push(...toolResults);
+
+      await delay(ms.sec(3));
     } while (completionMessage.tool_calls?.some((call) => call.type === 'function'));
 
     return completionMessage;

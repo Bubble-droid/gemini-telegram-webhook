@@ -1,5 +1,6 @@
-import { logger } from '@shared/core/logger';
-import { ms } from '@shared/utils/helpers';
+import { DEFAULT_RATE_LIMIT } from '@shared/core/constants.js';
+import { logger } from '@shared/core/logger.js';
+import { ms } from '@shared/utils/helpers.js';
 
 interface NotRateLimit {
   canProceed: true;
@@ -12,7 +13,6 @@ interface HasRateLimiter {
 
 type RateLimiterCheckResult = NotRateLimit | HasRateLimiter;
 
-const DEFAULT_RATE_LIMIT = ms.sec(20);
 const CLEANUP_INTERVAL_MS = ms.min(5);
 
 export class RateLimiter {

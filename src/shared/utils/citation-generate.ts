@@ -1,4 +1,4 @@
-import { pathResolver } from '@data/path-resolver';
+import { pathResolver } from '@data/path-resolver.js';
 import type { GenerateContentResponse, GroundingChunk } from '@google/genai';
 
 /**

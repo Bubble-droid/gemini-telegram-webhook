@@ -1,6 +1,6 @@
-import { BotCommands } from '@configs/bot-commands';
-import { logger } from '@shared/core/logger';
-import type { ResponseContext } from '@telegram/bot/response-context';
+import { BotCommands } from '@configs/bot-commands.js';
+import { logger } from '@shared/core/logger.js';
+import type { ResponseContext } from '@telegram/bot/response-context.js';
 import type { BotCommand } from 'grammy/types';
 
 export const handleBotCommand = async (ctx: ResponseContext) => {

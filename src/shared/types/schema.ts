@@ -1,6 +1,6 @@
 import type { Type } from '@google/genai';
-import type { Recordable } from './common';
-import type { Evaluate } from './utils';
+import type { Recordable } from './common.js';
+import type { Evaluate } from './utils.js';
 
 export type JSONSchemaType = 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array' | 'null';
 export type JSONSchema =
@@ -56,9 +56,6 @@ export type JSONSchema =
       nullable?: boolean;
     }>;
 
-/**
- * 基础类型映射表
- */
 interface SchemaTypeMap {
   // Standard JSON Schema Literals
   string: string;
@@ -74,57 +71,65 @@ interface SchemaTypeMap {
   [Type.BOOLEAN]: boolean;
 }
 
-/** 提取必填字段 Keys */
+/** Extract Required Keys */
 type ExtractRequired<T> = T extends { required: readonly string[] } ? T['required'][number] : never;
 
 // =================================================================
-// 3. 核心解析器
+// 3. Core Parsers
 // =================================================================
 
 /**
- * 解析 Const (字面量常量)
+ * Resolve Const (Literal)
  */
 type ResolveConst<T> = T extends { const: infer C } ? C : never;
 
 /**
- * 解析 Enum (枚举联合)
+ * Resolve Enum (Union)
  */
 type ResolveEnum<T> = T extends { enum: readonly (infer E)[] } ? E : never;
 
 /**
- * 解析 Array
- * 兼容 type: 'array' 和 type: Type.ARRAY
+ * Resolve Union (anyOf / oneOf)
+ *
+ * LOGIC FIX:
+ * Extracts the item type from the array and recursively applies InferSchema.
+ * Because TypeScript conditional types are distributive, InferSchema<Item>
+ * naturally creates a Union (A | B | C) instead of an Array.
+ */
+type ResolveUnion<T> = T extends { anyOf: readonly (infer U)[] }
+  ? InferSchema<U>
+  : T extends { oneOf: readonly (infer U)[] }
+    ? InferSchema<U>
+    : never;
+
+/**
+ * Resolve Array
+ * Compatible with: type: 'array', type: Type.ARRAY
  */
 type ResolveArray<T> = T extends { items: infer I } ? InferSchema<I>[] : unknown[];
 
 /**
- * 解析 additionalProperties (索引签名)
- * 如果没有定义 additionalProperties，默认为 unknown (标准行为) 还是空?
- *
- * 策略：
- * 1. true -> Record<string, unknown>
- * 2. Schema -> Record<string, Infer<Schema>>
- * 3. false/undefined -> unknown (为了兼容性，不强制添加索引签名，除非显式声明 true)
+ * Resolve Additional Properties (Index Signature)
  */
 type ResolveAdditional<T> = T extends { additionalProperties: infer AP }
   ? AP extends true
     ? Recordable
-    : AP extends object // AP 是 Schema 对象
+    : AP extends object // If AP is a Schema Object
       ? Recordable<InferSchema<AP>>
       : unknown
-  : unknown; // 默认不添加索引签名，保持严格
+  : unknown; // Strict default: no index signature
 
 /**
- * 解析 Object Properties
+ * Resolve Object Properties
  */
 type ResolveProperties<T> = T extends { properties: infer P }
   ? P extends Recordable
     ? Evaluate<
         {
-          // 必填字段
+          // Required Fields
           [K in keyof P as K extends ExtractRequired<T> ? K : never]: InferSchema<P[K]>;
         } & {
-          // 可选字段
+          // Optional Fields
           [K in keyof P as K extends ExtractRequired<T> ? never : K]?: InferSchema<P[K]>;
         }
       >
@@ -132,13 +137,13 @@ type ResolveProperties<T> = T extends { properties: infer P }
   : unknown;
 
 /**
- * 解析 Object 结构
- * 组合 Properties 和 AdditionalProperties
+ * Resolve Object Structure
+ * Combines Properties and AdditionalProperties
  */
 type ResolveObject<T> = Evaluate<ResolveProperties<T> & ResolveAdditional<T>>;
 
 /**
- * 解析基础类型 (Primitive)
+ * Resolve Primitive Types
  */
 type ResolvePrimitive<T> = T extends { type: infer TType }
   ? TType extends keyof SchemaTypeMap
@@ -147,21 +152,24 @@ type ResolvePrimitive<T> = T extends { type: infer TType }
   : unknown;
 
 // =================================================================
-// 4. 主推断入口 (统一入口)
+// 4. Main Inference Entry
 // =================================================================
 
 export type InferSchema<T> =
-  // 1. Const (最高优先级)
+  // 1. Const (Highest Priority)
   T extends { const: unknown }
     ? ResolveConst<T>
     : // 2. Enum
       T extends { enum: readonly unknown[] }
       ? ResolveEnum<T>
-      : // 3. Array (兼容两种 type 定义)
-        T extends { type: 'array' | Type.ARRAY }
-        ? ResolveArray<T>
-        : // 4. Object (兼容两种 type 定义，或隐式 properties)
-          T extends { type: 'object' | Type.OBJECT } | { properties: unknown }
-          ? ResolveObject<T>
-          : // 5. Primitive (查表)
-            ResolvePrimitive<T>;
+      : // 3. Union (anyOf / oneOf) - FIXED PRIORITY & LOGIC
+        T extends { anyOf: readonly unknown[] } | { oneOf: readonly unknown[] }
+        ? ResolveUnion<T>
+        : // 4. Array
+          T extends { type: 'array' | Type.ARRAY }
+          ? ResolveArray<T>
+          : // 5. Object (Explicit type or implicit properties)
+            T extends { type: 'object' | Type.OBJECT } | { properties: unknown }
+            ? ResolveObject<T>
+            : // 6. Primitive
+              ResolvePrimitive<T>;

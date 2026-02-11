@@ -1,13 +1,13 @@
-import { chatHistory } from '@data/chat-history';
-import { faqMatcher } from '@data/faq-matcher';
-import { promptStore } from '@data/prompt-store';
-import { CONFIG } from '@shared/core/config';
-import type { MaybePromise } from '@shared/types/common';
-import { ms } from '@shared/utils/helpers';
-import type { ResponseContext } from '@telegram/bot/response-context';
-import { toHtml } from '@telegram/markdown';
+import { chatHistory } from '@data/chat-history.js';
+import { faqMatcher } from '@data/faq-matcher.js';
+import { promptStore } from '@data/prompt-store.js';
+import { CONFIG } from '@shared/core/config.js';
+import type { MaybePromise } from '@shared/types/common.js';
+import { ms } from '@shared/utils/helpers.js';
+import type { ResponseContext } from '@telegram/bot/response-context.js';
+import { toHtml } from '@telegram/markdown/index.js';
 import type { BotCommand } from 'grammy/types';
-import { BotMessages, Keyboards } from './bot-messages';
+import { BotMessages, Keyboards } from './bot-messages.js';
 
 interface CommandActionArgs {
   ctx: ResponseContext;

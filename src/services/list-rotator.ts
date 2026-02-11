@@ -1,5 +1,5 @@
-import { DataError } from '@shared/core/errors';
-import { logger } from '@shared/core/logger';
+import { DataError } from '@shared/core/errors.js';
+import { logger } from '@shared/core/logger.js';
 
 export class ListRotator {
   private readonly items: Set<string>;
@@ -12,6 +12,10 @@ export class ListRotator {
     this.items = new Set(list);
     this.currentIterator = this.items.values();
     logger.info(`Creating ListRotator instance, loaded ${this.items.size} values.`);
+  }
+
+  public get size(): number {
+    return this.items.size;
   }
 
   /**
@@ -36,9 +40,5 @@ export class ListRotator {
     }
 
     return result.value;
-  }
-
-  public getSize(): number {
-    return this.items.size;
   }
 }

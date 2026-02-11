@@ -1,4 +1,4 @@
-import type { FaqItem } from '@shared/types/data';
+import type { FaqItem } from '@shared/types/data.js';
 
 export const faqData: FaqItem[] = [
   // ⚙️ B.2.1 常规与界面 (General & UI)

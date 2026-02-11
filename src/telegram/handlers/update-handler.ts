@@ -1,81 +1,62 @@
-import type { MessageCollector } from '@services/message-collector';
-import { CONFIG } from '@shared/core/config';
-import { AppError } from '@shared/core/errors';
-import { logger } from '@shared/core/logger';
-import { ms, shortenString } from '@shared/utils/helpers';
-import { simplifyUpdateInLogger } from '@shared/utils/message';
-import { ResponseContext } from '@telegram/bot/response-context';
-import type { TelegramBotApi } from '@telegram/bot/telegram-bot-api';
-import { Escaper } from '@telegram/markdown/Escaper';
+import { CONFIG } from '@shared/core/config.js';
+import { AppError } from '@shared/core/errors.js';
+import { logger } from '@shared/core/logger.js';
+import type { MaybePromise } from '@shared/types/common.js';
+import { ms, shortenString } from '@shared/utils/helpers.js';
+import { simplifyUpdate } from '@shared/utils/message.js';
+import { ResponseContext } from '@telegram/bot/response-context.js';
+import type { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
+import { Escaper } from '@telegram/markdown/Escaper.js';
 import type { Update } from 'grammy/types';
-import { handleCallbackQuery } from './callback-query-handler';
-import { handleBotCommand } from './messages/command-handler';
-import type { MentionHandler } from './messages/mention-handler';
-import type { NormalMessageHandler } from './messages/normal-message-handler';
 
-interface Handlers {
-  messageCollector: MessageCollector;
-  mentionHandler: MentionHandler;
-  normalMessageHandler: NormalMessageHandler;
-}
+type SpecificUpdateHandler = (ctx: ResponseContext) => MaybePromise;
 
 export class UpdateHandler {
+  private readonly handlerRegistry = new Map<keyof Update, Set<SpecificUpdateHandler>>();
   private readonly bot: TelegramBotApi;
-  private readonly collector: MessageCollector;
-  private readonly mention: MentionHandler;
-  private readonly normal: NormalMessageHandler;
 
-  constructor(bot: TelegramBotApi, handlers: Handlers) {
+  constructor(bot: TelegramBotApi) {
     this.bot = bot;
-    this.collector = handlers.messageCollector;
-    this.mention = handlers.mentionHandler;
-    this.normal = handlers.normalMessageHandler;
+  }
+
+  public onUpdate(updateType: keyof Update, handler: SpecificUpdateHandler) {
+    let handlers = this.handlerRegistry.get(updateType);
+    if (!handlers) {
+      handlers = new Set();
+      this.handlerRegistry.set(updateType, handlers);
+    }
+    handlers.add(handler);
   }
 
   public async handle(update: Update) {
     const { message, callback_query } = update;
-    logger.debug('Received webhook update:', { update: simplifyUpdateInLogger(update) });
+    logger.trace('Received webhook update:', { update: simplifyUpdate(update) });
     if (!message && !callback_query) return;
+
     const ctx = new ResponseContext(update, this.bot);
-    try {
-      if (ctx.callBackQuery) {
-        await handleCallbackQuery(ctx);
-      } else {
-        const { id, type } = ctx.chat;
-        if (!CONFIG.ALLOWED_USAGE_GROUPS.has(id)) return;
-        if (!['group', 'supergroup'].includes(type)) return;
+    const { id, type } = ctx.chat;
+    if (!CONFIG.ALLOWED_USAGE_GROUPS.includes(id)) return;
+    if (!['group', 'supergroup'].includes(type)) return;
 
-        if (ctx.isBotCommand) {
-          await handleBotCommand(ctx);
-          return;
+    const updateTypes = Object.keys(update) as (keyof Update)[];
+    for (const updateType of updateTypes) {
+      const handlers = this.handlerRegistry.get(updateType);
+      if (handlers) {
+        for (const handle of handlers) {
+          try {
+            await handle(ctx);
+          } catch (err) {
+            this.handleError(err, ctx);
+          }
         }
-
-        this.collector.append(ctx.message);
-
-        await this.dispatch(ctx);
       }
-    } catch (err) {
-      this.handleError(err, ctx);
     }
-  }
-
-  private async dispatch(ctx: ResponseContext) {
-    const messages = await this.collector.getMessages(ctx.message);
-
-    if (ctx.isBotMentioned) {
-      await this.mention.handle(ctx, messages);
-      return;
-    }
-
-    await this.normal.handle(ctx, messages);
   }
 
   private handleError(err: unknown, ctx: ResponseContext) {
     const { chat, message } = ctx;
-    const errorMessage = err instanceof AppError ? err.message : 'Unknown error';
-
+    const errorMessage = err instanceof AppError ? err.message : typeof err === 'string' ? err : String(err);
     logger.error('Error while handling update', { err });
-
     if (err instanceof AppError) {
       void err.notify(
         err,
@@ -83,13 +64,7 @@ export class UpdateHandler {
         `Error while handling update ${JSON.stringify({ chatId: chat.id, messageId: message.message_id })}`,
       );
     }
-
-    const shorten = `❌ 发生错误，请稍后再试\n<blockquote expandable>${Escaper.html(shortenString(errorMessage))}</blockquote>`;
-
-    void ctx.api.sendMessage(chat.id, shorten, {
-      replyToMessageId: message.message_id,
-      parse_mode: 'HTML',
-      deleteAfterMs: ms['3m'],
-    });
+    const shorten = `❌ An error occurred, please try again later\n<blockquote expandable>${Escaper.html(shortenString(errorMessage))}</blockquote>`;
+    void ctx.reply(shorten, { parse_mode: 'HTML', deleteAfterMs: ms['3m'] });
   }
 }

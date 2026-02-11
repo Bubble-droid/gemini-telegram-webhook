@@ -3,6 +3,11 @@ import type { LogLevel } from 'fastify';
 export interface RawEnv {
   GEMINI_API_KEYS: string[];
 
+  GEMINI_CREDENTIALS: string;
+  GOOGLE_CLOUD_PROJECT: string;
+
+  PROXY_AUTH_TOKEN: string;
+
   OPENAI_API_KEY: string;
   OPENAI_BASE_URL: string;
 
@@ -16,19 +21,11 @@ export interface RawEnv {
   TELEGRAM_BOT_ID: number;
   TELEGRAM_BOT_USERNAME: string;
   TELEGRAM_BOT_OWNER_ID: number;
-  ALLOWED_USAGE_GROUPS: Set<number>;
+  ALLOWED_USAGE_GROUPS: number[];
 
   SERVER_LISTEN_HOST?: string;
   SERVER_LISTEN_PORT?: number;
   SERVER_LOG_LEVEL?: LogLevel;
-
-  GOOGLE_AI_BASE_URL?: string;
-  LOCAL_PROXY_BASE_URL?: string;
-
-  MAX_AGENT_ROUNDS?: number;
-  REQUEST_LIMIT_SECOND?: number;
-  HISTORY_TTL_DAY?: number;
-  MAX_HISTORY_LENGTH?: number;
 }
 
 export type EnvConfig = Required<RawEnv>;

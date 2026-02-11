@@ -1,12 +1,12 @@
-import { DATA_DIR } from '@shared/core/constants';
-import { logger } from '@shared/core/logger';
-import type { Recordable } from '@shared/types/common';
+import { DATA_DIR } from '@shared/core/constants.js';
+import { logger } from '@shared/core/logger.js';
+import type { Recordable } from '@shared/types/common.js';
 import { join } from 'node:path';
-import { loadData } from './data-load';
+import { loadData } from './data-load.js';
 
 type PromptKey = (typeof PROMPT_KEYS)[number];
 
-const PROMPT_KEYS = ['assistant', 'file-search', 'github-toolset', 'builtin-tools', 'chitchat'] as const;
+const PROMPT_KEYS = ['assistant', 'chitchat'] as const;
 const PROMPT_DIR = join(DATA_DIR, 'prompts');
 
 /**

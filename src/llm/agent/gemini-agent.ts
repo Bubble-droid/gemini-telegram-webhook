@@ -1,11 +1,12 @@
-import { BotMessages } from '@configs/bot-messages';
+import { BotMessages } from '@configs/bot-messages.js';
 import type { Content, FunctionCall, FunctionResponse, GenerateContentResponse, Part } from '@google/genai';
-import type { GeminiApiClient } from '@llm/client/gemini-api-client';
-import type { ChatAgentOptions, NormalizedResponse } from '@llm/types/agent';
-import { CONFIG } from '@shared/core/config';
-import { AgentError } from '@shared/core/errors';
-import { logger } from '@shared/core/logger';
-import { delay, ms } from '@shared/utils/helpers';
+import type { GeminiApiClient } from '@llm/client/gemini-api-client.js';
+import type { GeminiAgentOpts, NormalizedResponse } from '@llm/types/agent.js';
+import { AgentError } from '@shared/core/errors.js';
+import { logger } from '@shared/core/logger.js';
+import { delay, ms } from '@shared/utils/helpers.js';
+
+const MAX_AGENT_ROUNDS = 16;
 
 const createToolResponse = (
   res: NormalizedResponse,
@@ -23,9 +24,9 @@ const createToolResponse = (
 
 const handleToolCall = async (
   call: FunctionCall,
-  callTool: NonNullable<ChatAgentOptions['callTool']>,
+  callTool: NonNullable<GeminiAgentOpts['callTool']>,
   responseText: string | undefined,
-  onStatusUpdate?: ChatAgentOptions['onStatusUpdate'],
+  onStatusUpdate?: GeminiAgentOpts['onStatusUpdate'],
 ): Promise<Pick<Part, 'functionResponse'>> => {
   const { id, name, args } = call;
 
@@ -36,7 +37,7 @@ const handleToolCall = async (
   logger.info(`[ChatAgent] Executing tool: ${name}`, { args });
 
   if (onStatusUpdate) {
-    const statusText = `${responseText?.trim() ?? ''}\n\n🔧 Calling \`${name}\`...`.trim();
+    const statusText = `${responseText?.trim() ?? ''}\n\n🔧 Calling ${name}`.trim();
     await onStatusUpdate(statusText);
   }
 
@@ -57,8 +58,8 @@ export class GeminiAgent {
     this.client = client;
   }
 
-  public async run(contents: Content[], options: ChatAgentOptions): Promise<GenerateContentResponse> {
-    const { maxRounds = CONFIG.MAX_AGENT_ROUNDS, geminiApiOptions, callTool, onStatusUpdate } = options;
+  public async run(contents: Content[], options: GeminiAgentOpts): Promise<GenerateContentResponse> {
+    const { maxRounds = MAX_AGENT_ROUNDS, onStatusUpdate, callTool, generateConfig } = options;
     const agentContents = [...contents];
     let round = 0;
     let response: GenerateContentResponse;
@@ -66,11 +67,15 @@ export class GeminiAgent {
       if (round >= maxRounds) {
         throw new AgentError(`Agent exceeded maximum rounds (${maxRounds})`);
       }
-      logger.debug(`[ChatAgent] Round ${round++} started.`);
+      logger.debug(`[GeminiAgent] Round ${round++} started.`);
 
-      response = await this.client.generateContent(agentContents, geminiApiOptions);
+      response = await this.client.generateContent(agentContents, generateConfig);
 
-      agentContents.push(response.candidates![0]!.content!);
+      if (!response.candidates?.[0]?.content) {
+        throw new AgentError('Model returned empty or invalid content.');
+      }
+
+      agentContents.push(response.candidates[0].content);
 
       const { functionCalls } = response;
       if (!functionCalls?.length) {
@@ -91,10 +96,10 @@ export class GeminiAgent {
 
       await delay(ms.sec(3));
 
-      await onStatusUpdate(BotMessages.thinking);
+      await onStatusUpdate?.(BotMessages.thinking);
     } while (response.functionCalls);
 
-    logger.info(`[ChatAgent] Task completed`, { rounds: round + 1 });
+    logger.info(`[GeminiAgent] Task completed`, { rounds: round + 1 });
     return response;
   }
 }

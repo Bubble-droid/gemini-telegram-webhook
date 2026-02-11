@@ -1,9 +1,9 @@
 import type { Part } from '@google/genai';
-import type { GeneralFunctionSchema } from '@llm/types/agent';
+import type { GeneralFunctionSchema } from '@llm/types/agent.js';
 import type { ChatCompletionContentPart, FunctionParameters } from 'openai/resources';
 import type { FunctionTool } from 'openai/resources/beta.js';
 
-export const convertToOpenAiTool = (tool: GeneralFunctionSchema): FunctionTool => {
+export const convertGeminiToolToOpenAiTool = (tool: GeneralFunctionSchema): FunctionTool => {
   return {
     type: 'function',
     function: {
@@ -15,7 +15,7 @@ export const convertToOpenAiTool = (tool: GeneralFunctionSchema): FunctionTool =
   };
 };
 
-export const convertToOpenAiContent = (part: Part): ChatCompletionContentPart => {
+export const convertGeminiPartToOpenAiContent = (part: Part): ChatCompletionContentPart => {
   if (part.inlineData) {
     return {
       type: 'image_url',

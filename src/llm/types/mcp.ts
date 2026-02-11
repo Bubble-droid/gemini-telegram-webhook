@@ -1,16 +1,25 @@
 import type { StdioServerParameters } from '@modelcontextprotocol/sdk/client/stdio.js';
-import type { Recordable } from '@shared/types/common';
+import type { Recordable } from '@shared/types/common.js';
+import type { GeneralFunctionSchema } from './agent.js';
 
-interface RemoteServer {
+interface BaseServer {
+  description: string;
+}
+
+interface RemoteServer extends BaseServer {
   type: 'http';
   url: string;
   headers?: Recordable<string>;
 }
 
-interface LocalServer extends StdioServerParameters {
-  type: 'stdio';
+interface LocalServer extends BaseServer, StdioServerParameters {
+  type: 'local';
 }
 
-export type ServerConfig = RemoteServer | LocalServer;
+export type McpServerConfig = RemoteServer | LocalServer;
+export type McpServer = Recordable<McpServerConfig>;
 
-export type McpServer = Recordable<ServerConfig>;
+export interface LoadedMcpServer extends BaseServer {
+  name: string;
+  tools: Omit<GeneralFunctionSchema, 'parametersJsonSchema'>[];
+}

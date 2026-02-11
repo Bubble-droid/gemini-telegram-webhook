@@ -1,6 +1,6 @@
+import type { Content } from '@google/genai';
 import type { ApiMethods } from 'grammy/types';
-import type { Methods, RawApi } from 'node_modules/grammy/out/core/client';
-import type { ChatCompletionMessageParam } from 'openai/resources';
+import type { Methods, RawApi } from 'node_modules/grammy/out/core/client.js';
 
 export type Integer = number;
 export type ChatId = Integer | string;
@@ -34,5 +34,5 @@ export interface AutoDeleteParams {
 export interface ChitchatState {
   maxScore: number;
   currentScore: number;
-  groupHistory: ChatCompletionMessageParam[];
+  groupHistory: Content[];
 }

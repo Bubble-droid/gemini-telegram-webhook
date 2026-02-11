@@ -1,47 +1,38 @@
-import { BotMessages } from '@configs/bot-messages';
-import { FUNCTION_TOOLS } from '@configs/function-tools';
-import { chatHistory } from '@data/chat-history';
-import { longTermMemory } from '@data/long-term-memory';
-import { promptStore } from '@data/prompt-store';
-import {
-  FunctionCallingConfigMode,
-  type Content,
-  type GenerateContentConfig,
-  type GenerateContentResponse,
-  type Part,
-} from '@google/genai';
-import type { GeminiAgent } from '@llm/agent/gemini-agent';
-import { createToolCaller } from '@llm/tool/tool-call';
-import type { ToolName } from '@llm/types/tool';
-import type { FileHandler } from '@services/file-service';
-import type { RateLimiter } from '@services/rate-limiter';
-import { CONFIG } from '@shared/core/config';
-import { logger } from '@shared/core/logger';
-import { formatTime, ms } from '@shared/utils/helpers';
-import { hasFile } from '@shared/utils/message';
-import { sendFormattedChunks } from '@telegram/bot/formatted-send';
-import type { ResponseContext } from '@telegram/bot/response-context';
-import { toHtml } from '@telegram/markdown';
+import { BotMessages } from '@configs/bot-messages.js';
+import { getFunctionTools } from '@configs/function-tools.js';
+import { chatHistory } from '@data/chat-history.js';
+import { longTermMemory } from '@data/long-term-memory.js';
+import { promptStore } from '@data/prompt-store.js';
+import { FunctionCallingConfigMode, type Content, type GenerateContentResponse, type Part } from '@google/genai';
+import type { GeminiAgent } from '@llm/agent/gemini-agent.js';
+import type { McpClient } from '@llm/mcp/mcp-client.js';
+import type { ToolCallerInjectedDeps, ToolName } from '@llm/types/tool.js';
+import type { FileHandler } from '@services/file-service.js';
+import { CONFIG } from '@shared/core/config.js';
+import { AgentError, AppError } from '@shared/core/errors.js';
+import { logger } from '@shared/core/logger.js';
+import { formatTime, ms } from '@shared/utils/helpers.js';
+import { hasFile } from '@shared/utils/message.js';
+import { sendFormattedChunks } from '@telegram/bot/formatted-send.js';
+import type { ResponseContext } from '@telegram/bot/response-context.js';
+import type { HandlerWorkers } from '@telegram/handlers/types.js';
+import { toHtml } from '@telegram/markdown/index.js';
 import type { Message } from 'grammy/types';
 
-interface Workers {
-  limiter: RateLimiter;
-  fileHandler: FileHandler;
-  agent: GeminiAgent;
-}
-
 export class MentionHandler {
-  private limiter: RateLimiter;
   private fileHandler: FileHandler;
-  private agent: GeminiAgent;
+  private cliAgent: GeminiAgent;
+  private toolCaller: ToolCallerInjectedDeps;
+  private mcpClient: McpClient;
+
   private readonly botName = CONFIG.TELEGRAM_BOT_USERNAME;
-  private readonly ownerId = CONFIG.TELEGRAM_BOT_OWNER_ID;
   private readonly processingLocks = new Set<string>();
 
-  constructor(workers: Workers) {
-    this.limiter = workers.limiter;
+  constructor(workers: HandlerWorkers) {
     this.fileHandler = workers.fileHandler;
-    this.agent = workers.agent;
+    this.cliAgent = workers.geminiCliAgent;
+    this.toolCaller = workers.toolCaller;
+    this.mcpClient = workers.mcpClient;
   }
 
   public async handle(ctx: ResponseContext, messages: Message[]) {
@@ -54,8 +45,6 @@ export class MentionHandler {
 
     if (!this.checkProcessingLocks(ctx)) return;
 
-    if (!this.checkRateLimiting(ctx)) return;
-
     try {
       await this.checkFile(ctx);
 
@@ -65,7 +54,7 @@ export class MentionHandler {
 
       await ctx.reply(BotMessages.thinking);
 
-      const geminiResponse = await this.requestResponse(completeContents, ctx);
+      const geminiResponse = await this.delegateQuestionProcess(completeContents, ctx);
 
       await this.resolveResponse(ctx, geminiResponse, completeContents);
     } catch (apiError) {
@@ -74,17 +63,17 @@ export class MentionHandler {
         chatId: chat.id,
         messageId: message.message_id,
       });
-
-      if (ctx.lastMessageId) void ctx.api.deleteMessage(chat.id, ctx.lastMessageId);
-
-      throw apiError;
+      throw apiError instanceof AppError
+        ? apiError
+        : new AgentError(apiError instanceof Error ? apiError.message : String(apiError));
     } finally {
       this.processingLocks.delete(this.generateLockKey(ctx));
     }
   }
 
-  private requestResponse(contents: Content[], ctx: ResponseContext): Promise<GenerateContentResponse> {
+  private delegateQuestionProcess(contents: Content[], ctx: ResponseContext): Promise<GenerateContentResponse> {
     const userId = ctx.user.id;
+    const userLanguage = ctx.user.language_code;
     const chatId = ctx.chat.id;
     const messageId = ctx.message.message_id;
 
@@ -102,29 +91,26 @@ export class MentionHandler {
       time: formatTime(Date.now()),
       chatId: String(chatId),
       userId: String(userId),
+      userLanguage: userLanguage ?? 'unknown',
       messageId: String(messageId),
       userMemories: longTermMemory.getMemories(userId),
     });
 
-    const genConfig: GenerateContentConfig = {
-      systemInstruction: [{ text: systemPrompt }],
-      tools: [{ functionDeclarations: FUNCTION_TOOLS }],
-      toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
-    };
-
-    return this.agent.run(contents, {
-      geminiApiOptions: {
-        genConfig,
+    return this.cliAgent.run(contents, {
+      onStatusUpdate,
+      generateConfig: {
+        systemInstruction: [{ text: systemPrompt }],
+        tools: [{ functionDeclarations: getFunctionTools(this.mcpClient.getLoadedServers()) }],
+        toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
       },
       callTool: (name, args) => {
-        return createToolCaller(ctx.api, this.agent, onStatusUpdate)[name as ToolName](args as never);
+        return this.toolCaller(ctx, onStatusUpdate)[name as ToolName](args as never);
       },
-      onStatusUpdate,
     });
   }
 
   private async resolveResponse(ctx: ResponseContext, response: GenerateContentResponse, completeContents: Content[]) {
-    await sendFormattedChunks(response.text!, ctx);
+    await sendFormattedChunks(response, ctx);
     completeContents.push(response.candidates![0]!.content!);
     chatHistory.update(ctx.chat.id, ctx.user.id, completeContents);
   }
@@ -215,23 +201,6 @@ export class MentionHandler {
       opts: { deleteAfterMs: ms['3m'] },
       isToReply: true,
     });
-    return false;
-  }
-
-  private checkRateLimiting(ctx: ResponseContext): boolean {
-    const checkResult = this.limiter.check(ctx.chat.id);
-
-    if (checkResult.canProceed || ctx.user.id === this.ownerId) return true;
-
-    logger.warn(`Rate limit exceeded for chat ${ctx.chat.id}. Retry after ${checkResult.retryAfterSeconds} seconds.`);
-
-    void ctx.send(BotMessages.getRateLimiting(checkResult.retryAfterSeconds), {
-      opts: {
-        deleteAfterMs: ms.sec(checkResult.retryAfterSeconds),
-      },
-      isToReply: true,
-    });
-
     return false;
   }
 

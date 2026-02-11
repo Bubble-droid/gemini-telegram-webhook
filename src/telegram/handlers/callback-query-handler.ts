@@ -1,8 +1,8 @@
-import { BotCommands } from '@configs/bot-commands';
-import { BotMessages } from '@configs/bot-messages';
-import { logger } from '@shared/core/logger';
-import { ms } from '@shared/utils/helpers';
-import type { ResponseContext } from '@telegram/bot/response-context';
+import { BotCommands } from '@configs/bot-commands.js';
+import { BotMessages } from '@configs/bot-messages.js';
+import { logger } from '@shared/core/logger.js';
+import { ms } from '@shared/utils/helpers.js';
+import type { ResponseContext } from '@telegram/bot/response-context.js';
 
 export const handleCallbackQuery = async (ctx: ResponseContext) => {
   const { chat, user } = ctx;
@@ -44,10 +44,7 @@ const handleCallbackCommand = async (ctx: ResponseContext) => {
   }
 
   await ctx.api.answerCallbackQuery(ctx.callBackQueryId!);
-
   const targetCommand = BotCommands.find((cmd) => cmd.command === command);
-
   if (!targetCommand) return;
-
   await targetCommand.action({ ctx });
 };

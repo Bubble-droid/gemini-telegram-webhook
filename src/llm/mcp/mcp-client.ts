@@ -1,6 +1,6 @@
-import { mcpServers } from '@configs/mcp-servers';
-import type { GeneralFunctionSchema, StandardizedFunctionResponse } from '@llm/types/agent';
-import type { ServerConfig } from '@llm/types/mcp';
+import { loadData } from '@data/data-load.js';
+import type { GeneralFunctionSchema, StandardizedFunctionResponse } from '@llm/types/agent.js';
+import type { LoadedMcpServer, McpServer, McpServerConfig } from '@llm/types/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StdioClientTransport, type StdioServerParameters } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -8,174 +8,320 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
-import { AgentError } from '@shared/core/errors';
-import { logger } from '@shared/core/logger';
-import type { Recordable } from '@shared/types/common';
-import type { JSONSchema } from '@shared/types/schema';
-import { ms } from '@shared/utils/helpers';
+import { McpError } from '@shared/core/errors.js';
+import { logger } from '@shared/core/logger.js';
+import type { Recordable } from '@shared/types/common.js';
+import type { JSONSchema } from '@shared/types/schema.js';
+import { ms } from '@shared/utils/helpers.js';
 
-type ServerName = keyof typeof mcpServers;
+/**
+ * Internal state interface for a single MCP server instance.
+ */
+interface ServerInstanceState {
+  name: string;
+  config: McpServerConfig;
+  client: Client;
+  transport: Transport | null;
+  tools: GeneralFunctionSchema[];
+  activeConnections: number;
+}
+
+const REQUEST_OPTIONS: RequestOptions = { timeout: ms.min(5) };
 
 export class McpClient {
-  private requestOptions: RequestOptions = { timeout: ms.min(5) };
-  private tools: GeneralFunctionSchema[] = [];
-  private clientName: string;
-  private serverName: ServerName;
-  private serverConfig: ServerConfig;
-  private mcp: Client;
-  private transport: StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport | null = null;
+  // Registry to hold state for all configured servers
+  private registry = new Map<string, ServerInstanceState>();
 
-  private activeConnections = 0;
+  // Maps specific tool names to server names for quick lookups (optional, but useful)
+  private toolsToServerMap = new Map<Set<string>, string>();
 
-  constructor(name: ServerName) {
-    this.serverName = name;
-    this.serverConfig = mcpServers[name];
-    this.clientName = `${name}-client`;
-    this.mcp = new Client({ name: this.clientName, version: '2.0.0' });
+  private readonly configPath: string;
+
+  constructor(mcpServerConfigPath: string) {
+    this.configPath = mcpServerConfigPath;
   }
 
   /**
-   * 连接到所有配置的 MCP 服务器
+   * Initializes the MCP Client Manager.
+   * 1. Loads configuration.
+   * 2. Registers all servers.
+   * 3. Performs initial connection to fetch and cache tools.
+   * 4. Disconnects to save resources until needed.
    */
-  public async connect(): Promise<void> {
-    this.activeConnections++;
+  public async discoverMcpServers() {
+    logger.info('[McpClient] Initializing MCP Server Registry...');
 
-    if (this.transport) {
-      logger.trace(`[${this.clientName}] Reusing existing connection (Active: ${this.activeConnections})`);
-      return;
+    // Load configuration
+    const configData = await loadData<{ mcpServers: McpServer }>(this.configPath, 'json');
+    const serversConfig = configData.mcpServers;
+
+    // Clear existing registry if re-initializing
+    this.registry.clear();
+    this.toolsToServerMap.clear();
+
+    // Initialize each server
+    for (const [name, config] of Object.entries(serversConfig)) {
+      this.registerServer(name, config);
     }
 
-    logger.info(`[${this.clientName}] Establishing new connection...`);
-
-    try {
-      if (this.serverConfig.type === 'http') {
-        const { url, headers } = this.serverConfig;
-        const resolvedHeaders = headers && this.resolvePlaceholders(headers);
-        await this.connectRemoteServer(this.serverName, url, resolvedHeaders);
-      } else {
-        const { type, command, ...options } = this.serverConfig;
-        await this.connectLocalServer(this.serverName, command, options);
-      }
-      await this.refreshTools();
-      logger.info(`[${this.clientName}] Connected and tools refreshed`, {
-        server: this.serverName,
-        active: this.activeConnections,
-      });
-    } catch (err) {
-      this.activeConnections--;
-      this.transport = null;
-      logger.error(`[${this.clientName}] Connection failed`, { err });
-      throw err;
-    }
-  }
-
-  /**
-   * 断开连接 (引用计数)
-   * 只有当所有活跃任务都完成时，才真正断开物理连接
-   */
-  public async disconnect(): Promise<void> {
-    if (this.activeConnections > 0) {
-      this.activeConnections--;
-    }
-
-    logger.debug(`[${this.clientName}] Release requested. Remaining active: ${this.activeConnections}`);
-
-    if (this.activeConnections === 0 && this.transport) {
-      logger.info(`[${this.clientName}] No active users. Closing transport.`);
+    // Perform initial discovery (Connect -> Fetch Tools -> Disconnect)
+    const discoveryPromises = [...this.registry.keys()].map(async (serverName) => {
       try {
-        await this.mcp.close();
-      } catch (err) {
-        logger.warn(`[${this.clientName}] Error closing client`, { err });
+        await this.connect(serverName);
+        await this.refreshTools(serverName);
+      } catch (error) {
+        logger.error(`[McpClient] Failed to discover tools for server: ${serverName}`, { error });
       } finally {
-        this.transport = null;
+        await this.disconnect(serverName);
       }
-    }
-  }
+    });
 
-  public getTools(): GeneralFunctionSchema[] {
-    return this.tools;
+    await Promise.allSettled(discoveryPromises);
+    logger.info(`[McpClient] Initialization complete. Managed Servers: ${this.registry.size}`);
   }
 
   /**
-   * 执行工具调用并返回结果 Parts
+   * Returns a list of loaded server summaries.
+   */
+  public getLoadedServers(): LoadedMcpServer[] {
+    return [...this.registry.values()].map(
+      (state): LoadedMcpServer => ({
+        name: state.name,
+        description: state.config.description,
+        tools: state.tools.map((tool) => ({
+          name: tool.name,
+          ...(tool.description && { description: tool.description }),
+        })),
+      }),
+    );
+  }
+
+  /**
+   * Retrieves cached tools for a specific server.
+   */
+  public getTools(serverName: string): GeneralFunctionSchema[] {
+    const state = this.registry.get(serverName);
+    if (!state) {
+      logger.warn(`[McpClient] Request for tools from unknown server: ${serverName}`);
+      return [];
+    }
+    return state.tools;
+  }
+
+  /**
+   * Executes a tool on a specific server.
+   * Handles connection lifecycle (Connect -> Execute -> Disconnect).
    */
   public async callTool(
-    name: string,
+    toolName: string,
     args?: Recordable,
   ): Promise<StandardizedFunctionResponse<Awaited<ReturnType<Client['callTool']>>>> {
-    if (!this.transport) {
-      throw new AgentError(`[${this.clientName}] Cannot execute tools: Client is disconnected.`);
+    let serverName: string | undefined;
+    for (const [toolNames, name] of this.toolsToServerMap) {
+      if (toolNames.has(toolName)) {
+        serverName = name;
+        break;
+      }
+    }
+
+    if (!serverName) {
+      throw new McpError(`[McpClient] Tool not found: ${toolName}`);
+    }
+
+    const state = this.registry.get(serverName);
+    if (!state) {
+      throw new McpError(`[McpClient] Server not found: ${serverName}`);
     }
 
     const startTime = Date.now();
+
+    // Lifecycle: Connect
+    await this.connect(serverName);
+
     try {
-      const toolResult = await this.mcp.callTool({ name, arguments: args }, CallToolResultSchema, this.requestOptions);
-      logger.debug(`[${this.clientName}] Tool executed: ${name}`, {
+      logger.debug(`[${serverName}] Executing tool: ${toolName}`, { args });
+
+      const toolResult = await state.client.callTool(
+        { name: toolName, arguments: args },
+        CallToolResultSchema,
+        REQUEST_OPTIONS,
+      );
+
+      logger.debug(`[${serverName}] Tool executed successfully`, {
+        tool: toolName,
         duration: `${Date.now() - startTime}ms`,
-        args,
       });
+
       return {
         response: { output: toolResult },
       };
     } catch (err) {
-      logger.warn(`[${this.clientName}] Tool call rejected: ${name}`, {
+      logger.warn(`[${serverName}] Tool execution failed: ${toolName}`, {
         duration: `${Date.now() - startTime}ms`,
-        err,
+        error: err,
       });
       return {
         response: {
           error: err instanceof Error ? err.message : String(err),
         },
       };
+    } finally {
+      // Lifecycle: Disconnect
+      await this.disconnect(serverName);
     }
   }
 
-  private async connectRemoteServer(serverName: string, url: string, headers?: RequestInit['headers']): Promise<void> {
+  /**
+   * Internal: Registers a server configuration and initializes its Client instance.
+   */
+  private registerServer(name: string, config: McpServerConfig): void {
+    const client = new Client({ name: `${name}-client`, version: '1.0.0' });
+
+    const state: ServerInstanceState = {
+      name,
+      config,
+      client,
+      transport: null,
+      tools: [],
+      activeConnections: 0,
+    };
+
+    this.registry.set(name, state);
+  }
+
+  /**
+   * Internal: Establishes a connection to a specific server.
+   * Uses reference counting to reuse existing connections.
+   */
+  private async connect(serverName: string): Promise<void> {
+    const state = this.registry.get(serverName);
+    if (!state) throw new McpError(`Server ${serverName} not found`);
+
+    state.activeConnections++;
+
+    if (state.transport) {
+      logger.trace(`[${serverName}] Reusing existing connection (Active Users: ${state.activeConnections})`);
+      return;
+    }
+
+    logger.info(`[${serverName}] Establishing connection...`);
+
+    try {
+      if (state.config.type === 'http') {
+        const { url, headers } = state.config;
+        const resolvedHeaders = headers ? this.resolvePlaceholders(headers) : undefined;
+        await this.connectRemoteServer(state, url, resolvedHeaders);
+      } else {
+        const { type, description, command, ...options } = state.config;
+        await this.connectLocalServer(state, command, options);
+      }
+    } catch (err) {
+      state.activeConnections--; // Revert count on failure
+      state.transport = null;
+      logger.error(`[${serverName}] Connection failed`, { err });
+      throw err;
+    }
+  }
+
+  /**
+   * Internal: Disconnects from a server.
+   * Only closes the physical transport if active users drops to 0.
+   */
+  private async disconnect(serverName: string): Promise<void> {
+    const state = this.registry.get(serverName);
+    if (!state) return;
+
+    if (state.activeConnections > 0) {
+      state.activeConnections--;
+    }
+
+    logger.trace(`[${serverName}] Release requested. Remaining users: ${state.activeConnections}`);
+
+    if (state.activeConnections === 0 && state.transport) {
+      logger.info(`[${serverName}] No active users. Closing transport.`);
+      try {
+        await state.client.close();
+      } catch (err) {
+        logger.warn(`[${serverName}] Error closing client`, { err });
+      } finally {
+        state.transport = null;
+      }
+    }
+  }
+
+  /**
+   * Internal: Fetches tools from the server and updates the cache.
+   */
+  private async refreshTools(serverName: string): Promise<void> {
+    const state = this.registry.get(serverName);
+    if (!state?.transport) return;
+
+    try {
+      const toolsResult = await state.client.listTools();
+      state.tools = toolsResult.tools.map(
+        (tool): GeneralFunctionSchema => ({
+          name: tool.name,
+          ...(tool.description && { description: tool.description }),
+          parametersJsonSchema: tool.inputSchema as JSONSchema,
+        }),
+      );
+
+      const toolNames = new Set(state.tools.map((tool) => tool.name));
+      this.toolsToServerMap.set(toolNames, serverName);
+
+      logger.info(`[${serverName}] Tools refreshed: ${state.tools.length} tools found.`);
+    } catch (err) {
+      logger.error(`[${serverName}] Failed to list tools`, { err });
+      throw err;
+    }
+  }
+
+  /**
+   * Internal: Connect logic for HTTP/SSE servers.
+   */
+  private async connectRemoteServer(
+    state: ServerInstanceState,
+    url: string,
+    headers?: RequestInit['headers'],
+  ): Promise<void> {
     const serverUrl = new URL(url);
     const requestInit = headers && { requestInit: { headers } };
+
     try {
-      logger.debug(`[${serverName}] Attempting Streamable HTTP...`);
-      this.transport = new StreamableHTTPClientTransport(serverUrl, { ...requestInit });
-      await this.mcp.connect(this.transport as Transport, this.requestOptions);
+      logger.debug(`[${state.name}] Attempting Streamable HTTP...`);
+      state.transport = new StreamableHTTPClientTransport(serverUrl, { ...requestInit }) as Transport;
+      await state.client.connect(state.transport, REQUEST_OPTIONS);
     } catch (err) {
-      logger.warn(`[${serverName}] HTTP Stream failed, falling back to SSE`, { err });
-      this.transport = new SSEClientTransport(serverUrl, { ...requestInit });
-      await this.mcp.connect(this.transport, this.requestOptions);
+      logger.warn(`[${state.name}] HTTP Stream failed, falling back to SSE`, { err });
+      state.transport = new SSEClientTransport(serverUrl, { ...requestInit });
+      await state.client.connect(state.transport, REQUEST_OPTIONS);
     }
-    logger.info(`[${serverName}] Remote connection established`, { url });
+
+    logger.info(`[${state.name}] Remote connection established`, { url });
   }
 
+  /**
+   * Internal: Connect logic for Local Stdio servers.
+   */
   private async connectLocalServer(
-    serverName: string,
+    state: ServerInstanceState,
     command: string,
     options: Omit<StdioServerParameters, 'command'> = {},
   ): Promise<void> {
-    logger.debug(`[${serverName}] Spawning Stdio process: ${command}`);
-    this.transport = new StdioClientTransport({ command, ...options });
-    await this.mcp.connect(this.transport, this.requestOptions);
-    logger.info(`[${serverName}] Local server connected (PID: ${this.transport.stderr ? 'active' : 'unknown'})`);
+    logger.debug(`[${state.name}] Spawning Stdio process: ${command}`);
+
+    state.transport = new StdioClientTransport({
+      command,
+      ...options,
+    });
+
+    await state.client.connect(state.transport, REQUEST_OPTIONS);
+
+    logger.info(`[${state.name}] Local server connected (PID: Active)`);
   }
 
   /**
-   * 获取并格式化工具列表以供 Gemini 使用
-   */
-  private async refreshTools(): Promise<void> {
-    const toolsResult = await this.mcp.listTools();
-    const functionTools = toolsResult.tools.map(
-      (tool): GeneralFunctionSchema => ({
-        name: tool.name,
-        ...(tool.description && { description: tool.description }),
-        parametersJsonSchema: tool.inputSchema as JSONSchema,
-      }),
-    );
-
-    this.tools = functionTools;
-    logger.info(`[${this.clientName}] Sync complete: ${this.tools.length} tools registered.`);
-    logger.debug(`[${this.clientName}] Registered tools:`, { names: this.tools.map((d) => d.name) });
-  }
-
-  /**
-   * 解析配置中的环境变量占位符
+   * Internal: Resolves environment variable placeholders in configuration strings.
    */
   private resolvePlaceholders(obj: Recordable<string>): Recordable<string> {
     const resolvedObj: Recordable<string> = {};

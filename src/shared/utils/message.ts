@@ -1,5 +1,5 @@
 import type { Message, MessageEntity, Update } from 'grammy/types';
-import { deepClone } from './helpers';
+import { deepClone } from './helpers.js';
 
 /**
  * 检查消息是否包含文件
@@ -32,7 +32,7 @@ const filterEntity = <T extends MessageEntity[]>(entities: T): T => {
  * @description 安全地创建一个简化的 Message 对象副本。
  * @param message - 原始的 Message 对象
  */
-const simplifyMessage = <T extends Message>(message: T): T => {
+export const simplifyMessage = <T extends Message>(message: T): T => {
   if (message.entities) message.entities = filterEntity(message.entities);
 
   if (message.caption_entities) message.caption_entities = filterEntity(message.caption_entities);
@@ -53,7 +53,7 @@ const simplifyMessage = <T extends Message>(message: T): T => {
  * @description ：创建一个简化的 Update 对象副本用于日志记录。
  * @param update - 原始的 Update 对象
  */
-export const simplifyUpdateInLogger = (update: Update): Update => {
+export const simplifyUpdate = (update: Update): Update => {
   const updateCopy = deepClone(update);
 
   if (updateCopy.message) updateCopy.message = simplifyMessage(updateCopy.message);

@@ -1,7 +1,7 @@
-import type { AstNode } from '@shared/types/markdown';
+import type { AstNode } from '@shared/types/markdown.js';
 import type { ParseMode } from 'grammy/types';
-import { HtmlGenerator, LegacyMarkdownGenerator, MarkdownV2Generator, type Generator } from './Generator';
-import { Parser } from './Parser';
+import { HtmlGenerator, LegacyMarkdownGenerator, MarkdownV2Generator, type Generator } from './Generator.js';
+import { Parser } from './Parser.js';
 
 /**
  * 协调解析器和生成器，将标准 Markdown 文本转换为 Telegram Bot API 支持的格式。

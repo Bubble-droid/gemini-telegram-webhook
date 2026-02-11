@@ -1,4 +1,4 @@
-import { logger } from '@shared/core/logger';
+import { logger } from '@shared/core/logger.js';
 import type { InlineQuery } from 'grammy/types';
 
 /**

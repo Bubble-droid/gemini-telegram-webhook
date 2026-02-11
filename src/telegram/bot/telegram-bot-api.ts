@@ -1,7 +1,7 @@
-import { TELEGRAM_BASE_URL } from '@shared/core/constants';
-import { logger } from '@shared/core/logger';
-import type { Recordable } from '@shared/types/common';
-import type { RequestResult } from '@shared/types/http';
+import { TELEGRAM_BASE_URL } from '@shared/core/constants.js';
+import { logger } from '@shared/core/logger.js';
+import type { Recordable } from '@shared/types/common.js';
+import type { RequestResult } from '@shared/types/http.js';
 import type {
   ApiErrorResult,
   ApiMethod,
@@ -12,11 +12,11 @@ import type {
   ChatId,
   CustomReplyParams,
   Integer,
-} from '@shared/types/telegram';
-import type { Evaluate } from '@shared/types/utils';
-import { shortenString } from '@shared/utils/helpers';
-import { httpRequest } from '@shared/utils/http';
-import { Escaper } from '@telegram/markdown/Escaper';
+} from '@shared/types/telegram.js';
+import type { Evaluate } from '@shared/types/utils.js';
+import { shortenString } from '@shared/utils/helpers.js';
+import { httpRequest } from '@shared/utils/http.js';
+import { Escaper } from '@telegram/markdown/Escaper.js';
 import type {
   ApiResponse,
   BotCommand,
@@ -60,12 +60,20 @@ export class TelegramBotApi {
     this.scheduler = s;
   }
 
-  public setWebhook(url: string, opts?: ExtractParamOptions<'setWebhook', 'url'>): Promise<ApiResult<'setWebhook'>> {
-    return this.requestJson('setWebhook', { ...this.buildOptionalParams(opts), url, drop_pending_updates: true }, url);
+  public getUpdates(opts?: ApiParams<'getUpdates'>): Promise<ApiResult<'getUpdates'>> {
+    return this.requestJson('getUpdates', { ...opts });
   }
 
-  public deleteWebhook(): Promise<ApiResult<'deleteWebhook'>> {
-    return this.requestJson('deleteWebhook', { drop_pending_updates: true });
+  public setWebhook(
+    url: string,
+    drop_pending_updates: boolean,
+    opts?: ExtractParamOptions<'setWebhook', 'url'>,
+  ): Promise<ApiResult<'setWebhook'>> {
+    return this.requestJson('setWebhook', { ...this.buildOptionalParams(opts), url, drop_pending_updates }, url);
+  }
+
+  public deleteWebhook(drop_pending_updates: boolean): Promise<ApiResult<'deleteWebhook'>> {
+    return this.requestJson('deleteWebhook', { drop_pending_updates });
   }
 
   public async sendMessage(
@@ -80,6 +88,26 @@ export class TelegramBotApi {
         chat_id,
         text,
         link_preview_options: { is_disabled: true },
+      },
+      shortenString(text),
+    );
+
+    return this.processMessageResult(res, chat_id, opts?.deleteAfterMs);
+  }
+
+  public async sendMessageDraft(
+    chat_id: Integer,
+    draft_id: Integer,
+    text: string,
+    opts?: ExtractParamOptions<'sendMessageDraft', 'chat_id' | 'draft_id' | 'text'>,
+  ): Promise<ApiResult<'sendMessageDraft'>> {
+    const res = await this.requestJson(
+      'sendMessageDraft',
+      {
+        ...this.buildOptionalParams(opts),
+        chat_id,
+        draft_id,
+        text,
       },
       shortenString(text),
     );
@@ -368,7 +396,7 @@ export class TelegramBotApi {
     chat_id: ChatId,
     deleteAfterMs?: number,
   ): ApiResult<T> {
-    if (!res.ok) return res;
+    if (!res.ok || !deleteAfterMs) return res;
     if (!this.scheduler) {
       logger.warn('Scheduler is not set.');
       return res;
@@ -388,7 +416,7 @@ export class TelegramBotApi {
       messageIdsToDelete = [data.message_id];
     }
 
-    if (deleteAfterMs && messageIdsToDelete.length > 0) {
+    if (messageIdsToDelete.length > 0) {
       this.scheduler.schedule('deleteMessages', { chat_id, message_ids: messageIdsToDelete }, deleteAfterMs);
     }
 
@@ -437,7 +465,7 @@ export class TelegramBotApi {
   }
 
   private handleError(err: unknown, method: string, context?: (string | undefined)[]): ApiErrorResult {
-    const errMsg = err instanceof Error ? err.message : typeof err === 'string' ? err : 'unknown error';
+    const errMsg = err instanceof Error ? err.message : typeof err === 'string' ? err : String(err);
     const contextInfo = context && context.length > 0 ? context.filter(Boolean).join('\n') : 'N/A';
     logger.warn(`Failed to call Telegram API [${method}]: ${errMsg}`, {
       err,

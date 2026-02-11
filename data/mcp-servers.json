@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "github": {
+      "description": "**The Official GitHub Interface.** \nUse this tool for ALL interactions with the GitHub platform. \n**Capabilities:**\n1. **Repository Management**: Read file contents, list directory trees, and inspect git history (commits, branches, tags).\n2. **Search**: Perform semantic code searches and repository queries.\n3. **Issues & PRs**: Create, read, update, and manage Issues and Pull Requests (including comments and reviews).\n4. **CI/CD & Security**: Monitor Actions workflows, check build logs, and retrieve security advisories (Dependabot/Code Scanning).\n**When to use:** When the user asks to analyze a repo, fix a bug in a remote codebase, or check project status.",
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/x/all/readonly",
+      "headers": {
+        "Authorization": "Bearer ${GITHUB_ACCESS_TOKEN}"
+      }
+    },
+    "context7": {
+      "description": "**The Real-Time Documentation Engine.**\nUse this tool to fetch accurate, version-specific technical documentation and code examples.\n**Capabilities:**\n1. **Library Resolution**: Maps fuzzy names (e.g., \"Next.js\") to official documentation IDs.\n2. **Smart Fetching**: Retrieves highly relevant API references and code snippets, bypassing training data cutoffs.\n3. **Anti-Hallucination**: Ensures generated code uses valid, up-to-date APIs.\n**When to use:** IMMEDIATELY when the user asks for code examples, configuration steps, or help with specific libraries/frameworks.",
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}",
+        "Accept": "application/json, text/event-stream"
+      }
+    }
+  }
+}

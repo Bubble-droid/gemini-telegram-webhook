@@ -1,6 +1,6 @@
-import { CONFIG } from '@shared/core/config';
-import { GEMINI_MODELS } from '@shared/core/constants';
-import type { Recordable } from '@shared/types/common';
+import { CONFIG } from '@shared/core/config.js';
+import { GEMINI_MODELS } from '@shared/core/constants.js';
+import type { Recordable } from '@shared/types/common.js';
 import type { InlineKeyboardButton, InlineKeyboardMarkup } from 'grammy/types';
 
 export const BotMessages = {

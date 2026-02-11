@@ -1,5 +1,6 @@
-import { logger } from '@shared/core/logger';
-import { ms } from '@shared/utils/helpers';
+import { SERVER_BODY_LIMIT } from '@shared/core/constants.js';
+import { logger } from '@shared/core/logger.js';
+import { ms } from '@shared/utils/helpers.js';
 import { fastify, type FastifyInstance } from 'fastify';
 
 /**
@@ -33,7 +34,7 @@ const buildApp = (): FastifyInstance => {
       stream: logger.stream,
     },
     trustProxy: true,
-    bodyLimit: 104857600,
+    bodyLimit: SERVER_BODY_LIMIT,
     keepAliveTimeout: ms.min(5),
   });
 

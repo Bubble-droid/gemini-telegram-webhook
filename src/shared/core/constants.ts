@@ -38,13 +38,16 @@ export const CLI_PROXY_BASE_URL = `${LOCAL_PROXY_ADDRESS}/cli`;
 
 export const SERVER_BODY_LIMIT = 100 * 1024 * 1024;
 
-export const GEMINI_MODELS = [
-  // 'gemini-3-pro-preview',
-  // 'gemini-3-flash-preview',
+export const GEMINI_TEXT_MODELS = [
+  'gemini-3-pro-preview',
+  'gemini-3-flash-preview',
   'gemini-2.5-pro',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
 ];
+
+export const GEMINI_MULTIMODAL_MODELS = ['gemini-3-pro-image-preview', 'gemini-2.5-flash-image'];
+
 export const GEMMA_MODELS = ['gemma-3-12b-it', 'gemma-3-27b-it'];
 
 export const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
@@ -53,9 +56,10 @@ export const CODE_ASSIST_API_VERSION = 'v1internal';
 
 export const CLI_VERSION = '0.26.0';
 
-export const OAUTH_CLIENT_ID = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
+export const OAUTH_CLIENT_ID =
+  'NjgxMjU1ODA5Mzk1LW9vOGZ0Mm9wcmRybnA5ZTNhcWY2YXYzaG1kaWIxMzVqLmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29tCg==';
 
-export const OAUTH_CLIENT_SECRET = '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';
+export const OAUTH_CLIENT_SECRET = 'R09DU1BYLTR1SGdNUG0tMW83U2stZ2VWNkN1NWNsWEZzeGwK';
 
 export const GEMINI_API_SAFETY_SETTINGS: SafetySetting[] = [
   { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -76,8 +80,10 @@ export const GEMINI_SAFETY_SETTINGS: SafetySetting[] = [
 
 export const DEFAULT_TEMPERATURE = 0;
 
+export const THOUGHT_SIGNATURE_PLACEHOLDER = 'context_engineering_is_the_way_to_go';
+
 export const THINKING_CONFIG_LEVER: ThinkingConfig = { includeThoughts: false, thinkingLevel: ThinkingLevel.HIGH };
-export const THINKING_CONFIG_BUDGET: ThinkingConfig = { includeThoughts: false, thinkingBudget: 24576 };
+export const THINKING_CONFIG_BUDGET: ThinkingConfig = { includeThoughts: false, thinkingBudget: -1 };
 
 export const GEMINI_CLIENT_BASE_CONFIG: GenerateContentConfig = {
   temperature: DEFAULT_TEMPERATURE,

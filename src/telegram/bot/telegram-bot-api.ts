@@ -328,7 +328,13 @@ export class TelegramBotApi {
         const desc = `${result.error_code} - ${result.description}`;
         return this.handleError(desc, method, [JSON.stringify(result.parameters)]);
       }
-      logger.debug(`[Telegram API] ${method} result:`, { result });
+      logger.debug(`[Telegram API] ${method} result:`, {
+        ...result,
+        result:
+          typeof result.result === 'object' && !Array.isArray(result.result)
+            ? { ...result.result, entities: [] }
+            : result.result,
+      });
       return { ok: true, data: result.result };
     } catch (err) {
       return this.handleError(err, method, context);

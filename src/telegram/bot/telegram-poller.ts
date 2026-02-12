@@ -1,8 +1,11 @@
 import { logger } from '@shared/core/logger.js';
+import type { ApiParams } from '@shared/types/telegram.js';
 import { delay, ms } from '@shared/utils/helpers.js';
 import type { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
 import type { UpdateHandler } from '@telegram/handlers/update-handler.js';
 import type { Update } from 'grammy/types';
+
+type AllowedUpdates = NonNullable<ApiParams<'getUpdates'>>['allowed_updates'];
 
 export class TelegramPoller {
   private isPolling = false;
@@ -22,7 +25,7 @@ export class TelegramPoller {
    * Starts the polling loop.
    * This method is async but creates a background loop, so it does not resolve until stopped.
    */
-  public async start() {
+  public async start(allowedUpdates?: AllowedUpdates) {
     if (this.isPolling) {
       logger.warn('Polling is already active.');
       return;
@@ -33,7 +36,7 @@ export class TelegramPoller {
 
     await this.bot.deleteWebhook(true);
 
-    void this.pollLoop();
+    void this.pollLoop(allowedUpdates);
   }
 
   public stop() {
@@ -41,13 +44,13 @@ export class TelegramPoller {
     logger.info('Stopping Telegram Long Polling...');
   }
 
-  private async pollLoop() {
+  private async pollLoop(allowedUpdates?: AllowedUpdates) {
     while (this.isPolling) {
       try {
         const result = await this.bot.getUpdates({
           offset: this.offset,
           timeout: this.POLLING_TIMEOUT,
-          allowed_updates: ['message', 'callback_query'], // Adjust based on your needs
+          ...(allowedUpdates && { allowed_updates: allowedUpdates }),
         });
 
         if (result.ok && result.data.length > 0) {

@@ -1,13 +1,9 @@
 import type { Content, GenerateContentConfig, GenerationConfig } from '@google/genai';
 import type { TProxyHeaders } from '@routes/route-schema.js';
-import type { FastifyRequest } from 'fastify';
 
-export interface GeminiApiRequest {
+export interface GeminiApiRequest extends Pick<GenerateContentConfig, 'tools' | 'toolConfig' | 'safetySettings'> {
   contents?: Content[];
-  systemInstruction?: GenerateContentConfig['systemInstruction'];
-  tools?: GenerateContentConfig['tools'];
-  toolConfig?: GenerateContentConfig['toolConfig'];
-  safetySettings?: GenerateContentConfig['safetySettings'];
+  systemInstruction?: Content | string;
   generationConfig?: GenerationConfig;
 }
 
@@ -36,8 +32,8 @@ export interface OnboardUserResponse {
   };
 }
 
-export type generateContentRequest = FastifyRequest<{
+export interface GenerateContentRequest {
   Params: { modelAndMethod: string };
   Body: GeminiApiRequest;
   Headers: TProxyHeaders;
-}>;
+}

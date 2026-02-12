@@ -97,7 +97,6 @@ const start = async () => {
 
   const server = buildApp();
 
-  registerWebhookRoute(server, updateHandler);
   registerGeminiProxyRoute(server);
   registerCliProxyRoute(server);
 
@@ -111,24 +110,12 @@ const start = async () => {
       secret_token,
       allowed_updates: ['message', 'callback_query'],
     });
-
-    try {
-      await server.listen({ host, port });
-    } catch (err) {
-      logger.fatal('Server startup failed in Webhook mode', { err });
-      process.exit(1);
-    }
   } else {
-    try {
-      await server.listen({ host, port });
-    } catch (err) {
-      logger.fatal('Server startup failed in Polling mode', { err });
-      process.exit(1);
-    }
-
     const poller = new TelegramPoller(bot, updateHandler);
-    await poller.start();
+    await poller.start(['callback_query', 'message']);
   }
+
+  await server.listen({ host, port });
 };
 
 process.on('unhandledRejection', (err) => {
@@ -136,6 +123,9 @@ process.on('unhandledRejection', (err) => {
   process.exit(1);
 });
 
-void start().catch((err: unknown) => {
-  logger.error('Unhandled Rejection:', { err });
-});
+try {
+  await start();
+} catch (err) {
+  logger.fatal('Server startup failed', { err });
+  process.exit(1);
+}

@@ -103,7 +103,7 @@ export class McpClient {
     const state = this.registry.get(serverName);
     if (!state) {
       logger.warn(`[McpClient] Request for tools from unknown server: ${serverName}`);
-      return [];
+      throw new McpError(`[McpClient] Server not found: ${serverName}`);
     }
     return state.tools;
   }

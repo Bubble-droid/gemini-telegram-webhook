@@ -49,14 +49,12 @@ class ChatHistory {
    */
   public update(chatId: number, userId: number, contents: Content[]) {
     const key = this.generateUserKey(chatId, userId);
-    const history: Content[] = [...this.get(chatId, userId)];
-    const excess = history.length + contents.length - MAX_HISTORY_LENGTH;
+    const history: Content[] = [...contents];
+    const excess = history.length - MAX_HISTORY_LENGTH;
 
     if (excess > 0) {
       history.splice(0, excess);
     }
-
-    history.push(...contents);
 
     this.save(key, history);
 

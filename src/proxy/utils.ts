@@ -1,12 +1,18 @@
 import type { GenerateContentResponse } from '@google/genai';
-import { CLI_VERSION, GEMINI_BASE_URL } from '@shared/core/constants.js';
+import {
+  CLI_VERSION,
+  DEFAULT_TEMPERATURE,
+  GEMINI_BASE_URL,
+  THINKING_CONFIG_BUDGET,
+  THINKING_CONFIG_LEVER,
+} from '@shared/core/constants.js';
 import os from 'os';
 import type { GeminiApiRequest, GoogleApiRequest } from './types.js';
 
-export const getUserAgent = (): string => {
+export const getUserAgent = (model?: string): string => {
   const system = os.type().toLowerCase();
   const arch = os.arch().toLowerCase();
-  return `GeminiCLI/${CLI_VERSION}/gemini-2.5-pro (${system}; ${arch})`;
+  return `GeminiCLI/${CLI_VERSION}/${model ?? 'gemini-2.5-pro'} (${system}; ${arch})`;
 };
 
 const getPlatformString = (): string => {
@@ -36,20 +42,28 @@ export const getClientMetadata = (projectId?: string | null) => {
 
 export const convertToGoogleApiRequest = (
   geminiRequest: GeminiApiRequest,
-  modelFromPath: string,
+  model: string,
   projectId: string,
 ): GoogleApiRequest => {
   return {
-    model: modelFromPath,
+    model,
     project: projectId,
-    request: geminiRequest,
+    request: {
+      ...geminiRequest,
+      generationConfig: {
+        ...geminiRequest.generationConfig,
+        temperature: model.startsWith('gemini-3')
+          ? 1
+          : (geminiRequest.generationConfig?.temperature ?? DEFAULT_TEMPERATURE),
+        thinkingConfig: model.startsWith('gemini-3') ? THINKING_CONFIG_LEVER : THINKING_CONFIG_BUDGET,
+      },
+    },
   };
 };
 
 export const isValidGeminiResponse = (response: GenerateContentResponse): boolean => {
-  return (
-    !!response.candidates?.[0]?.content?.parts?.some((p) => (p.text ?? '').trim().length > 0) ||
-    !!response.candidates?.[0]?.content?.parts?.some((p) => p.functionCall)
+  return !!response.candidates?.[0]?.content?.parts?.some(
+    (p) => !!p.text || !!p.inlineData?.data || p.functionCall?.name,
   );
 };
 

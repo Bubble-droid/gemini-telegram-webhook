@@ -1,12 +1,13 @@
 import { HttpError, NetworkError, ParseError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import type { RequestOpts, RequestResult, ResponseBody, ResponseType } from '@shared/types/http.js';
+import { generateStrMask } from './helpers.js';
 
 export const httpRequest = async <T extends ResponseType>(
   url: string,
   opts: RequestOpts<T>,
 ): Promise<RequestResult<T>> => {
-  logger.trace(`Requesting ${url}`);
+  logger.trace(`Requesting ${generateStrMask(url, 10)}`);
   const { method = 'GET', responseType, timeout, ...fetchOpts } = opts;
 
   let controller: AbortController | undefined;
@@ -27,7 +28,7 @@ export const httpRequest = async <T extends ResponseType>(
     });
   } catch (err) {
     const errText = err instanceof Error ? err.message : String(err);
-    logger.error(`Request failed: ${errText}`, { url, err });
+    logger.error(`Request failed: ${errText}`, { url: generateStrMask(url, 10), err });
     if (err instanceof Error && err.name === 'AbortError') {
       throw new NetworkError(`Request timed out after ${timeout}ms`, err);
     }

@@ -30,7 +30,7 @@ export class UpdateHandler {
 
   public async handle(update: Update) {
     const { message, callback_query } = update;
-    logger.trace('Received webhook update:', { update: simplifyUpdate(update) });
+    logger.trace('Received update:', { update: simplifyUpdate(update) });
     if (!message && !callback_query) return;
 
     const ctx = new ResponseContext(update, this.bot);

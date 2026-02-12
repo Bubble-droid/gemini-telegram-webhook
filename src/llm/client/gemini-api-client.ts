@@ -2,13 +2,11 @@ import {
   GoogleGenAI,
   type Content,
   type GenerateContentConfig,
+  type GenerateContentParameters,
   type GenerateContentResponse,
-  type Part,
 } from '@google/genai';
 import type { GeminiAgentOpts } from '@llm/types/agent.js';
-import { GEMINI_MODELS } from '@shared/core/constants.js';
 import { GeminiApiError } from '@shared/core/errors.js';
-import { logger } from '@shared/core/logger.js';
 import { ms } from '@shared/utils/helpers.js';
 
 export class GeminiApiClient {
@@ -29,15 +27,11 @@ export class GeminiApiClient {
   public async generateContent(
     contents: Content[],
     config?: GeminiAgentOpts['generateConfig'],
+    model?: GenerateContentParameters['model'],
   ): Promise<GenerateContentResponse> {
-    const systemInstruction = config?.systemInstruction as Part[] | undefined;
-    logger.trace(`Loading System Instruction:`, {
-      preview: (systemInstruction?.[0]?.text ?? contents[0]?.parts?.[0]?.text)?.slice(0, 100),
-    });
-
     try {
       return await this.client.models.generateContent({
-        model: GEMINI_MODELS[0]!,
+        model: model ?? 'gemini',
         contents,
         config: {
           ...this.baseConfig,

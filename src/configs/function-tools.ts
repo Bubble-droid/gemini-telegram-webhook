@@ -21,7 +21,14 @@ const getFileSearchStoreDisplayNames = (): FileSearchStoreDisplayName[] => {
 };
 
 export const getFunctionTools = (mcpServers: LoadedMcpServer[]) => {
-  return [...RESEARCH_TOOLS(mcpServers), ...VIDEO_TOOLS, ...COMPUTATION_TOOLS, ...INTERACTIVE_TOOLS, ...STORE_TOOLS];
+  return [
+    ...RESEARCH_TOOLS(mcpServers),
+    ...VIDEO_TOOLS,
+    // ...IMAGE_TOOLS,
+    ...COMPUTATION_TOOLS,
+    ...INTERACTIVE_TOOLS,
+    ...STORE_TOOLS,
+  ];
 };
 
 const SYSTEM_PROMPT_PROPERTY = {
@@ -46,7 +53,7 @@ This is your **FIRST RESORT** for finding factual evidence, configuration detail
 **Usage Strategy:**
 1. **Multi-Store Search**: Always search across multiple relevant stores simultaneously to ensure comprehensive coverage. (e.g., for a "SingBox" query, search both 'sing-box' and 'gui-for-cores' stores).
 2. **Specificity**: Use technical terms in your prompt to improve match accuracy.
-3. **Fallback**: Only proceed to external tools (Agent/Web) if this tool returns insufficient results.
+3. **Fallback**: Exhaust this internal search first before relying on general internet searches or external APIs (if such alternative capabilities are available to you).
 `.trim(),
       parametersJsonSchema: {
         type: 'object',
@@ -76,7 +83,7 @@ This is your **FIRST RESORT** for finding factual evidence, configuration detail
       name: 'delegate_to_agent',
       description: `
 **[PRIORITY 2: SPECIALIZED AGENTS]**
-Delegates tasks to specialized Model Context Protocol (MCP) servers (e.g., GitHub, Context7).
+Delegates tasks to specialized Model Context Protocol (MCP) servers.
 Use this when you need to interact with external APIs or fetch official library documentation.
 
 **[CRITICAL CONSTRAINT: TOKEN SAFETY & PAGINATION]**
@@ -84,9 +91,6 @@ When delegating tasks that involve lists (e.g., fetching GitHub issues, commits,
 1. **Strictly Limit Response Size**: ALWAYS set \`per_page\`, \`limit\`, or \`max_results\` to conservative values (recommended: **10-20 items** max).
 2. **Paginate, Don't Dump**: NEVER attempt to fetch an entire dataset in a single turn. Instruct the agent to fetch Page 1, analyze it, and *only then* fetch Page 2 if necessary.
 3. **Avoid Token Overflow**: Massive JSON responses will crash the conversation. Prioritize filtering (e.g., by status or date) over fetching all data.
-
-**Available Agents:**
-${mcpServers.map((s) => `- **${s.name}**: ${s.description.replace(/\n/g, ' ')}`).join('\n')}
 `.trim(),
       parametersJsonSchema: {
         anyOf: mcpServers.map(
@@ -119,12 +123,12 @@ ${mcpServers.map((s) => `- **${s.name}**: ${s.description.replace(/\n/g, ' ')}`)
 Executes a Google Search to retrieve current events, real-time data, or broad internet knowledge.
 
 **Usage Strategy:**
-- **Lowest Priority**: ONLY use this tool if \`file_search\` (Internal Knowledge) and \`delegate_to_agent\` (Specialized Knowledge) have failed or are not applicable.
+- **Priority Management**: Use this as a fallback ONLY if internal/domain-specific knowledge bases or specialized agents are unavailable or have failed to yield results.
 - **Scope**: Use for questions like "latest release date of Node.js", "current exchange rates", or general world knowledge.
 
 **Proactive Chaining Strategy:**
-1.  **Search -> Fetch**: Use this tool to *discover* relevant URLs (e.g., "latest sing-box documentation"), then immediately use \`web_fetch\` to read the actual content of those pages.
-2.  **Search -> Code**: Use this tool to find real-time data (e.g., "current stock prices", "latest currency exchange rates"), then pass that data to \`code_execution\` for complex analysis or visualization.
+1.  **Discovery & Deep Dive**: Use this tool to discover relevant URLs. If you possess capabilities to fetch and read web pages, immediately use them to extract the actual content of the discovered links.
+2.  **Data Acquisition**: Gather real-time data or statistical facts, which can then be passed to computational or programmatic execution tools (if available) for complex analysis or visualization.
 `.trim(),
       parametersJsonSchema: {
         type: 'object',
@@ -147,8 +151,8 @@ Retrieves and processes the full textual content of specific URLs (HTTP/HTTPS).
 
 **Usage Strategy:**
 - **BE PROACTIVE**: Do NOT wait for the user to ask "can you read this link?".
-- **Autonomous Context Expansion**: If \`web_search\` or \`file_search\` returns a URL that appears to contain critical technical details, API references, or release notes, you MUST use this tool to fetch and read it immediately.
-- **Verification**: Use this to verify "hallucinated" or uncertain information by checking the actual source.
+- **Autonomous Context Expansion**: If the conversation context, user input, or your prior research reveals a URL containing critical technical details, API references, or release notes, you MUST fetch and read it immediately.
+- **Verification**: Use this to verify uncertain or generalized information by checking the actual primary source.
 `.trim(),
       parametersJsonSchema: {
         type: 'object',
@@ -171,8 +175,8 @@ export const VIDEO_TOOLS = [
     name: 'analyze_youtube_video',
     description: `
 **[NATIVE VIDEO INTELLIGENCE]**
-If the user provides a link to a full YouTube video, this tool can be used to analyze the.
-Processes YouTube videos directly via Gemini's multimodal vision capabilities (no text transcripts).
+If the user provides a link to a full YouTube video, this tool can be used to analyze it.
+Processes YouTube videos directly via multimodal vision capabilities (no text transcripts).
 Use this tool to "watch" a video and extract visual details, audio nuances, and temporal events that text-only tools miss.
 
 **Capabilities:**
@@ -191,8 +195,7 @@ Use this tool to "watch" a video and extract visual details, audio nuances, and 
         ...SYSTEM_PROMPT_PROPERTY,
         video_url: {
           type: 'string',
-          description:
-            'The full, public YouTube URL (e.g., "https://www.youtube.com/watch?v=xxxxx"). Private or unlisted videos are NOT supported.',
+          description: 'The full, public YouTube URL. Private or unlisted videos are NOT supported.',
         },
         prompt: {
           type: 'string',
@@ -213,6 +216,65 @@ The natural language instruction for processing the video. Be specific to get th
 ] as const satisfies GeneralFunctionSchema[];
 
 /**
+ * Tools for multimodal content generation and visual reasoning.
+ */
+/* export const IMAGE_TOOLS = [
+  {
+    name: 'generate_image',
+    description: `
+**[PRIORITY 2: MULTIMODAL VISUAL ARCHITECT]**
+Delegates image generation and visual reasoning to multimodal engine.
+This tool is designed for professional asset production, utilizing advanced "Thinking" to follow complex, multi-turn instructions and render high-fidelity text.
+
+**Capabilities:**
+1. **Visual Logic & CoT**: Can visualize complex processes (e.g., "Photosynthesis as a recipe", "Algorithm flowcharts", "Mind maps").
+2. **Search-Grounded Visuals**: If you possess web search capabilities, use them to gather real-time data (weather, sports scores, market trends) and then use this tool to generate accurate infographics or charts.
+3. **Sequential Storytelling**: Capable of creating comic panels, storyboards, or multi-step visual guides with character consistency.
+4. **Professional Assets**: High-end product mockups, 4K resolution textures, and stylized icons/stickers.
+
+**Usage Strategy:**
+- **BE PROACTIVE**: Do NOT wait for a user to ask for an image. If a response involves a complex "How-to", a technical workflow, or a data-heavy comparison, you MUST use this tool to provide a supporting visual infographic.
+- **Narrative Prompts**: Do not just list keywords. Describe the scene, lighting, camera angle, and mood in a narrative paragraph to maximize the sub-agent's reasoning performance.
+- **Multimodal Iteration**: If a generated image needs adjustment, use this tool again, providing the original context and specific modification instructions.
+
+**Effective Scenarios:**
+- "Convert this text-based tutorial into a 4th-grader-friendly infographic."
+- "Generate a visual comparison chart of these three server architectures."
+- "Create a professional magazine-style product mockup for this configuration."
+`.trim(),
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        ...SYSTEM_PROMPT_PROPERTY,
+        message_id: {
+          type: 'number',
+          description: 'The numeric ID of the user message that this image is responding to.',
+        },
+        prompt: {
+          type: 'string',
+          description: `
+The comprehensive, narrative description of the image to be generated.
+**Formula**: [Shot Type/Camera Angle] of [Subject] [Action/Expression], set in [Environment] with [Lighting/Atmosphere].
+(e.g., "A photorealistic wide-angle shot of a futuristic data center with neon blue cooling pipes, soft ambient lighting, 4K resolution.")
+`.trim(),
+        },
+        aspect_ratio: {
+          type: 'string',
+          description: 'The target aspect ratio for the visual asset.',
+          enum: ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9'],
+        },
+        image_size: {
+          type: 'string',
+          description: 'The desired resolution. Higher resolutions (2K/4K) require more reasoning time.',
+          enum: ['1K', '2K', '4K'],
+        },
+      },
+      required: ['message_id', 'system_prompt', 'prompt', 'aspect_ratio'],
+    },
+  },
+] as const satisfies GeneralFunctionSchema[]; */
+
+/**
  * Tools for performing computations or logic execution.
  */
 export const COMPUTATION_TOOLS = [
@@ -227,8 +289,7 @@ Provides a Python execution environment for mathematical calculations, data anal
 - **Verification**: Never rely on your internal training data for calculations (e.g., Fibonacci numbers, date differences, complex JSON parsing). Always execute code to verify.
 
 **Collaborative Strategy:**
-- **With Web Search**: "Search for X, then use Python to calculate Y based on X." (e.g., search for population data, then calculate growth trends).
-- **With Web Fetch**: "Fetch this large JSON/CSV file from a URL, then use Python to parse and analyze it."
+- **Data Pipeline**: If you acquire raw data (e.g., CSV, JSON formats) from external URLs, research tasks, or user inputs, use this tool to parse, filter, and analyze that data programmatically.
 `.trim(),
     parametersJsonSchema: {
       type: 'object',
@@ -288,12 +349,16 @@ Generates and sends a downloadable file artifact to the user. This is the **REQU
           description:
             'The standard IANA Media Type (MIME type) (e.g., "text/markdown", "application/json", "text/plain").',
         },
+        describe: {
+          type: 'string',
+          description: 'Brief description of the file.',
+        },
       },
       required: ['message_id', 'content', 'name', 'type'],
     },
   },
   {
-    name: 'set_message_reaction',
+    name: 'reaction_to_message',
     description: `
 Applies an expressive emoji reaction to a specific message to enhance conversational engagement.
 

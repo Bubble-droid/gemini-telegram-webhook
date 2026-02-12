@@ -195,7 +195,7 @@ class LoggerService implements AppLog {
     return {
       name: err.name,
       message: err.message,
-      // stack: err.stack ?? 'No stack trace available', // 如需调试堆栈，可取消注释
+      // stack: err.stack ?? 'No stack trace available',
     };
   }
 

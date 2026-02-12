@@ -158,7 +158,7 @@ export const uniqueByProperty = <T, K extends keyof T>(list: T[], key: K): T[] =
 };
 
 export const decodeToString = (base64: string): string => {
-  return Buffer.from(base64, 'base64').toString('utf-8');
+  return Buffer.from(base64, 'base64').toString('utf-8').trim();
 };
 
 export const shuffleArray = <T>(array: T[]): T[] => {

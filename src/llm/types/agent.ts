@@ -1,4 +1,4 @@
-import type { FunctionResponse, GenerateContentConfig } from '@google/genai';
+import type { FunctionResponse, GenerateContentConfig, GenerateContentParameters } from '@google/genai';
 import type { MaybePromise, Recordable } from '@shared/types/common.js';
 import type { JSONSchema } from '@shared/types/schema.js';
 import type { ChatCompletionCreateParamsBase } from 'openai/resources/chat/completions.mjs';
@@ -18,13 +18,14 @@ export interface GeminiAgentOpts {
   callTool?: ToolCall;
   onStatusUpdate?: StatusUpdateCallback | undefined;
   generateConfig?: GenerateContentConfig | undefined;
+  generateModel?: GenerateContentParameters['model'];
 }
 
 export type NormalizedResponse<T = unknown> = { output: T; error?: never } | { error: string; output?: never };
 
-export type StandardizedFunctionResponse<T = unknown> = Omit<FunctionResponse, 'response'> & {
+export interface StandardizedFunctionResponse<T = unknown> extends Omit<FunctionResponse, 'response'> {
   response: NormalizedResponse<T>;
-};
+}
 
 export interface GeneralFunctionSchema {
   name: string;

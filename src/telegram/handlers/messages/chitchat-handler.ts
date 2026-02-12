@@ -131,7 +131,6 @@ export class ChitchatHandler {
 
   private async requestChat(state: ChitchatState, ctx: ResponseContext): Promise<string | null> {
     const systemPrompt = promptStore.format('chitchat', {
-      selfId: String(CONFIG.TELEGRAM_BOT_ID),
       selfName: CONFIG.TELEGRAM_BOT_USERNAME,
       time: formatTime(Date.now()),
       groupMemories: longTermMemory.getMemories(ctx.chat.id),
@@ -140,6 +139,7 @@ export class ChitchatHandler {
     try {
       const response = await this.cliAgent.run(state.groupHistory, {
         generateConfig: {
+          temperature: 0.4,
           systemInstruction: [{ text: systemPrompt }],
           tools: [{ functionDeclarations: getFunctionTools(this.mcpClient.getLoadedServers()) }],
           toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },

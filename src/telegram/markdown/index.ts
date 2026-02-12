@@ -1,4 +1,3 @@
-import { logger } from '@shared/core/logger.js';
 import type { ParseMode } from 'grammy/types';
 import { Formatter } from './Formatter.js';
 import { splitMdastToChunks, splitPlainText } from './splitter.js';
@@ -7,7 +6,6 @@ export const formatter = new Formatter();
 
 export const getFormattedChunks = (text: string, parseMode: ParseMode): string[] => {
   const ast = formatter.parse(text);
-  logger.trace(`Parsed AST:`, { ast });
   const generator = formatter.getGenerator(parseMode);
   return splitMdastToChunks(ast, generator);
 };

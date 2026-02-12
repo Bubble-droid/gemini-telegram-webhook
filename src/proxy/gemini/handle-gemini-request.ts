@@ -1,17 +1,24 @@
 import type { GenerateContentResponse } from '@google/genai';
 import { GoogleGenAI, type FileSearchStore } from '@google/genai';
-import { simplifyContents } from '@llm/utils.js';
+import { simplifyContents, simplifyResponse } from '@llm/utils.js';
 import { EXCLUDED_HEADERS, FATAL_ERROR_MESSAGES, FATAL_STATUS_CODES } from '@proxy/config.js';
-import type { GeminiApiRequest, generateContentRequest } from '@proxy/types.js';
+import type { GeminiApiRequest, GenerateContentRequest } from '@proxy/types.js';
 import { getGeminiGenerateContentEndpoint, isValidGeminiResponse } from '@proxy/utils.js';
-import { keyRotator, modelRotator } from '@services/rotators.js';
-import { GEMINI_MODELS, GENERATE_CONTENT_METHOD } from '@shared/core/constants.js';
+import {
+  DEFAULT_TEMPERATURE,
+  GEMINI_MULTIMODAL_MODELS,
+  GEMINI_TEXT_MODELS,
+  GENERATE_CONTENT_METHOD,
+  THINKING_CONFIG_BUDGET,
+  THINKING_CONFIG_LEVER,
+} from '@shared/core/constants.js';
 import { DataError, HttpError, ParseError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import type { Recordable } from '@shared/types/common.js';
 import type { HttpMethod } from '@shared/types/http.js';
 import { deepClone, delay, generateStrMask, ms, shuffleArray } from '@shared/utils/helpers.js';
 import { httpRequest } from '@shared/utils/http.js';
+import { ListRotator } from '@shared/utils/list-rotator.js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 const fileSearchStoreBuffer = new Map<string, FileSearchStore[]>();
@@ -48,133 +55,153 @@ const refreshFileSearchStoreNames = async <T extends GeminiApiRequest>(currentKe
   return copyBody;
 };
 
-export const handleGeminiProxyRequest = async (req: FastifyRequest, rep: FastifyReply) => {
-  const { params, body } = req as generateContentRequest;
-  const { modelAndMethod } = params;
-  const [, method] = modelAndMethod.split(':');
-  if (method !== GENERATE_CONTENT_METHOD) {
-    logger.warn(`Unsupported method: ${method}`);
-    rep.code(400).type('application/json').send({ error: 'Bad Request' });
-    return;
-  }
+export const handleGeminiProxyRequest =
+  (keyRotator: ListRotator) => async (req: FastifyRequest<GenerateContentRequest>, rep: FastifyReply) => {
+    const { params, body } = req;
+    const { modelAndMethod } = params;
+    const [originalModel, method] = modelAndMethod.split(':');
+    if (method !== GENERATE_CONTENT_METHOD) {
+      logger.warn(`Unsupported method: ${method}`);
+      rep.code(400).type('application/json').send({ error: 'Bad Request' });
+      return;
+    }
 
-  const reqHeaders = new Headers();
-  reqHeaders.set('content-type', 'application/json');
+    const reqHeaders = new Headers();
+    reqHeaders.set('content-type', 'application/json');
 
-  const shuffledModels = shuffleArray(GEMINI_MODELS);
+    let keyRound = 0;
+    while (keyRound < keyRotator.size) {
+      keyRound++;
+      const key = keyRotator.next();
+      reqHeaders.set('x-goog-api-key', key);
+      const modelRotator = new ListRotator(shuffleArray(GEMINI_TEXT_MODELS));
 
-  let keyRound = 0;
-  while (keyRound < keyRotator.size) {
-    keyRound++;
-    const key = keyRotator.next();
-    reqHeaders.set('x-goog-api-key', key);
+      let modelRound = 0;
+      while (modelRound < modelRotator.size) {
+        modelRound++;
+        const model = GEMINI_MULTIMODAL_MODELS.includes(originalModel!) ? originalModel! : modelRotator.next();
+        const endpoint = getGeminiGenerateContentEndpoint(model);
 
-    let modelRound = 0;
-    for (const model of shuffledModels) {
-      modelRound++;
-      const endpoint = getGeminiGenerateContentEndpoint(model);
-
-      try {
-        const refreshedBody = await refreshFileSearchStoreNames(key, body);
-
-        logger.info(`Forwarding to Google`, {
-          target: endpoint,
-          keyMask: generateStrMask(key, 5),
-          model,
-        });
-        logger.trace(`Body Forwarding:`, {
-          ...body,
-          contents: simplifyContents(body.contents),
-          systemInstruction: '[MASKED]',
-        });
-
-        const { status, headers, data } = await httpRequest(endpoint, {
-          method: req.method as HttpMethod,
-          headers: reqHeaders,
-          body: JSON.stringify(refreshedBody),
-          responseType: 'text',
-          timeout: ms.min(5),
-        });
-
-        let parsedData: GenerateContentResponse;
         try {
-          parsedData = JSON.parse(data) as GenerateContentResponse;
-          logger.trace(`Gemini response:`, parsedData as unknown as Recordable);
-        } catch (parseError) {
-          throw new ParseError(
-            `Failed to parse upstream JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-          );
-        }
+          const refreshedBody = await refreshFileSearchStoreNames(key, body);
 
-        if (!isValidGeminiResponse(parsedData)) {
-          throw new DataError(
-            'Response validation failed: Model returned empty or invalid content (no text/functionCall).',
-          );
-        }
+          logger.info(`Forwarding to Google`, {
+            target: endpoint,
+            keyMask: generateStrMask(key, 5),
+            model,
+          });
+          logger.trace(`Body Forwarding:`, {
+            ...body,
+            contents: simplifyContents(body.contents),
+            tools:
+              body.tools?.map((t) => {
+                if ('functionDeclarations' in t) {
+                  return { functionDeclarations: [t.functionDeclarations.shift() ?? {}] };
+                }
+                return t;
+              }) ?? [],
+            systemInstruction:
+              typeof body.systemInstruction !== 'string'
+                ? (body.systemInstruction?.parts?.[0]?.text?.slice(0, 100) ?? 'NONE')
+                : body.systemInstruction.slice(0, 500),
+          } satisfies GeminiApiRequest);
 
-        rep.code(status);
-        headers.forEach((value, key) => {
-          if (EXCLUDED_HEADERS.includes(key.toLowerCase())) return;
-          rep.header(key, value);
-        });
+          const { status, headers, data } = await httpRequest(endpoint, {
+            method: req.method as HttpMethod,
+            headers: reqHeaders,
+            body: JSON.stringify({
+              ...refreshedBody,
+              generationConfig: {
+                ...refreshedBody.generationConfig,
+                temperature: model.startsWith('gemini-3')
+                  ? 1
+                  : (refreshedBody.generationConfig?.temperature ?? DEFAULT_TEMPERATURE),
+                thinkingConfig: model.startsWith('gemini-3') ? THINKING_CONFIG_LEVER : THINKING_CONFIG_BUDGET,
+              },
+            } satisfies GeminiApiRequest),
+            responseType: 'text',
+            timeout: ms.min(5),
+          });
 
-        if (!data.trim().length) {
-          rep.send();
+          let parsedData: GenerateContentResponse;
+          try {
+            parsedData = JSON.parse(data) as GenerateContentResponse;
+            logger.trace(`Gemini response:`, simplifyResponse(parsedData) as unknown as Recordable);
+          } catch (parseError) {
+            throw new ParseError(
+              `Failed to parse upstream JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+            );
+          }
+
+          if (!isValidGeminiResponse(parsedData)) {
+            throw new DataError(
+              'Response validation failed: Model returned empty or invalid content (no text/functionCall).',
+            );
+          }
+
+          rep.code(status);
+          headers.forEach((value, key) => {
+            if (EXCLUDED_HEADERS.includes(key.toLowerCase())) return;
+            rep.header(key, value);
+          });
+
+          if (!data.trim().length) {
+            rep.send();
+            return;
+          }
+
+          rep.header('content-type', 'application/json; charset=utf-8');
+          rep.send(data);
           return;
-        }
+        } catch (err) {
+          const errStatus = err instanceof HttpError && err.status ? err.status : 502;
+          const errText =
+            err instanceof HttpError && err.details ? err.details : err instanceof Error ? err.message : String(err);
 
-        rep.header('content-type', 'application/json; charset=utf-8');
-        rep.send(data);
-        return;
-      } catch (err) {
-        const errStatus = err instanceof HttpError && err.status ? err.status : 502;
-        const errText =
-          err instanceof HttpError && err.details ? err.details : err instanceof Error ? err.message : String(err);
+          const isFatalStatus = FATAL_STATUS_CODES.includes(errStatus);
+          const isFatalMessage = FATAL_ERROR_MESSAGES.some((msg) => errText.toUpperCase().includes(msg));
 
-        const isFatalStatus = FATAL_STATUS_CODES.includes(errStatus);
-        const isFatalMessage = FATAL_ERROR_MESSAGES.some((msg) => errText.toUpperCase().includes(msg));
+          if (isFatalStatus || isFatalMessage) {
+            logger.error(`[Gemini Proxy] Fatal error encountered. Aborting retries.`, {
+              keyMask: generateStrMask(key, 5),
+              model,
+              status: errStatus,
+              message: errText,
+            });
 
-        if (isFatalStatus || isFatalMessage) {
-          logger.error(`[Gemini Proxy] Fatal error encountered. Aborting retries.`, {
+            rep.code(errStatus).type('application/json').send({
+              error: 'Bad Gateway',
+              message: errText,
+            });
+            return;
+          }
+
+          const isLastKey = keyRound >= keyRotator.size;
+          const isLastModel = modelRound >= modelRotator.size;
+
+          if (isLastKey && isLastModel) {
+            logger.error('[Proxy] All keys and models exhausted.');
+            rep.code(errStatus).type('application/json').send({
+              error: 'Bad Gateway',
+              message: errText,
+            });
+            return;
+          }
+
+          logger.warn(`[Gemini Proxy] Transient error. Retrying...`, {
+            keyRound: `${keyRound}/${keyRotator.size}`,
+            modelRound: `${modelRound}/${modelRotator.size}`,
             keyMask: generateStrMask(key, 5),
             model,
             status: errStatus,
             message: errText,
           });
 
-          rep.code(errStatus).type('application/json').send({
-            error: 'Bad Gateway',
-            message: errText,
-          });
-          return;
+          await delay(ms.sec(3));
+
+          continue;
         }
-
-        const isLastKey = keyRound >= keyRotator.size;
-        const isLastModel = modelRound >= shuffledModels.length;
-
-        if (isLastKey && isLastModel) {
-          logger.error('[Proxy] All keys and models exhausted.');
-          rep.code(errStatus).type('application/json').send({
-            error: 'Bad Gateway',
-            message: errText,
-          });
-          return;
-        }
-
-        logger.warn(`[Gemini Proxy] Transient error. Retrying...`, {
-          keyRound: `${keyRound}/${keyRotator.size}`,
-          modelRound: `${modelRound}/${modelRotator.size}`,
-          keyMask: generateStrMask(key, 5),
-          model,
-          status: errStatus,
-          message: errText,
-        });
-
-        await delay(ms.sec(3));
-
-        continue;
       }
     }
-  }
-  rep.code(500).type('application/json').send({ error: 'Internal Server Error: No Upstream Available' });
-};
+    rep.code(500).type('application/json').send({ error: 'Internal Server Error: No Upstream Available' });
+  };

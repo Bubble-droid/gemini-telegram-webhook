@@ -93,7 +93,7 @@ export class GeminiCliClient {
     const headers = {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
-      'User-Agent': getUserAgent(),
+      'User-Agent': getUserAgent(payload['model'] as string),
     };
 
     logger.trace(`Sending request to Google API: ${targetUrl} (Model: ${String(payload['model'])})`);

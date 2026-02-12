@@ -1,7 +1,8 @@
 import { BotMessages } from '@configs/bot-messages.js';
 import type { Content, FunctionCall, FunctionResponse, GenerateContentResponse, Part } from '@google/genai';
 import type { GeminiApiClient } from '@llm/client/gemini-api-client.js';
-import type { GeminiAgentOpts, NormalizedResponse } from '@llm/types/agent.js';
+import type { GeminiAgentOpts, StandardizedFunctionResponse } from '@llm/types/agent.js';
+import { THOUGHT_SIGNATURE_PLACEHOLDER } from '@shared/core/constants.js';
 import { AgentError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import { delay, ms } from '@shared/utils/helpers.js';
@@ -9,7 +10,7 @@ import { delay, ms } from '@shared/utils/helpers.js';
 const MAX_AGENT_ROUNDS = 16;
 
 const createToolResponse = (
-  res: NormalizedResponse,
+  res: StandardizedFunctionResponse,
   name: NonNullable<FunctionResponse['name']>,
   id: FunctionResponse['id'],
 ): Pick<Part, 'functionResponse'> => {
@@ -17,7 +18,7 @@ const createToolResponse = (
     functionResponse: {
       ...(id && { id }),
       name,
-      response: res,
+      ...res,
     },
   };
 };
@@ -31,7 +32,7 @@ const handleToolCall = async (
   const { id, name, args } = call;
 
   if (!name) {
-    return createToolResponse({ error: 'Tool name not provided' }, 'N/A', id);
+    return createToolResponse({ response: { error: 'Tool name not provided' } }, 'N/A', id);
   }
 
   logger.info(`[ChatAgent] Executing tool: ${name}`, { args });
@@ -43,11 +44,11 @@ const handleToolCall = async (
 
   try {
     const result = await callTool(name, args);
-    return createToolResponse(result.response, name, id);
+    return createToolResponse(result, name, id);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     logger.warn(`[ChatAgent] Tool execution error: ${name}`, { err });
-    return createToolResponse({ error: errorMsg }, name, id);
+    return createToolResponse({ response: { error: errorMsg } }, name, id);
   }
 };
 
@@ -58,8 +59,8 @@ export class GeminiAgent {
     this.client = client;
   }
 
-  public async run(contents: Content[], options: GeminiAgentOpts): Promise<GenerateContentResponse> {
-    const { maxRounds = MAX_AGENT_ROUNDS, onStatusUpdate, callTool, generateConfig } = options;
+  public async run(contents: Content[], opts: GeminiAgentOpts): Promise<GenerateContentResponse> {
+    const { maxRounds = MAX_AGENT_ROUNDS, onStatusUpdate, callTool, generateConfig, generateModel } = opts;
     const agentContents = [...contents];
     let round = 0;
     let response: GenerateContentResponse;
@@ -69,13 +70,24 @@ export class GeminiAgent {
       }
       logger.debug(`[GeminiAgent] Round ${round++} started.`);
 
-      response = await this.client.generateContent(agentContents, generateConfig);
+      response = await this.client.generateContent(agentContents, generateConfig, generateModel);
 
       if (!response.candidates?.[0]?.content) {
         throw new AgentError('Model returned empty or invalid content.');
       }
 
-      agentContents.push(response.candidates[0].content);
+      agentContents.push({
+        role: 'model',
+        parts: response.candidates[0].content.parts!.map((p) => {
+          if (p.functionCall && !p.thoughtSignature?.length) {
+            return {
+              ...p,
+              thoughtSignature: THOUGHT_SIGNATURE_PLACEHOLDER,
+            };
+          }
+          return p;
+        }),
+      });
 
       const { functionCalls } = response;
       if (!functionCalls?.length) {

@@ -15,6 +15,7 @@ interface ToolCallerDeps {
 
 export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps => {
   const { geminiApiAgent, geminiCliAgent, mcpClient } = deps;
+  // const multimodalModelRotator = new ListRotator(shuffleArray(GEMINI_MULTIMODAL_MODELS));
 
   return (ctx, onStatusUpdate) => ({
     file_search: async (args) => {
@@ -27,6 +28,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
       const result = await geminiApiAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
+          temperature: 0.7,
           systemInstruction: [{ text: system_prompt }],
           tools: [{ fileSearch: { fileSearchStoreNames: file_search_stores } }],
         },
@@ -47,6 +49,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
       const result = await geminiCliAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
+          temperature: 0.7,
           systemInstruction: [{ text: system_prompt }],
           tools: [{ googleSearch: {} }],
         },
@@ -67,6 +70,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
       const result = await geminiCliAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
+          temperature: 0.7,
           systemInstruction: [{ text: system_prompt }],
           tools: [{ urlContext: {} }],
         },
@@ -90,8 +94,9 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
           return mcpClient.callTool(name, args);
         },
         generateConfig: {
+          temperature: 0.4,
           systemInstruction: [{ text: system_prompt }],
-          tools: [{ functionDeclarations: mcpClient.getTools(agent_name) }],
+          tools: [{ functionDeclarations: mcpClient.getTools(agent_name.toLowerCase()) }],
           toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
           automaticFunctionCalling: { disable: true },
         },
@@ -114,14 +119,57 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
           ],
         },
       ];
-      const result = await geminiCliAgent.run(contents, {
+      const result = await geminiApiAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
+          temperature: 0.7,
           systemInstruction: [{ text: system_prompt }],
         },
       });
       return { response: { output: result.text! } };
     },
+
+    /*  generate_image: async (args) => {
+      const { message_id, prompt, aspect_ratio, image_size, system_prompt } = args;
+      const model = multimodalModelRotator.next();
+      const contents: Content[] = [
+        {
+          role: 'user',
+          parts: [{ text: prompt }],
+        },
+      ];
+      const result = await geminiCliAgent.run(contents, {
+        onStatusUpdate,
+        generateConfig: {
+          temperature: 0.7,
+          systemInstruction: [{ text: system_prompt }],
+          responseModalities: ['TEXT', 'IMAGE'],
+          imageConfig: {
+            aspectRatio: aspect_ratio,
+            ...(model.startsWith('gemini-3') && image_size && { imageSize: image_size }),
+          },
+          ...(model.startsWith('gemini-3') && { tools: [{ googleSearch: {} }] }),
+        },
+        generateModel: 'gemini-2.5-flash-image',
+      });
+      const imageData = result.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
+      if (!imageData) {
+        return { response: { error: 'Failed to generate image, missing valid image data.' } };
+      }
+      const buffer = Buffer.from(imageData.inlineData!.data!, 'base64');
+      const photo = makeFile(buffer, `generated-by-${model}.png`, imageData.inlineData?.mimeType ?? 'image/png');
+      const res = await ctx.api.sendPhoto(ctx.chat.id, photo, {
+        deleteAfterMs: ms['1d'],
+        replyToMessageId: message_id,
+      });
+      if (!res.ok) {
+        return { response: { error: `Failed to send image. ${res.error}` } };
+      }
+      return {
+        response: { output: 'Image generated successfully.', ...(result.text && { result: result.text }) },
+        parts: [imageData],
+      };
+    }, */
 
     code_execution: async (args) => {
       const { prompt, system_prompt } = args;
@@ -137,19 +185,20 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     },
 
     reply_to_file: async (args) => {
-      const { message_id, content, name, type } = args;
+      const { message_id, content, name, type, describe } = args;
       const file = makeFile(content, name, type);
       const res = await ctx.api.sendDocument(ctx.chat.id, file, {
+        ...(describe && { caption: describe }),
         deleteAfterMs: ms['1d'],
         replyToMessageId: message_id,
       });
       if (!res.ok) {
-        return { response: { error: `Failed to send file. Error: ${res.error}` } };
+        return { response: { error: `Failed to send file. ${res.error}` } };
       }
       return { response: { output: 'File sent successfully.' } };
     },
 
-    set_message_reaction: async (args) => {
+    reaction_to_message: async (args) => {
       const { message_id, reaction } = args;
       const res = await ctx.api.setMessageReaction(ctx.chat.id, message_id, reaction);
       if (!res.ok) {

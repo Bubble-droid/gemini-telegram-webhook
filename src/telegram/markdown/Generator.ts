@@ -2,7 +2,7 @@ import type { AstNode, NodeType } from '@shared/types/markdown.js';
 import { Escaper } from './Escaper.js';
 
 /**
- * AST 生成器基类，负责将 AST 转换为字符串。
+ * Base Generator class responsible for converting AST to string.
  */
 export abstract class Generator {
   public generate(node: AstNode): string {
@@ -10,8 +10,7 @@ export abstract class Generator {
   }
 
   /**
-   * 关键修复：将此方法设为 public，以便 chunk_splitting 模块可以合法访问。
-   * 这是最直接的解决方案，因为它确实需要生成节点内容的能力。
+   * Public access to allow chunk_splitting module to generate content.
    */
   public generateContent(node: AstNode): string {
     return node.content ?? this.visitChildren(node);
@@ -28,12 +27,12 @@ export abstract class Generator {
     return node.children?.map((child) => this.visitNode(child)).join('') ?? '';
   }
 
-  // 这两个方法主要由新的 chunk_splitting 模块使用
+  // Abstract methods used by subclasses and chunk_splitting
   public abstract getOpeningTag(type: NodeType, node: AstNode): string;
   public abstract getClosingTag(type: NodeType, node: AstNode): string;
 }
 
-// --- HTML 生成器 ---
+// --- HTML Generator ---
 export class HtmlGenerator extends Generator {
   getOpeningTag(type: NodeType, node: AstNode): string {
     switch (type) {
@@ -48,7 +47,6 @@ export class HtmlGenerator extends Generator {
       case 'inline_code':
         return '<code>';
       case 'code_block': {
-        // 关键修复：为 case 添加块级作用域，避免 ESLint 错误
         const langClass = node.lang ? ` class="language-${Escaper.html(node.lang)}"` : '';
         return `<pre><code${langClass}>`;
       }
@@ -56,13 +54,17 @@ export class HtmlGenerator extends Generator {
         return `<a href="${Escaper.html(node.href ?? '')}">`;
       case 'blockquote':
         return node.expandable ? '<blockquote expandable>' : '<blockquote>';
+      // Lists: Telegram HTML doesn't support <ul>/<li>. We simulate them with text.
+      case 'unordered_list':
+        return '';
+      case 'list_item':
+        return (node.indent ?? '') + '· ';
       default:
         return '';
     }
   }
 
   getClosingTag(type: NodeType): string {
-    // 关键修复：将未使用的 'node' 重命名为 '_node'
     switch (type) {
       case 'bold':
         return '</b>';
@@ -80,6 +82,10 @@ export class HtmlGenerator extends Generator {
         return '</a>';
       case 'blockquote':
         return '</blockquote>';
+      case 'unordered_list':
+        return '';
+      case 'list_item':
+        return '\n'; // Lists act as block elements
       default:
         return '';
     }
@@ -95,7 +101,7 @@ export class HtmlGenerator extends Generator {
   }
 }
 
-// --- MarkdownV2 生成器 ---
+// --- MarkdownV2 Generator ---
 export class MarkdownV2Generator extends Generator {
   getOpeningTag(type: NodeType, node: AstNode): string {
     switch (type) {
@@ -113,6 +119,10 @@ export class MarkdownV2Generator extends Generator {
         return `\`\`\`${node.lang ?? ''}\n`;
       case 'link':
         return '[';
+      case 'unordered_list':
+        return '';
+      case 'list_item':
+        return (node.indent ?? '') + '· ';
       default:
         return '';
     }
@@ -134,6 +144,10 @@ export class MarkdownV2Generator extends Generator {
         return '\n```';
       case 'link':
         return `](${Escaper.markdownV2Url(node.href ?? '')})`;
+      case 'unordered_list':
+        return '';
+      case 'list_item':
+        return '\n';
       default:
         return '';
     }
@@ -147,7 +161,6 @@ export class MarkdownV2Generator extends Generator {
     }
     if (node.type === 'blockquote') {
       const content = this.visitChildren(node);
-      // 为块引用的每一行添加前缀
       return content
         .split('\n')
         .map((line) => `> ${line}`)
@@ -156,7 +169,6 @@ export class MarkdownV2Generator extends Generator {
     return this.visitChildren(node);
   }
 
-  // 覆盖 visitNode 以特殊处理 blockquote，因为它不是包裹型标签
   protected override visitNode(node: AstNode): string {
     if (node.type === 'blockquote') {
       return this.generateContent(node);
@@ -165,7 +177,7 @@ export class MarkdownV2Generator extends Generator {
   }
 }
 
-// --- Legacy Markdown 生成器 ---
+// --- Legacy Markdown Generator ---
 export class LegacyMarkdownGenerator extends Generator {
   getOpeningTag(type: NodeType, node: AstNode): string {
     switch (type) {
@@ -177,8 +189,12 @@ export class LegacyMarkdownGenerator extends Generator {
         return `\`\`\`${node.lang ?? ''}\n`;
       case 'link':
         return '[';
+      case 'unordered_list':
+        return '';
+      case 'list_item':
+        return (node.indent ?? '') + '· ';
       default:
-        return ''; // 不支持的格式
+        return '';
     }
   }
 
@@ -191,7 +207,11 @@ export class LegacyMarkdownGenerator extends Generator {
       case 'code_block':
         return '\n```';
       case 'link':
-        return `](${node.href ?? ''})`; // Legacy 不转义 URL
+        return `](${node.href ?? ''})`;
+      case 'unordered_list':
+        return '';
+      case 'list_item':
+        return '\n';
       default:
         return '';
     }
@@ -201,11 +221,9 @@ export class LegacyMarkdownGenerator extends Generator {
     if (node.type === 'text') return Escaper.legacyMarkdown(node.content ?? '');
     if (node.type === 'newline') return '\n';
     if (node.type === 'code_block' || node.type === 'inline_code') {
-      // 潜在问题修复：根据 Telegram 文档，Legacy Markdown 实体内部不允许转义。
-      // 因此，代码块和行内代码的内容应保持原样。
       return node.content ?? '';
     }
-    // 对于不支持的格式，直接渲染其子节点，相当于剥离格式
+    // Flatten unsupported tags by rendering children directly
     if (['underline', 'strikethrough', 'spoiler', 'blockquote'].includes(node.type)) {
       return this.visitChildren(node);
     }

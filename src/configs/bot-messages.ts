@@ -1,5 +1,5 @@
 import { CONFIG } from '@shared/core/config.js';
-import { GEMINI_MODELS } from '@shared/core/constants.js';
+import { GEMINI_TEXT_MODELS } from '@shared/core/constants.js';
 import type { Recordable } from '@shared/types/common.js';
 import type { InlineKeyboardButton, InlineKeyboardMarkup } from 'grammy/types';
 
@@ -7,7 +7,7 @@ export const BotMessages = {
   getStartText: (): string => {
     const { TELEGRAM_BOT_USERNAME: botName } = CONFIG;
     return `
-💡 思考模型：${GEMINI_MODELS.map((m) => `\`${m}\``).join(', ')}
+💡 思考模型：${GEMINI_TEXT_MODELS.map((m) => `\`${m}\``).join(', ')}
 
 ✨ 你好！你可以通过以下方式与我互动，我能理解上下文并深度解析多媒体内容：
 

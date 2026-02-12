@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "tsx --env-file=.env.development --watch src/main.ts",
     "dev:docker": "docker compose up -d --build",
+    "test": "vitest run",
     "build": "vite build",
     "build:docker": "docker buildx build --platform linux/amd64 -t gemini-telegram-webhook:latest .",
     "start": "node --env-file=.env.development dist/index.mjs",
@@ -21,7 +22,7 @@
     "push:github": "git add . && git commit -m \"Update $(date +'%Y-%m-%d %H:%M:%S')\" && git push"
   },
   "dependencies": {
-    "@google/genai": "^1.40.0",
+    "@google/genai": "^1.41.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "fastify": "^5.7.4",
     "google-auth-library": "^10.5.0",
@@ -41,6 +42,7 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.55.0",
     "vite": "^7.3.1",
-    "vite-tsconfig-paths": "^6.1.0"
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.0.18"
   }
 }

@@ -8,7 +8,9 @@ import type { NormalMessageHandler } from './messages/normal-message-handler.js'
 
 export interface HandlerWorkers {
   fileHandler: FileHandler;
+  geminiApiAgent: GeminiAgent;
   geminiCliAgent: GeminiAgent;
+  gemmaAgent: GeminiAgent;
   mcpClient: McpClient;
   toolCaller: ToolCallerInjectedDeps;
 }

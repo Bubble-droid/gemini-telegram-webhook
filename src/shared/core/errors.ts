@@ -1,6 +1,6 @@
-import { formatTime, shortenString } from '@shared/utils/helpers.js';
+import { formatTime, makeFile } from '@shared/utils/helpers.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
-import { Escaper } from '@telegram/markdown/Escaper.js';
+import { getHtmlChunks } from '@telegram/markdown/index.js';
 import { CONFIG } from './config.js';
 import { logger } from './logger.js';
 
@@ -24,25 +24,33 @@ export class AppError extends Error {
     try {
       const err = error instanceof Error ? error : new AppError(String(error));
       const rawStack = err.stack ?? 'No stack trace available';
-      const truncatedStack = shortenString(rawStack);
-
       const currentTime = formatTime(Date.now());
-      const safeContext = Escaper.html(context);
-      const safeMessage = Escaper.html(err.message);
-      const safeStack = Escaper.html(truncatedStack);
 
-      const htmlMessage =
-        `🚨 <b>[错误告警]</b> 🚨\n\n` +
-        `🕒 <b>时间:</b> ${currentTime}\n` +
-        `📂 <b>上下文:</b> <code>${safeContext}</code>\n\n` +
-        `❌ <b>错误信息:</b>\n<pre>${safeMessage}</pre>\n\n` +
-        `🛠 <b>堆栈追踪:</b>\n<pre><code class="language-javascript">${safeStack}</code></pre>`;
+      const message =
+        `🚨 **[错误告警]** 🚨\n\n` +
+        `🕒 **时间:** ${currentTime}\n` +
+        `📂 **上下文:** \`${context}\`\n\n` +
+        `❌ **错误信息:**\n\`\`\`\n${err.message}\n\`\`\`\n\n` +
+        `🛠 **堆栈追踪:**\n\`\`\`javascript\n${rawStack}\n\`\`\``;
 
-      await ctx.api.sendMessage(ownerId, htmlMessage, {
-        parse_mode: 'HTML',
-      });
+      const htmlChunks = getHtmlChunks(message);
 
-      logger.info('Error notification sent to owner.', { context });
+      if (htmlChunks.length > 1) {
+        const file = makeFile(message, 'error-report.md', 'text/markdown');
+        await ctx.api.sendDocument(ownerId, file, {
+          caption: 'Too long error report, sent as a file.',
+        });
+      } else {
+        const res = await ctx.api.sendMessage(ownerId, htmlChunks[0]!, {
+          parse_mode: 'HTML',
+        });
+        if (!res.ok) {
+          const res = await ctx.api.sendMessage(ownerId, htmlChunks[0]!);
+          if (!res.ok) {
+            throw new TelegramError(`Failed to send error notification. ${res.error}`);
+          }
+        }
+      }
     } catch (err) {
       logger.warn('Failed to send error notification.', {
         err,

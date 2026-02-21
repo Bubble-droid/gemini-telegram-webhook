@@ -48,13 +48,13 @@ export const GEMINI_TEXT_MODELS = [
 
 export const GEMINI_MULTIMODAL_MODELS = ['gemini-3-pro-image-preview', 'gemini-2.5-flash-image'];
 
-export const GEMMA_MODELS = ['gemma-3-12b-it', 'gemma-3-27b-it'];
+export const GEMMA_MODELS = ['gemma-3-27b-it'];
 
 export const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
 
 export const CODE_ASSIST_API_VERSION = 'v1internal';
 
-export const CLI_VERSION = '0.26.0';
+export const CLI_VERSION = '0.30.0-preview.3';
 
 export const OAUTH_CLIENT_ID =
   'NjgxMjU1ODA5Mzk1LW9vOGZ0Mm9wcmRybnA5ZTNhcWY2YXYzaG1kaWIxMzVqLmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29tCg==';
@@ -70,7 +70,6 @@ export const GEMINI_API_SAFETY_SETTINGS: SafetySetting[] = [
 
 export const GEMINI_SAFETY_SETTINGS: SafetySetting[] = [
   ...GEMINI_API_SAFETY_SETTINGS,
-  { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
   { category: HarmCategory.HARM_CATEGORY_IMAGE_HATE, threshold: HarmBlockThreshold.BLOCK_NONE },
   { category: HarmCategory.HARM_CATEGORY_IMAGE_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
   { category: HarmCategory.HARM_CATEGORY_IMAGE_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -87,8 +86,7 @@ export const THINKING_CONFIG_BUDGET: ThinkingConfig = { includeThoughts: false, 
 
 export const GEMINI_CLIENT_BASE_CONFIG: GenerateContentConfig = {
   temperature: DEFAULT_TEMPERATURE,
-  safetySettings: GEMINI_SAFETY_SETTINGS,
-  thinkingConfig: THINKING_CONFIG_BUDGET,
+  safetySettings: GEMINI_API_SAFETY_SETTINGS,
 };
 
 export const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';

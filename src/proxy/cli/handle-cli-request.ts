@@ -3,7 +3,7 @@ import { simplifyContents, simplifyResponse } from '@llm/utils.js';
 import { EXCLUDED_HEADERS, FATAL_ERROR_MESSAGES, FATAL_STATUS_CODES } from '@proxy/config.js';
 import type { GenerateContentRequest, GoogleApiRequest } from '@proxy/types.js';
 import { GEMINI_MULTIMODAL_MODELS, GENERATE_CONTENT_METHOD } from '@shared/core/constants.js';
-import { DataError, HttpError, ParseError } from '@shared/core/errors.js';
+import { AuthError, DataError, HttpError, ParseError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import type { Recordable } from '@shared/types/common.js';
 import { delay, ms } from '@shared/utils/helpers.js';
@@ -100,7 +100,7 @@ export const handleCliProxyRequest =
         const isFatalStatus = FATAL_STATUS_CODES.includes(errStatus);
         const isFatalMessage = FATAL_ERROR_MESSAGES.some((msg) => errText.toUpperCase().includes(msg));
 
-        if (isFatalStatus || isFatalMessage) {
+        if (isFatalStatus || isFatalMessage || err instanceof AuthError) {
           logger.error(`[Cli Proxy] Fatal error encountered. Aborting retries.`, {
             model,
             status: errStatus,

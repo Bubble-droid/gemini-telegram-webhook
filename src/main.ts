@@ -16,9 +16,9 @@ import { CONFIG } from '@shared/core/config.js';
 import {
   CLI_PROXY_BASE_URL,
   DATA_DIR,
-  GEMINI_API_SAFETY_SETTINGS,
   GEMINI_CLIENT_BASE_CONFIG,
   GEMINI_PROXY_BASE_URL,
+  GEMINI_SAFETY_SETTINGS,
   MCP_SERVERS_FILE,
 } from '@shared/core/constants.js';
 import { logger } from '@shared/core/logger.js';
@@ -56,17 +56,23 @@ const start = async () => {
   const geminiApiClient = new GeminiApiClient(CONFIG.PROXY_AUTH_TOKEN, GEMINI_PROXY_BASE_URL, {
     ...GEMINI_CLIENT_BASE_CONFIG,
     enableEnhancedCivicAnswers: true,
-    safetySettings: GEMINI_API_SAFETY_SETTINGS,
   });
-  const geminiCliClient = new GeminiApiClient(CONFIG.PROXY_AUTH_TOKEN, CLI_PROXY_BASE_URL, GEMINI_CLIENT_BASE_CONFIG);
+  const geminiCliClient = new GeminiApiClient(CONFIG.PROXY_AUTH_TOKEN, CLI_PROXY_BASE_URL, {
+    ...GEMINI_CLIENT_BASE_CONFIG,
+    safetySettings: GEMINI_SAFETY_SETTINGS,
+  });
+  const gemmaClient = new GeminiApiClient(CONFIG.PROXY_AUTH_TOKEN, GEMINI_PROXY_BASE_URL, GEMINI_CLIENT_BASE_CONFIG);
+
   const geminiApiAgent = new GeminiAgent(geminiApiClient);
   const geminiCliAgent = new GeminiAgent(geminiCliClient);
+  const gemmaAgent = new GeminiAgent(gemmaClient);
+
   const toolCaller = createToolCaller({ geminiApiAgent, geminiCliAgent, mcpClient });
 
   const fileHandler = new FileHandler(bot);
   const messageCollector = new MessageCollector();
-  const mentionHandler = new MentionHandler({ fileHandler, geminiCliAgent, toolCaller, mcpClient });
-  const chitchatHandler = new ChitchatHandler({ fileHandler, geminiCliAgent, toolCaller, mcpClient });
+  const mentionHandler = new MentionHandler({ fileHandler, geminiApiAgent, toolCaller, mcpClient });
+  const chitchatHandler = new ChitchatHandler({ fileHandler, gemmaAgent, toolCaller, mcpClient });
   const normalMessageHandler = new NormalMessageHandler({ chitchatHandler });
 
   const updateHandler = new UpdateHandler(bot);

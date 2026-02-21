@@ -2,12 +2,13 @@ import { getFunctionTools } from '@configs/function-tools.js';
 import { chatHistory } from '@data/chat-history.js';
 import { longTermMemory } from '@data/long-term-memory.js';
 import { promptStore } from '@data/prompt-store.js';
-import { FunctionCallingConfigMode, type Content, type Part } from '@google/genai';
+import { type Content, type Part } from '@google/genai';
 import type { GeminiAgent } from '@llm/agent/gemini-agent.js';
 import type { McpClient } from '@llm/mcp/mcp-client.js';
 import type { ToolCallerInjectedDeps, ToolName } from '@llm/types/tool.js';
 import type { FileHandler } from '@services/file-service.js';
 import { CONFIG } from '@shared/core/config.js';
+import { GEMMA_MODELS } from '@shared/core/constants.js';
 import { AppError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import type { Recordable } from '@shared/types/common.js';
@@ -31,13 +32,13 @@ const HISTORY_LIMIT = 16;
 
 export class ChitchatHandler {
   private locks = new Map<number, Promise<void>>();
-  private cliAgent: GeminiAgent;
+  private geminiAgent: GeminiAgent;
   private fileHandler: FileHandler;
   private mcpClient: McpClient;
   private toolCaller: ToolCallerInjectedDeps;
 
-  constructor(workers: HandlerWorkers) {
-    this.cliAgent = workers.geminiCliAgent;
+  constructor(workers: Omit<HandlerWorkers, 'geminiApiAgent' | 'geminiCliAgent'>) {
+    this.geminiAgent = workers.gemmaAgent;
     this.fileHandler = workers.fileHandler;
     this.mcpClient = workers.mcpClient;
     this.toolCaller = workers.toolCaller;
@@ -130,19 +131,34 @@ export class ChitchatHandler {
   }
 
   private async requestChat(state: ChitchatState, ctx: ResponseContext): Promise<string | null> {
-    const systemPrompt = promptStore.format('chitchat', {
+    const systemPrompt = promptStore.format('chitchat-gemma', {
       selfName: CONFIG.TELEGRAM_BOT_USERNAME,
       time: formatTime(Date.now()),
       groupMemories: longTermMemory.getMemories(ctx.chat.id),
+      functions: JSON.stringify(getFunctionTools(this.mcpClient.getLoadedServers()), null, 2),
     });
 
+    const contents: Content[] = [
+      {
+        role: 'user',
+        parts: [{ text: systemPrompt }],
+      },
+      ...state.groupHistory.map((c) => {
+        return {
+          ...c,
+          parts: c.parts!.map((p) => {
+            const { thoughtSignature, ...rest } = p;
+            return { ...rest };
+          }),
+        };
+      }),
+    ];
+
     try {
-      const response = await this.cliAgent.run(state.groupHistory, {
+      const response = await this.geminiAgent.run(contents, {
+        generateModel: GEMMA_MODELS[0]!,
         generateConfig: {
-          temperature: 0.4,
-          systemInstruction: [{ text: systemPrompt }],
-          tools: [{ functionDeclarations: getFunctionTools(this.mcpClient.getLoadedServers()) }],
-          toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
+          temperature: 0.2,
         },
         callTool: (name, args) => {
           return this.toolCaller(ctx)[name as ToolName](args as never);

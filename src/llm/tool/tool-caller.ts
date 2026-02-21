@@ -14,7 +14,7 @@ interface ToolCallerDeps {
 }
 
 export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps => {
-  const { geminiApiAgent, geminiCliAgent, mcpClient } = deps;
+  const { geminiApiAgent, mcpClient } = deps;
   // const multimodalModelRotator = new ListRotator(shuffleArray(GEMINI_MULTIMODAL_MODELS));
 
   return (ctx, onStatusUpdate) => ({
@@ -46,7 +46,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     web_search: async (args) => {
       const { prompt, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
-      const result = await geminiCliAgent.run(contents, {
+      const result = await geminiApiAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
           temperature: 0.7,
@@ -67,7 +67,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     web_fetch: async (args) => {
       const { prompt, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
-      const result = await geminiCliAgent.run(contents, {
+      const result = await geminiApiAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
           temperature: 0.7,
@@ -88,7 +88,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     delegate_to_agent: async (args) => {
       const { agent_name, objective, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: objective }] }];
-      const result = await geminiCliAgent.run(contents, {
+      const result = await geminiApiAgent.run(contents, {
         onStatusUpdate,
         callTool: (name, args) => {
           return mcpClient.callTool(name, args);

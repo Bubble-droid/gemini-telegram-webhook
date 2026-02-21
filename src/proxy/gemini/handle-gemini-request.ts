@@ -79,7 +79,10 @@ export const handleGeminiProxyRequest =
       let modelRound = 0;
       while (modelRound < modelRotator.size) {
         modelRound++;
-        const model = GEMINI_MULTIMODAL_MODELS.includes(originalModel!) ? originalModel! : modelRotator.next();
+        const model =
+          GEMINI_MULTIMODAL_MODELS.includes(originalModel!) || originalModel?.startsWith('gemma-')
+            ? originalModel!
+            : modelRotator.next();
         const endpoint = getGeminiGenerateContentEndpoint(model);
 
         try {
@@ -116,7 +119,9 @@ export const handleGeminiProxyRequest =
                 temperature: model.startsWith('gemini-3')
                   ? 1
                   : (refreshedBody.generationConfig?.temperature ?? DEFAULT_TEMPERATURE),
-                thinkingConfig: model.startsWith('gemini-3') ? THINKING_CONFIG_LEVER : THINKING_CONFIG_BUDGET,
+                ...(!model.startsWith('gemma-') && {
+                  thinkingConfig: model.startsWith('gemini-3') ? THINKING_CONFIG_LEVER : THINKING_CONFIG_BUDGET,
+                }),
               },
             } satisfies GeminiApiRequest),
             responseType: 'text',

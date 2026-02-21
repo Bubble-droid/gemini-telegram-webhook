@@ -64,6 +64,7 @@ export class GeminiAgent {
     const agentContents = [...contents];
     let round = 0;
     let response: GenerateContentResponse;
+    let functionCalls: FunctionCall[] | undefined;
     do {
       if (round >= maxRounds) {
         throw new AgentError(`Agent exceeded maximum rounds (${maxRounds})`);
@@ -89,9 +90,13 @@ export class GeminiAgent {
         }),
       });
 
-      const { functionCalls } = response;
+      functionCalls = response.functionCalls;
       if (!functionCalls?.length) {
-        break;
+        try {
+          functionCalls = JSON.parse(response.text!) as FunctionCall[];
+        } catch {
+          break;
+        }
       }
 
       if (!callTool) {
@@ -101,7 +106,16 @@ export class GeminiAgent {
       logger.debug(`Model requested ${functionCalls.length} tool calls.`);
 
       const toolResults = await Promise.all(
-        functionCalls.map((call) => handleToolCall(call, callTool, response.text, onStatusUpdate)),
+        functionCalls.map(async (call): Promise<Part> => {
+          const result = await handleToolCall(call, callTool, response.text, onStatusUpdate);
+          if (generateModel?.startsWith('gemma-')) {
+            return {
+              text: JSON.stringify(result),
+            };
+          } else {
+            return result;
+          }
+        }),
       );
 
       agentContents.push({ role: 'user', parts: toolResults });
@@ -109,7 +123,7 @@ export class GeminiAgent {
       await delay(ms.sec(3));
 
       await onStatusUpdate?.(BotMessages.thinking);
-    } while (response.functionCalls);
+    } while (functionCalls.length > 0);
 
     logger.info(`[GeminiAgent] Task completed`, { rounds: round + 1 });
     return response;

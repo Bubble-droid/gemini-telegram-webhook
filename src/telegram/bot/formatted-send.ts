@@ -7,7 +7,7 @@ import type { ResponseContext } from '@telegram/bot/response-context.js';
 import { getHtmlChunks, getPlainTextChunks } from '@telegram/markdown/index.js';
 import type { ParseMode } from 'grammy/types';
 
-const FILE_CAPTION = '内容过长，已转换为文件回复';
+const FILE_CAPTION = 'Output too long, sent as file.';
 
 const sendTextChunks = async (
   textChunks: string[],
@@ -56,7 +56,7 @@ export const sendFormattedChunks = async (response: GenerateContentResponse, ctx
   const { text, modelVersion } = response;
   const htmlChunks = getHtmlChunks(text!);
   if (htmlChunks.length > 1) {
-    const file = makeFile(text!, 'output.md', 'text/markdown');
+    const file = makeFile(text!, 'response.md', 'text/markdown');
     const res = await ctx.api.sendDocument(ctx.chat.id, file, {
       caption: FILE_CAPTION,
       deleteAfterMs: ms['1d'],

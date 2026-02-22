@@ -18,7 +18,7 @@ interface DatabaseSchema {
 }
 
 const HISTORY_TTL_DAY = 7;
-const MAX_HISTORY_LENGTH = 16;
+const MAX_HISTORY_LENGTH = 12;
 
 const HISTORY_FILE_PATH = path.join(DATA_DIR, CHAT_HISTORY_FILE);
 const DEFAULT_HISTORY_DATA = { history: {} };

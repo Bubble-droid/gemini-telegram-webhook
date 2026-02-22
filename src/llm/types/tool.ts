@@ -12,7 +12,7 @@ type GetToolDef<TName extends ToolName> = Extract<(typeof _FUNCTION_TOOLS)[numbe
 type InferToolArgs<TName extends ToolName> =
   GetToolDef<TName> extends { parametersJsonSchema: infer TParams } ? InferSchema<TParams> : undefined;
 
-type ToolCaller<TName extends ToolName> = (args: InferToolArgs<TName>) => BaseToolResult<string>;
+type ToolCaller<TName extends ToolName> = (args: InferToolArgs<TName>) => BaseToolResult;
 
 export type ToolCallers = {
   [K in ToolName]: ToolCaller<K>;

@@ -22,13 +22,13 @@ import type { Chat, Message, MessageOrigin, User } from 'grammy/types';
 
 // 绝对沉默期：上次回复后，至少要累积这么多“注意力分”才开始从 0 计算概率
 // 相当于人类说完话后的“贤者时间”
-const MIN_ATTENTION_SCORE = 1;
+const MIN_ATTENTION_SCORE = 4;
 
 // 必发期：如果注意力分累积到这个值，概率强制为 100%
 // 相当于“实在忍不住了”
 const MAX_ATTENTION_SCORE = 15;
 
-const HISTORY_LIMIT = 16;
+const HISTORY_LIMIT = 10;
 
 export class ChitchatHandler {
   private locks = new Map<number, Promise<void>>();
@@ -254,10 +254,10 @@ export class ChitchatHandler {
    * 记录用户消息并裁剪历史记录，确保不会超出上限。
    */
   private appendMessage(state: ChitchatState, messages: Content) {
+    state.groupHistory.push(messages);
     if (state.groupHistory.length > HISTORY_LIMIT) {
       state.groupHistory.shift();
     }
-    state.groupHistory.push(messages);
   }
 
   /**

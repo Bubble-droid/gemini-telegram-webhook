@@ -38,7 +38,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
           output: {
             queryResults: addCitations(result),
             groundingMetadata: JSON.stringify(result.candidates?.[0]?.groundingMetadata),
-          } as unknown as string,
+          },
         },
       };
     },
@@ -59,7 +59,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
           output: {
             queryResults: addCitations(result),
             groundingMetadata: JSON.stringify(result.candidates?.[0]?.groundingMetadata),
-          } as unknown as string,
+          },
         },
       };
     },
@@ -80,7 +80,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
           output: {
             queryResults: addCitations(result),
             groundingMetadata: JSON.stringify(result.candidates?.[0]?.groundingMetadata),
-          } as unknown as string,
+          },
         },
       };
     },

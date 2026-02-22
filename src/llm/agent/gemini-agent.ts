@@ -1,5 +1,6 @@
 import { BotMessages } from '@configs/bot-messages.js';
-import type { Content, FunctionCall, FunctionResponse, GenerateContentResponse, Part } from '@google/genai';
+import type { GenerateContentResponse } from '@google/genai';
+import { type Content, type FunctionCall, type FunctionResponse, type Part } from '@google/genai';
 import type { GeminiApiClient } from '@llm/client/gemini-api-client.js';
 import type { GeminiAgentOpts, StandardizedFunctionResponse } from '@llm/types/agent.js';
 import { THOUGHT_SIGNATURE_PLACEHOLDER } from '@shared/core/constants.js';
@@ -94,13 +95,14 @@ export class GeminiAgent {
       if (!functionCalls?.length) {
         try {
           functionCalls = JSON.parse(response.text!) as FunctionCall[];
+          if (!Array.isArray(functionCalls)) break;
         } catch {
           break;
         }
       }
 
       if (!callTool) {
-        throw new AgentError('Model requested tool execution but no toolExecutor provided.');
+        throw new AgentError('Model requested tool execution but no tool executor provided.');
       }
 
       logger.debug(`Model requested ${functionCalls.length} tool calls.`);

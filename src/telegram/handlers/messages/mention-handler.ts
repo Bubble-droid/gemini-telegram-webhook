@@ -48,9 +48,11 @@ export class MentionHandler {
     try {
       await this.checkFile(ctx);
 
-      const completeContents = await this.buildCompleteContents(ctx, messages);
+      const chatContents = await this.makeChatContents(messages);
 
-      if (!this.checkContents(completeContents, ctx)) return;
+      if (!this.checkContents(chatContents, ctx)) return;
+
+      const completeContents: Content[] = [...chatHistory.get(ctx.chat.id, ctx.user.id), ...chatContents];
 
       await ctx.reply(BotMessages.thinking);
 
@@ -115,8 +117,8 @@ export class MentionHandler {
     chatHistory.update(ctx.chat.id, ctx.user.id, completeContents);
   }
 
-  private async buildCompleteContents(ctx: ResponseContext, messages: Message[]): Promise<Content[]> {
-    const history: Content[] = [...chatHistory.get(ctx.chat.id, ctx.user.id)];
+  private async makeChatContents(messages: Message[]): Promise<Content[]> {
+    const contents: Content[] = [];
     const replyToMessage = messages.find((m) => m.reply_to_message)?.reply_to_message;
     const quotedText = messages.find((m) => m.quote)?.quote?.text;
     const quoteTextPrefix = quotedText ? `❝ Quoted: "${quotedText}"\n\n` : undefined;
@@ -125,7 +127,7 @@ export class MentionHandler {
       const replyToParts = await this.extractMessageParts([replyToMessage]);
       if (replyToParts.length > 0) {
         const replyRole = replyToMessage.from?.username === this.botName ? 'model' : 'user';
-        history.push({
+        contents.push({
           role: replyRole,
           parts: replyToParts,
         });
@@ -144,13 +146,13 @@ export class MentionHandler {
     }
 
     if (currentParts.length > 0) {
-      history.push({
+      contents.push({
         role: 'user',
         parts: currentParts,
       });
     }
 
-    return history;
+    return contents;
   }
 
   private async extractMessageParts(messages: Message[]): Promise<Part[]> {
@@ -164,8 +166,8 @@ export class MentionHandler {
 
     const combinedText = messages
       .flatMap((msg) => {
-        const text = msg.text ?? msg.caption ?? '';
-        if (!text.length) return [];
+        const text = msg.text ?? msg.caption;
+        if (!text?.length) return [];
         return [
           text
             .replace(mentionRegex, '')
@@ -210,13 +212,15 @@ export class MentionHandler {
   }
 
   private checkContents(contents: Content[], ctx: ResponseContext): boolean {
-    if (contents.at(-1)?.role !== 'model') return true;
-    logger.warn(`Invalid contents ignored.`);
-    void ctx.reply(BotMessages.invalidContents, {
-      deleteAfterMs: ms['3m'],
-    });
+    if (contents.at(-1)?.role === 'model' || contents.length === 0) {
+      logger.warn(`Invalid contents ignored.`);
+      void ctx.reply(BotMessages.invalidContents, {
+        deleteAfterMs: ms['3m'],
+      });
 
-    return false;
+      return false;
+    }
+    return true;
   }
 
   private generateLockKey(ctx: ResponseContext): string {

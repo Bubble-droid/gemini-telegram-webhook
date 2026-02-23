@@ -40,7 +40,7 @@ export class GeminiApiClient {
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      throw new GeminiApiError(`Failed to request to Gemini API. ${errMsg}`);
+      throw new GeminiApiError(`Request to Gemini API Failed. ${errMsg}`);
     }
   }
 }

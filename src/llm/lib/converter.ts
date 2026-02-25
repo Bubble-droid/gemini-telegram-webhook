@@ -1,31 +1,58 @@
-import type { Part } from '@google/genai';
+import type { Content } from '@google/genai';
 import type { GeneralFunctionSchema } from '@llm/types/agent.js';
-import type { ChatCompletionContentPart, FunctionParameters } from 'openai/resources';
+import type { FunctionParameters } from 'openai/resources';
+import type { ChatCompletionContentPart, ChatCompletionMessage, ChatCompletionMessageParam } from 'openai/resources.js';
 import type { FunctionTool } from 'openai/resources/beta.js';
 
-export const convertGeminiToolToOpenAiTool = (tool: GeneralFunctionSchema): FunctionTool => {
-  return {
+export const convertGeminiFunctionsToOpenAi = (functions: GeneralFunctionSchema[]): FunctionTool[] => {
+  return functions.map((f) => ({
     type: 'function',
     function: {
-      name: tool.name,
-      ...(tool.description && { description: tool.description }),
-      parameters: tool.parametersJsonSchema as FunctionParameters,
+      name: f.name,
+      ...(f.description && { description: f.description }),
+      parameters: f.parametersJsonSchema as FunctionParameters,
       strict: true,
     },
-  };
+  }));
 };
 
-export const convertGeminiPartToOpenAiContent = (part: Part): ChatCompletionContentPart => {
-  if (part.inlineData) {
+export const convertGeminiContentsToOpenAiMessages = (contents: Content[]): ChatCompletionMessageParam[] => {
+  return contents.map((c): ChatCompletionMessageParam => {
+    const { role, parts } = c;
+    const chatRole = role === 'user' ? 'user' : 'assistant';
     return {
-      type: 'image_url',
-      image_url: {
-        url: `data:${part.inlineData.mimeType ?? 'image/png'};base64,${part.inlineData.data}`,
-      },
+      role: chatRole as 'user',
+      content: parts!.flatMap((p): ChatCompletionContentPart[] => {
+        if (p.inlineData) {
+          return [
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${p.inlineData.mimeType ?? 'image/jpeg'};base64,${p.inlineData.data}`,
+              },
+            },
+          ];
+        } else if (p.text) {
+          return [
+            {
+              type: 'text',
+              text: p.text,
+            },
+          ];
+        }
+        return [];
+      }),
     };
-  }
+  });
+};
+
+export const convertChatCompletionMessageToGeminiContent = (message: ChatCompletionMessage): Content => {
   return {
-    type: 'text',
-    text: part.text ?? "what's in this image?",
+    role: 'model',
+    parts: [
+      {
+        text: message.content!,
+      },
+    ],
   };
 };

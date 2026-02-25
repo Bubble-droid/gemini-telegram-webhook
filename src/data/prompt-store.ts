@@ -6,7 +6,7 @@ import { loadData } from './data-load.js';
 
 type PromptKey = (typeof PROMPT_KEYS)[number];
 
-const PROMPT_KEYS = ['assistant', 'chitchat', 'chitchat-gemma'] as const;
+const PROMPT_KEYS = ['assistant', 'chitchat'] as const;
 const PROMPT_DIR = join(DATA_DIR, 'prompts');
 
 /**

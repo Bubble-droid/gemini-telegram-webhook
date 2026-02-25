@@ -1,4 +1,4 @@
-import { type ThinkingConfig } from '@google/genai';
+import { type GenerateContentConfig, type ThinkingConfig } from '@google/genai';
 import type { OpenAiClientParams } from '@llm/types/agent.js';
 import { OpenAiApiError } from '@shared/core/errors.js';
 import { ms } from '@shared/utils/helpers.js';
@@ -13,6 +13,7 @@ interface ExtraGoogleParams {
       thinking_level?: ThinkingConfig['thinkingLevel'];
       thinking_budget?: ThinkingConfig['thinkingBudget'];
     };
+    safety_settings?: GenerateContentConfig['safetySettings'];
   };
 }
 
@@ -46,7 +47,7 @@ export class OpenAiClient {
         stream: false,
       });
     } catch (err) {
-      throw new OpenAiApiError(`Failed to request to OpenAI API. ${err instanceof Error ? err.message : String(err)}`);
+      throw new OpenAiApiError(`Request to OpenAI API Failed. ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 }

@@ -1,5 +1,6 @@
 import type { FunctionCall } from '@google/genai';
 import type { OpenAiClient } from '@llm/client/openai-client.js';
+import { parseToolCalls } from '@llm/lib/tool-call-parse.js';
 import type { OpenAiClientParams, ToolCall } from '@llm/types/agent.js';
 import { AgentError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
@@ -38,20 +39,20 @@ const simplifyMessageContent = (content: ChatCompletionContentPart): ChatComplet
 };
 
 export class OpenAiAgent {
-  private client: OpenAiClient;
-  private callTool: ToolCall;
+  private readonly client: OpenAiClient;
 
-  constructor(client: OpenAiClient, callTool: ToolCall) {
+  constructor(client: OpenAiClient) {
     this.client = client;
-    this.callTool = callTool;
   }
 
   public async run(
     messages: ChatCompletionMessageParam[],
-    params?: OpenAiClientParams,
+    opts: { params?: OpenAiClientParams; callTool: ToolCall },
   ): Promise<ChatCompletionMessage> {
+    const { params, callTool } = opts;
     const agentMsgs = [...messages];
     let completionMessage: ChatCompletionMessage | undefined;
+    let toolCalls: FunctionCall[] | undefined;
     do {
       logger.trace(`OpenAI Agent request messages:`, {
         requestMessage: agentMsgs.map((m): ChatCompletionMessageParam => {
@@ -64,52 +65,72 @@ export class OpenAiAgent {
           return m;
         }),
       });
-      const res = await this.client.chatCompletion(messages, params);
+      const res = await this.client.chatCompletion(agentMsgs, params);
       completionMessage = res.choices[0]?.message;
       logger.trace(`OpenAI Agent completion response:`, { completion: res });
 
-      if (!completionMessage) {
+      if (!completionMessage?.content?.length && !completionMessage?.tool_calls?.length) {
         throw new AgentError('OpenAI Agent response is empty');
       }
 
-      const toolCalls = completionMessage.tool_calls?.flatMap(
-        (call): Required<Pick<FunctionCall, 'id' | 'name' | 'args'>>[] => {
-          if (call.type !== 'function') return [];
-          const { name, arguments: args } = call.function;
-          return [
-            {
-              id: call.id,
-              args: JSON.parse(args) as Recordable,
-              name,
-            },
-          ];
-        },
-      );
+      toolCalls = completionMessage.tool_calls?.flatMap((call): FunctionCall[] => {
+        if (call.type !== 'function') return [];
+        const { name, arguments: args } = call.function;
+        return [
+          {
+            id: call.id,
+            args: JSON.parse(args) as Recordable,
+            name,
+          },
+        ];
+      });
 
       if (!toolCalls?.length) {
-        break;
+        try {
+          toolCalls = parseToolCalls(completionMessage.content!);
+        } catch {
+          break;
+        }
       }
 
       agentMsgs.push(completionMessage);
 
       const toolResults = await Promise.all(
-        toolCalls.map(async ({ id, name, args }): Promise<ChatCompletionToolMessageParam> => {
+        toolCalls.map(async ({ id, name, args }): Promise<ChatCompletionMessageParam> => {
           if (!name) {
-            return createToolResponse(id, 'Tool name not provided');
+            return createToolResponse(id ?? '', 'Tool name not provided');
           }
+          let response: unknown;
           try {
-            const result = await this.callTool(name, args);
-            return createToolResponse(id, result.response);
+            const result = await callTool(name, args);
+            response = result.response;
           } catch (err) {
             const errMsg = err instanceof Error ? err.message : String(err);
-            return createToolResponse(id, { error: errMsg });
+            response = { error: errMsg };
           }
+          if (!id) {
+            return {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    tool_response: {
+                      name,
+                      response: response,
+                    },
+                  }),
+                },
+              ],
+            };
+          }
+          return createToolResponse(id, response);
         }),
       );
       agentMsgs.push(...toolResults);
 
       await delay(ms.sec(3));
-    } while (completionMessage.tool_calls?.some((call) => call.type === 'function'));
+    } while (toolCalls.length > 0);
 
     return completionMessage;
   }

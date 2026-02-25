@@ -1,8 +1,10 @@
 import { longTermMemory } from '@data/long-term-memory.js';
 import { FunctionCallingConfigMode, type Content } from '@google/genai';
 import type { GeminiAgent } from '@llm/agent/gemini-agent.js';
+import type { OpenAiAgent } from '@llm/agent/openai-agent.js';
 import type { McpClient } from '@llm/mcp/mcp-client.js';
 import type { ToolCallerInjectedDeps } from '@llm/types/tool.js';
+import { DEFAULT_SYSTEM_PROMPT } from '@shared/core/constants.js';
 import { logger } from '@shared/core/logger.js';
 import { addCitations } from '@shared/utils/citation-generate.js';
 import { makeFile, ms } from '@shared/utils/helpers.js';
@@ -10,6 +12,8 @@ import { makeFile, ms } from '@shared/utils/helpers.js';
 interface ToolCallerDeps {
   geminiApiAgent: GeminiAgent;
   geminiCliAgent: GeminiAgent;
+  gemmaAgent: GeminiAgent;
+  openAiAgent: OpenAiAgent;
   mcpClient: McpClient;
 }
 
@@ -19,7 +23,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
 
   return (ctx, onStatusUpdate) => ({
     file_search: async (args) => {
-      const { prompt, file_search_stores, system_prompt } = args;
+      const { prompt, file_search_stores, system_prompt = DEFAULT_SYSTEM_PROMPT } = args;
       if (!file_search_stores.length) {
         logger.warn(`No file stores provided.`);
         return { response: { error: 'No file stores provided.' } };
@@ -44,7 +48,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     },
 
     web_search: async (args) => {
-      const { prompt, system_prompt } = args;
+      const { prompt, system_prompt = DEFAULT_SYSTEM_PROMPT } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
       const result = await geminiApiAgent.run(contents, {
         onStatusUpdate,
@@ -65,7 +69,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     },
 
     web_fetch: async (args) => {
-      const { prompt, system_prompt } = args;
+      const { prompt, system_prompt = DEFAULT_SYSTEM_PROMPT } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
       const result = await geminiApiAgent.run(contents, {
         onStatusUpdate,
@@ -78,7 +82,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
       return {
         response: {
           output: {
-            queryResults: addCitations(result),
+            fetchResults: addCitations(result),
             groundingMetadata: JSON.stringify(result.candidates?.[0]?.groundingMetadata),
           },
         },
@@ -86,7 +90,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     },
 
     delegate_to_agent: async (args) => {
-      const { agent_name, objective, system_prompt } = args;
+      const { agent_name, objective, system_prompt = DEFAULT_SYSTEM_PROMPT } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: objective }] }];
       const result = await geminiApiAgent.run(contents, {
         onStatusUpdate,
@@ -105,7 +109,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     },
 
     analyze_youtube_video: async (args) => {
-      const { video_url, prompt, system_prompt } = args;
+      const { video_url, prompt, system_prompt = DEFAULT_SYSTEM_PROMPT } = args;
       const contents: Content[] = [
         {
           role: 'user',
@@ -130,7 +134,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     },
 
     /*  generate_image: async (args) => {
-      const { message_id, prompt, aspect_ratio, image_size, system_prompt } = args;
+      const { message_id, prompt, aspect_ratio, image_size, system_prompt = DEFAULT_SYSTEM_PROMPT } = args;
       const model = multimodalModelRotator.next();
       const contents: Content[] = [
         {
@@ -172,7 +176,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     }, */
 
     code_execution: async (args) => {
-      const { prompt, system_prompt } = args;
+      const { prompt, system_prompt = DEFAULT_SYSTEM_PROMPT } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
       const result = await geminiApiAgent.run(contents, {
         onStatusUpdate,

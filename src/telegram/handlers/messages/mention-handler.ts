@@ -21,16 +21,16 @@ import type { Message } from 'grammy/types';
 
 export class MentionHandler {
   private fileHandler: FileHandler;
-  private geminiAgent: GeminiAgent;
+  private agent: GeminiAgent;
   private toolCaller: ToolCallerInjectedDeps;
   private mcpClient: McpClient;
 
   private readonly botName = CONFIG.TELEGRAM_BOT_USERNAME;
   private readonly processingLocks = new Set<string>();
 
-  constructor(workers: Omit<HandlerWorkers, 'geminiCliAgent' | 'gemmaAgent'>) {
+  constructor(workers: HandlerWorkers) {
     this.fileHandler = workers.fileHandler;
-    this.geminiAgent = workers.geminiApiAgent;
+    this.agent = workers.geminiApiAgent;
     this.toolCaller = workers.toolCaller;
     this.mcpClient = workers.mcpClient;
   }
@@ -98,7 +98,7 @@ export class MentionHandler {
       userMemories: longTermMemory.getMemories(userId),
     });
 
-    return this.geminiAgent.run(contents, {
+    return this.agent.run(contents, {
       onStatusUpdate,
       generateConfig: {
         systemInstruction: [{ text: systemPrompt }],

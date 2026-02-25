@@ -9,7 +9,6 @@ export interface RawEnv {
   PROXY_AUTH_TOKEN: string;
 
   OPENAI_API_KEY: string;
-  OPENAI_BASE_URL: string;
 
   GITHUB_ACCESS_TOKEN: string;
   GITHUB_REPOSITORY: string;

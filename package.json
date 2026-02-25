@@ -23,11 +23,11 @@
   },
   "dependencies": {
     "@google/genai": "^1.42.0",
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "fastify": "^5.7.4",
-    "google-auth-library": "^10.5.0",
+    "google-auth-library": "^10.6.1",
     "lowdb": "^7.0.1",
-    "openai": "^6.22.0",
+    "openai": "^6.25.0",
     "tslog": "^4.10.2"
   },
   "devDependencies": {
@@ -40,7 +40,7 @@
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.56.0",
+    "typescript-eslint": "^8.56.1",
     "vite": "^7.3.1",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.0.18"

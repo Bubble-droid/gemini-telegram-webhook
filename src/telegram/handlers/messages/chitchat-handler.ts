@@ -3,12 +3,16 @@ import { chatHistory } from '@data/chat-history.js';
 import { longTermMemory } from '@data/long-term-memory.js';
 import { promptStore } from '@data/prompt-store.js';
 import { type Content, type Part } from '@google/genai';
-import type { GeminiAgent } from '@llm/agent/gemini-agent.js';
+import type { OpenAiAgent } from '@llm/agent/openai-agent.js';
+import {
+  convertChatCompletionMessageToGeminiContent,
+  convertGeminiContentsToOpenAiMessages,
+} from '@llm/lib/converter.js';
 import type { McpClient } from '@llm/mcp/mcp-client.js';
 import type { ToolCallerInjectedDeps, ToolName } from '@llm/types/tool.js';
 import type { FileHandler } from '@services/file-service.js';
 import { CONFIG } from '@shared/core/config.js';
-import { GEMMA_MODELS } from '@shared/core/constants.js';
+import { OPENAI_MODEL } from '@shared/core/constants.js';
 import { AppError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import type { Recordable } from '@shared/types/common.js';
@@ -19,6 +23,7 @@ import type { ResponseContext } from '@telegram/bot/response-context.js';
 import type { HandlerWorkers } from '@telegram/handlers/types.js';
 import { toHtml } from '@telegram/markdown/index.js';
 import type { Chat, Message, MessageOrigin, User } from 'grammy/types';
+import type { ChatCompletionMessageParam } from 'openai/resources.js';
 
 // 绝对沉默期：上次回复后，至少要累积这么多“注意力分”才开始从 0 计算概率
 // 相当于人类说完话后的“贤者时间”
@@ -32,13 +37,13 @@ const HISTORY_LIMIT = 10;
 
 export class ChitchatHandler {
   private locks = new Map<number, Promise<void>>();
-  private geminiAgent: GeminiAgent;
+  private agent: OpenAiAgent;
   private fileHandler: FileHandler;
   private mcpClient: McpClient;
   private toolCaller: ToolCallerInjectedDeps;
 
-  constructor(workers: Omit<HandlerWorkers, 'geminiApiAgent' | 'geminiCliAgent'>) {
-    this.geminiAgent = workers.gemmaAgent;
+  constructor(workers: HandlerWorkers) {
+    this.agent = workers.openAiAgent;
     this.fileHandler = workers.fileHandler;
     this.mcpClient = workers.mcpClient;
     this.toolCaller = workers.toolCaller;
@@ -131,41 +136,40 @@ export class ChitchatHandler {
   }
 
   private async requestChat(state: ChitchatState, ctx: ResponseContext): Promise<string | null> {
-    const systemPrompt = promptStore.format('chitchat-gemma', {
+    const systemPrompt = promptStore.format('chitchat', {
       selfName: CONFIG.TELEGRAM_BOT_USERNAME,
       time: formatTime(Date.now()),
       groupMemories: longTermMemory.getMemories(ctx.chat.id),
       functions: JSON.stringify(getFunctionTools(this.mcpClient.getLoadedServers()), null, 2),
     });
 
-    const contents: Content[] = [
+    const messages: ChatCompletionMessageParam[] = [
       {
-        role: 'user',
-        parts: [{ text: systemPrompt }],
+        role: 'system',
+        content: [
+          {
+            type: 'text',
+            text: systemPrompt,
+          },
+        ],
       },
-      ...state.groupHistory.map((c) => {
-        return {
-          ...c,
-          parts: c.parts!.map((p) => {
-            const { thoughtSignature, ...rest } = p;
-            return { ...rest };
-          }),
-        };
-      }),
+      ...convertGeminiContentsToOpenAiMessages(state.groupHistory),
     ];
 
     try {
-      const response = await this.geminiAgent.run(contents, {
-        generateModel: GEMMA_MODELS[0]!,
-        generateConfig: {
-          temperature: 0.2,
+      const response = await this.agent.run(messages, {
+        params: {
+          model: OPENAI_MODEL,
+          temperature: 0.7,
+          /* tools: convertGeminiFunctionsToOpenAi(getFunctionTools(this.mcpClient.getLoadedServers())),
+          tool_choice: 'auto', */
         },
         callTool: (name, args) => {
           return this.toolCaller(ctx)[name as ToolName](args as never);
         },
       });
-      this.appendMessage(state, response.candidates![0]!.content!);
-      return response.text!;
+      this.appendMessage(state, convertChatCompletionMessageToGeminiContent(response));
+      return response.content!;
     } catch (err) {
       logger.error('Chat request failed', { err });
       if (err instanceof AppError) {

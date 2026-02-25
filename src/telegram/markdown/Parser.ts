@@ -1,7 +1,8 @@
 import type { AstNode, NodeType } from '@shared/types/markdown.js';
+import { REGEX_CODE_BLOCK } from './helper.js';
 
 // Define strictly typed match groups for RegEx
-interface CodeBlockMatchGroups {
+export interface CodeBlockMatchGroups {
   delimiter: string;
   language: string;
   content: string;
@@ -20,8 +21,7 @@ export class Parser {
   // ========================================================================
 
   // Matches 3-6 backticks, optional language, and content
-  private readonly regexCodeBlock =
-    /^[ \t]*(?<delimiter>`{3,6})(?<language>\w*)[ \t]*\n?(?<content>[\s\S]+?)\n?[ \t]*\k<delimiter>/my;
+  private readonly regexCodeBlock = REGEX_CODE_BLOCK;
 
   // Matches inline code `code`
   private readonly regexInlineCode = /`(?<content>[^`]+)`/y;

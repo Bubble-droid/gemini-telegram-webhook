@@ -1,4 +1,5 @@
 import type { GeminiAgent } from '@llm/agent/gemini-agent.js';
+import type { OpenAiAgent } from '@llm/agent/openai-agent.js';
 import type { McpClient } from '@llm/mcp/mcp-client.js';
 import type { ToolCallerInjectedDeps } from '@llm/types/tool.js';
 import type { FileHandler } from '@services/file-service.js';
@@ -11,6 +12,7 @@ export interface HandlerWorkers {
   geminiApiAgent: GeminiAgent;
   geminiCliAgent: GeminiAgent;
   gemmaAgent: GeminiAgent;
+  openAiAgent: OpenAiAgent;
   mcpClient: McpClient;
   toolCaller: ToolCallerInjectedDeps;
 }

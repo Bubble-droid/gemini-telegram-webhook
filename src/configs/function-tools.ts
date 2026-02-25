@@ -34,7 +34,7 @@ export const getFunctionTools = (mcpServers: LoadedMcpServer[]) => {
 const SYSTEM_PROMPT_PROPERTY = {
   system_prompt: {
     type: 'string',
-    description: `System-level prompts that specify the format, tone, and level of detail of the subagent's response, etc. The description must be clear and unambiguous. (e.g., it is required that the subagent must output the response in XML format.)`,
+    description: `System-level prompts that specify the format, tone, and level of detail of the sub-agent's response, etc. The description must be clear and unambiguous. (e.g., it is required that the subagent must output the response in XML format.)`,
   } as const satisfies JSONSchema,
 };
 
@@ -76,7 +76,8 @@ This is your **FIRST RESORT** for finding factual evidence, configuration detail
             minItems: 2,
           },
         },
-        required: ['system_prompt', 'prompt', 'file_search_stores'],
+        required: ['prompt', 'file_search_stores'],
+        additionalProperties: false,
       },
     },
     {
@@ -91,29 +92,26 @@ When delegating tasks that involve lists (e.g., fetching GitHub issues, commits,
 1. **Strictly Limit Response Size**: ALWAYS set \`per_page\`, \`limit\`, or \`max_results\` to conservative values (recommended: **10-20 items** max).
 2. **Paginate, Don't Dump**: NEVER attempt to fetch an entire dataset in a single turn. Instruct the agent to fetch Page 1, analyze it, and *only then* fetch Page 2 if necessary.
 3. **Avoid Token Overflow**: Massive JSON responses will crash the conversation. Prioritize filtering (e.g., by status or date) over fetching all data.
+
+Available agents:
+${mcpServers.map(({ name, description }) => `- **${name}**: ${description}`).join('\n')}
 `.trim(),
       parametersJsonSchema: {
-        anyOf: mcpServers.map(
-          ({ name, description }) =>
-            ({
-              type: 'object',
-              properties: {
-                ...SYSTEM_PROMPT_PROPERTY,
-                agent_name: {
-                  type: 'string',
-                  const: name,
-                  description,
-                },
-                objective: {
-                  type: 'string',
-                  description:
-                    "The comprehensive objective for the sub-agent. You MUST include:\n1. The user's original goal.\n2. Context found so far.\n3. Specific questions or actions required.\n4. **Explicit instructions to use pagination (e.g., 'Get the latest 10 items')** if calling list-based tools.",
-                },
-              },
-              required: ['system_prompt', 'agent_name', 'objective'],
-              additionalProperties: false,
-            }) as const satisfies JSONSchema,
-        ),
+        type: 'object',
+        properties: {
+          ...SYSTEM_PROMPT_PROPERTY,
+          agent_name: {
+            type: 'string',
+            description: 'The name of the sub-agent to which the task is to be delegated.',
+          },
+          objective: {
+            type: 'string',
+            description:
+              "The comprehensive objective for the sub-agent. You MUST include:\n1. The user's original goal.\n2. Context found so far.\n3. Specific questions or actions required.\n4. **Explicit instructions to use pagination (e.g., 'Get the latest 10 items')** if calling list-based tools.",
+          },
+        },
+        required: ['agent_name', 'objective'],
+        additionalProperties: false,
       },
     },
     {
@@ -140,7 +138,8 @@ Executes a Google Search to retrieve current events, real-time data, or broad in
               'The natural language query or keywords. (e.g., "release date of sing-box v1.13.0", "latest documentation for Next.js middleware").',
           },
         },
-        required: ['system_prompt', 'prompt'],
+        required: ['prompt'],
+        additionalProperties: false,
       },
     },
     {
@@ -164,7 +163,8 @@ Retrieves and processes the full textual content of specific URLs (HTTP/HTTPS).
               'Detailed instructions including the target URL(s) and the specific extraction goal (e.g., "Fetch https://example.com/docs/api and extract the authentication parameters").',
           },
         },
-        required: ['system_prompt', 'prompt'],
+        required: ['prompt'],
+        additionalProperties: false,
       },
     },
   ] as const satisfies GeneralFunctionSchema[];
@@ -210,7 +210,8 @@ The natural language instruction for processing the video. Be specific to get th
 `.trim(),
         },
       },
-      required: ['system_prompt', 'video_url', 'prompt'],
+      required: ['video_url', 'prompt'],
+      additionalProperties: false,
     },
   },
 ] as const satisfies GeneralFunctionSchema[];
@@ -269,7 +270,8 @@ The comprehensive, narrative description of the image to be generated.
           enum: ['1K', '2K', '4K'],
         },
       },
-      required: ['message_id', 'system_prompt', 'prompt', 'aspect_ratio'],
+      required: ['message_id', 'prompt', 'aspect_ratio'],
+      additionalProperties: false,
     },
   },
 ] as const satisfies GeneralFunctionSchema[]; */
@@ -301,7 +303,8 @@ Provides a Python execution environment for mathematical calculations, data anal
             'The logic, calculation, or data task described in natural language (e.g., "Calculate the 100th Fibonacci number", "Parse this JSON and group by ID", "Solve this quadratic equation").',
         },
       },
-      required: ['system_prompt', 'prompt'],
+      required: ['prompt'],
+      additionalProperties: false,
     },
   },
 ] as const satisfies GeneralFunctionSchema[];
@@ -355,6 +358,7 @@ Generates and sends a downloadable file artifact to the user. This is the **REQU
         },
       },
       required: ['message_id', 'content', 'name', 'type'],
+      additionalProperties: false,
     },
   },
   {
@@ -397,6 +401,7 @@ Applies an expressive emoji reaction to a specific message to enhance conversati
         },
       },
       required: ['message_id', 'reaction'],
+      additionalProperties: false,
     },
   },
 ] as const satisfies GeneralFunctionSchema[];

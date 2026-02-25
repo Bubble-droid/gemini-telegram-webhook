@@ -16,7 +16,6 @@ const REQUIRED_ENV_VARS = defineRequiredKeys<RawEnv>()([
   'GOOGLE_CLOUD_PROJECT',
   'PROXY_AUTH_TOKEN',
   'OPENAI_API_KEY',
-  'OPENAI_BASE_URL',
   'GITHUB_ACCESS_TOKEN',
   'GITHUB_REPOSITORY',
   'WEBHOOK_RECEIVE_URL',
@@ -76,7 +75,6 @@ class ConfigLoader {
       PROXY_AUTH_TOKEN: this.getEnv('PROXY_AUTH_TOKEN'),
 
       OPENAI_API_KEY: this.getEnv('OPENAI_API_KEY'),
-      OPENAI_BASE_URL: this.getEnv('OPENAI_BASE_URL'),
 
       GITHUB_ACCESS_TOKEN: this.getEnv('GITHUB_ACCESS_TOKEN'),
       GITHUB_REPOSITORY: this.getEnv('GITHUB_REPOSITORY'),

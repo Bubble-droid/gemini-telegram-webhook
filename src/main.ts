@@ -3,7 +3,9 @@ import { faqMatcher } from '@data/faq-matcher.js';
 import { pathResolver } from '@data/path-resolver.js';
 import { promptStore } from '@data/prompt-store.js';
 import { GeminiAgent } from '@llm/agent/gemini-agent.js';
+import { OpenAiAgent } from '@llm/agent/openai-agent.js';
 import { GeminiApiClient } from '@llm/client/gemini-api-client.js';
+import { OpenAiClient } from '@llm/client/openai-client.js';
 import { McpClient } from '@llm/mcp/mcp-client.js';
 import { createToolCaller } from '@llm/tool/tool-caller.js';
 import { registerCliProxyRoute } from '@routes/cli.route.js';
@@ -16,10 +18,13 @@ import { CONFIG } from '@shared/core/config.js';
 import {
   CLI_PROXY_BASE_URL,
   DATA_DIR,
+  GEMINI_API_SAFETY_SETTINGS,
   GEMINI_CLIENT_BASE_CONFIG,
   GEMINI_PROXY_BASE_URL,
   GEMINI_SAFETY_SETTINGS,
   MCP_SERVERS_FILE,
+  OPENAI_BASE_URL,
+  OPENAI_MODEL,
 } from '@shared/core/constants.js';
 import { logger } from '@shared/core/logger.js';
 import { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
@@ -67,12 +72,43 @@ const start = async () => {
   const geminiCliAgent = new GeminiAgent(geminiCliClient);
   const gemmaAgent = new GeminiAgent(gemmaClient);
 
-  const toolCaller = createToolCaller({ geminiApiAgent, geminiCliAgent, mcpClient });
+  const openAiClient = new OpenAiClient(CONFIG.OPENAI_API_KEY, OPENAI_BASE_URL, {
+    model: OPENAI_MODEL,
+    extra_body: {
+      google: {
+        thinking_config: {
+          include_thoughts: false,
+          thinking_budget: -1,
+        },
+        safety_settings: GEMINI_API_SAFETY_SETTINGS,
+      },
+    },
+  });
+
+  const openAiAgent = new OpenAiAgent(openAiClient);
+
+  const toolCaller = createToolCaller({ geminiApiAgent, geminiCliAgent, gemmaAgent, openAiAgent, mcpClient });
 
   const fileHandler = new FileHandler(bot);
   const messageCollector = new MessageCollector();
-  const mentionHandler = new MentionHandler({ fileHandler, geminiApiAgent, toolCaller, mcpClient });
-  const chitchatHandler = new ChitchatHandler({ fileHandler, gemmaAgent, toolCaller, mcpClient });
+  const mentionHandler = new MentionHandler({
+    fileHandler,
+    geminiApiAgent,
+    geminiCliAgent,
+    gemmaAgent,
+    openAiAgent,
+    toolCaller,
+    mcpClient,
+  });
+  const chitchatHandler = new ChitchatHandler({
+    fileHandler,
+    geminiApiAgent,
+    geminiCliAgent,
+    gemmaAgent,
+    openAiAgent,
+    toolCaller,
+    mcpClient,
+  });
   const normalMessageHandler = new NormalMessageHandler({ chitchatHandler });
 
   const updateHandler = new UpdateHandler(bot);

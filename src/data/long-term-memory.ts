@@ -1,5 +1,6 @@
 import { DATA_DIR, LONG_TERM_MEMORY_FILE } from '@shared/core/constants.js';
 import { logger } from '@shared/core/logger.js';
+import { formatTime } from '@shared/utils/helpers.js';
 import type { LowSync } from 'lowdb';
 import path from 'node:path';
 import { loadLowdb } from './data-load.js';
@@ -36,7 +37,7 @@ class LongTermMemory {
     this.db.data.memories[memoryId] ??= [];
     const userMemories = this.db.data.memories[memoryId];
 
-    userMemories.push(content);
+    userMemories.push(`${content} (Added on ${formatTime(Date.now())})`);
     this.db.write();
 
     const addedMsg = `Added memory for ${userId}: ${content}. Total: ${userMemories.length}`;

@@ -34,6 +34,11 @@ export class UpdateHandler {
     if (!message && !callback_query) return;
 
     const ctx = new ResponseContext(update, this.bot);
+    logger.info('Received update from:', {
+      chat_id: ctx.chat.id,
+      user_id: ctx.user.id,
+      message_id: ctx.message.message_id,
+    });
     const { id, type } = ctx.chat;
     if (!CONFIG.ALLOWED_USAGE_GROUPS.includes(id)) return;
     if (!['group', 'supergroup'].includes(type)) return;

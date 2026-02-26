@@ -84,10 +84,10 @@ export class TelegramBotApi {
     const res = await this.requestJson(
       'sendMessage',
       {
+        link_preview_options: { is_disabled: true },
         ...this.buildOptionalParams(opts),
         chat_id,
         text,
-        link_preview_options: { is_disabled: true },
       },
       shortenString(text),
     );

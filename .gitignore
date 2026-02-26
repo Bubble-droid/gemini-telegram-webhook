@@ -2,6 +2,7 @@ draft/
 .lingma/
 .gemini/
 dist/
+run/
 
 data/chat-history.json
 data/tasks.json

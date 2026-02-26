@@ -100,6 +100,7 @@ export class OpenAiAgent {
           if (!name) {
             return createToolResponse(id ?? '', 'Tool name not provided');
           }
+          logger.info(`OpenAI Agent Calling tool:`, { name, args });
           let response: unknown;
           try {
             const result = await callTool(name, args);

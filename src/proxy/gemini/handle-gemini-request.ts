@@ -1,6 +1,6 @@
 import type { GenerateContentResponse } from '@google/genai';
 import { GoogleGenAI, type FileSearchStore } from '@google/genai';
-import { simplifyContents, simplifyResponse } from '@llm/utils.js';
+import { simplifyContents, simplifyResponse } from '@llm/lib/helper.js';
 import { EXCLUDED_HEADERS, FATAL_ERROR_MESSAGES, FATAL_STATUS_CODES } from '@proxy/config.js';
 import type { GeminiApiRequest, GenerateContentRequest } from '@proxy/types.js';
 import { getGeminiGenerateContentEndpoint, isValidGeminiResponse } from '@proxy/utils.js';
@@ -88,42 +88,44 @@ export const handleGeminiProxyRequest =
         try {
           const refreshedBody = await refreshFileSearchStoreNames(key, body);
 
+          const finalBody: GeminiApiRequest = {
+            ...refreshedBody,
+            generationConfig: {
+              ...refreshedBody.generationConfig,
+              temperature: model.startsWith('gemini-3')
+                ? 1
+                : (refreshedBody.generationConfig?.temperature ?? DEFAULT_TEMPERATURE),
+              ...(!model.startsWith('gemma-') && {
+                thinkingConfig: model.startsWith('gemini-3') ? THINKING_CONFIG_LEVER : THINKING_CONFIG_BUDGET,
+              }),
+            },
+          };
+
           logger.info(`Forwarding to Google`, {
             target: endpoint,
             keyMask: generateStrMask(key, 5),
             model,
           });
           logger.trace(`Body Forwarding:`, {
-            ...body,
-            contents: simplifyContents(body.contents),
+            ...finalBody,
+            contents: simplifyContents(finalBody.contents),
             tools:
               body.tools?.map((t) => {
                 if ('functionDeclarations' in t) {
-                  return { functionDeclarations: [t.functionDeclarations.shift() ?? {}] };
+                  return { functionDeclarations: [t.functionDeclarations[0] ?? {}] };
                 }
                 return t;
               }) ?? [],
             systemInstruction:
-              typeof body.systemInstruction !== 'string'
-                ? (body.systemInstruction?.parts?.[0]?.text?.slice(0, 100) ?? 'NONE')
-                : body.systemInstruction.slice(0, 500),
+              typeof finalBody.systemInstruction !== 'string'
+                ? (finalBody.systemInstruction?.parts?.[0]?.text?.slice(0, 100) ?? 'NONE')
+                : finalBody.systemInstruction.slice(0, 500),
           } satisfies GeminiApiRequest);
 
           const { status, headers, data } = await httpRequest(endpoint, {
             method: req.method as HttpMethod,
             headers: reqHeaders,
-            body: JSON.stringify({
-              ...refreshedBody,
-              generationConfig: {
-                ...refreshedBody.generationConfig,
-                temperature: model.startsWith('gemini-3')
-                  ? 1
-                  : (refreshedBody.generationConfig?.temperature ?? DEFAULT_TEMPERATURE),
-                ...(!model.startsWith('gemma-') && {
-                  thinkingConfig: model.startsWith('gemini-3') ? THINKING_CONFIG_LEVER : THINKING_CONFIG_BUDGET,
-                }),
-              },
-            } satisfies GeminiApiRequest),
+            body: JSON.stringify(finalBody),
             responseType: 'text',
             timeout: ms.min(5),
           });
@@ -131,7 +133,7 @@ export const handleGeminiProxyRequest =
           let parsedData: GenerateContentResponse;
           try {
             parsedData = JSON.parse(data) as GenerateContentResponse;
-            logger.trace(`Gemini response:`, simplifyResponse(parsedData) as unknown as Recordable);
+            logger.trace(`Gemini response:`, { ...(simplifyResponse(parsedData) as unknown as Recordable) });
           } catch (parseError) {
             throw new ParseError(
               `Failed to parse upstream JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,

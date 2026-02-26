@@ -94,6 +94,7 @@ export const GEMINI_CLIENT_BASE_CONFIG: GenerateContentConfig = {
 };
 
 export const DEFAULT_SYSTEM_PROMPT = `
+<system_instruction>
 You are a very strong reasoner and planner. Use these critical instructions to structure your plans, thoughts, and responses.
 
 Before taking any action (either tool calls *or* responses to the user), you must proactively, methodically, and independently plan and reason about:
@@ -137,6 +138,7 @@ Before taking any action (either tool calls *or* responses to the user), you mus
     8.2) This persistence must be intelligent: On *transient* errors (e.g. please try again), you *must* retry **unless an explicit retry limit (e.g., max x tries) has been reached**. If such a limit is hit, you *must* stop. On *other* errors, you must change your strategy or arguments, not repeat the same failed call.
 
 9) Inhibit your response: only take an action after all the above reasoning is completed. Once you've taken an action, you cannot take it back.
+</system_instruction>
 `;
 
 export const SEC = 1000;

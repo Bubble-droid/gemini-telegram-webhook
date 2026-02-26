@@ -2,9 +2,9 @@ import { longTermMemory } from '@data/long-term-memory.js';
 import { FunctionCallingConfigMode, type Content } from '@google/genai';
 import type { GeminiAgent } from '@llm/agent/gemini-agent.js';
 import type { OpenAiAgent } from '@llm/agent/openai-agent.js';
+import { mergeSystemPrompt } from '@llm/lib/helper.js';
 import type { McpClient } from '@llm/mcp/mcp-client.js';
 import type { ToolCallerInjectedDeps } from '@llm/types/tool.js';
-import { DEFAULT_SYSTEM_PROMPT } from '@shared/core/constants.js';
 import { logger } from '@shared/core/logger.js';
 import { addCitations } from '@shared/utils/citation-generate.js';
 import { makeFile, ms } from '@shared/utils/helpers.js';
@@ -23,17 +23,26 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
 
   return (ctx, onStatusUpdate) => ({
     file_search: async (args) => {
-      const { prompt, file_search_stores, system_prompt = DEFAULT_SYSTEM_PROMPT } = args;
+      const { prompt, file_search_stores, system_prompt } = args;
       if (!file_search_stores.length) {
         logger.warn(`No file stores provided.`);
         return { response: { error: 'No file stores provided.' } };
+      }
+      if (
+        file_search_stores.includes('documents/gui-for-cores') &&
+        !file_search_stores.includes('sourcecode/plugin-hub')
+      ) {
+        file_search_stores.push('sourcecode/plugin-hub');
+      }
+      if (!file_search_stores.includes('documents/gui-for-cores')) {
+        file_search_stores.push('documents/gui-for-cores');
       }
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
       const result = await geminiApiAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
           temperature: 0.7,
-          systemInstruction: [{ text: system_prompt }],
+          systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
           tools: [{ fileSearch: { fileSearchStoreNames: file_search_stores } }],
         },
       });
@@ -48,13 +57,13 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     },
 
     web_search: async (args) => {
-      const { prompt, system_prompt = DEFAULT_SYSTEM_PROMPT } = args;
+      const { prompt, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
       const result = await geminiApiAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
           temperature: 0.7,
-          systemInstruction: [{ text: system_prompt }],
+          systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
           tools: [{ googleSearch: {} }],
         },
       });
@@ -69,13 +78,13 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     },
 
     web_fetch: async (args) => {
-      const { prompt, system_prompt = DEFAULT_SYSTEM_PROMPT } = args;
+      const { prompt, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
       const result = await geminiApiAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
-          temperature: 0.7,
-          systemInstruction: [{ text: system_prompt }],
+          temperature: 0.4,
+          systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
           tools: [{ urlContext: {} }],
         },
       });
@@ -90,7 +99,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     },
 
     delegate_to_agent: async (args) => {
-      const { agent_name, objective, system_prompt = DEFAULT_SYSTEM_PROMPT } = args;
+      const { agent_name, objective, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: objective }] }];
       const result = await geminiApiAgent.run(contents, {
         onStatusUpdate,
@@ -99,7 +108,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
         },
         generateConfig: {
           temperature: 0.4,
-          systemInstruction: [{ text: system_prompt }],
+          systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
           tools: [{ functionDeclarations: mcpClient.getTools(agent_name.toLowerCase()) }],
           toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
           automaticFunctionCalling: { disable: true },
@@ -109,7 +118,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     },
 
     analyze_youtube_video: async (args) => {
-      const { video_url, prompt, system_prompt = DEFAULT_SYSTEM_PROMPT } = args;
+      const { video_url, prompt, system_prompt } = args;
       const contents: Content[] = [
         {
           role: 'user',
@@ -127,14 +136,14 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
         onStatusUpdate,
         generateConfig: {
           temperature: 0.7,
-          systemInstruction: [{ text: system_prompt }],
+          systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
         },
       });
       return { response: { output: result.text! } };
     },
 
     /*  generate_image: async (args) => {
-      const { message_id, prompt, aspect_ratio, image_size, system_prompt = DEFAULT_SYSTEM_PROMPT } = args;
+      const { message_id, prompt, aspect_ratio, image_size, system_prompt } = args;
       const model = multimodalModelRotator.next();
       const contents: Content[] = [
         {
@@ -146,7 +155,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
         onStatusUpdate,
         generateConfig: {
           temperature: 0.7,
-          systemInstruction: [{ text: system_prompt }],
+          systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
           responseModalities: ['TEXT', 'IMAGE'],
           imageConfig: {
             aspectRatio: aspect_ratio,
@@ -176,12 +185,13 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     }, */
 
     code_execution: async (args) => {
-      const { prompt, system_prompt = DEFAULT_SYSTEM_PROMPT } = args;
+      const { prompt, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
       const result = await geminiApiAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
-          systemInstruction: [{ text: system_prompt }],
+          temperature: 0,
+          systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
           tools: [{ codeExecution: {} }],
         },
       });

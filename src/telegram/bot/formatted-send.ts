@@ -56,6 +56,9 @@ export const sendFormattedChunks = async (response: GenerateContentResponse, ctx
   const { text, modelVersion } = response;
   const htmlChunks = getHtmlChunks(text!);
   if (htmlChunks.length > 1) {
+    if (ctx.lastMessageId) {
+      await ctx.api.deleteMessage(ctx.chat.id, ctx.lastMessageId);
+    }
     const file = makeFile(text!, 'response.md', 'text/markdown');
     const res = await ctx.api.sendDocument(ctx.chat.id, file, {
       caption: FILE_CAPTION,
@@ -65,6 +68,7 @@ export const sendFormattedChunks = async (response: GenerateContentResponse, ctx
     if (!res.ok) {
       throw new TelegramError(res.error);
     }
+
     return;
   }
   try {

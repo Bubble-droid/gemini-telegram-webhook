@@ -1,5 +1,5 @@
 import type { GenerateContentResponse } from '@google/genai';
-import { simplifyContents, simplifyResponse } from '@llm/utils.js';
+import { simplifyContents, simplifyResponse } from '@llm/lib/helper.js';
 import { EXCLUDED_HEADERS, FATAL_ERROR_MESSAGES, FATAL_STATUS_CODES } from '@proxy/config.js';
 import type { GenerateContentRequest, GoogleApiRequest } from '@proxy/types.js';
 import { GEMINI_MULTIMODAL_MODELS, GENERATE_CONTENT_METHOD } from '@shared/core/constants.js';
@@ -39,7 +39,7 @@ export const handleCliProxyRequest =
           tools:
             geminiPayload.request.tools?.map((t) => {
               if ('functionDeclarations' in t) {
-                return { functionDeclarations: [t.functionDeclarations.shift() ?? {}] };
+                return { functionDeclarations: [t.functionDeclarations[0] ?? {}] };
               }
               return t;
             }) ?? [],

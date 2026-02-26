@@ -77,7 +77,6 @@ This is your **FIRST RESORT** for finding factual evidence, configuration detail
           },
         },
         required: ['prompt', 'file_search_stores'],
-        additionalProperties: false,
       },
     },
     {
@@ -111,7 +110,6 @@ ${mcpServers.map(({ name, description }) => `- **${name}**: ${description}`).joi
           },
         },
         required: ['agent_name', 'objective'],
-        additionalProperties: false,
       },
     },
     {
@@ -139,7 +137,6 @@ Executes a Google Search to retrieve current events, real-time data, or broad in
           },
         },
         required: ['prompt'],
-        additionalProperties: false,
       },
     },
     {
@@ -164,7 +161,6 @@ Retrieves and processes the full textual content of specific URLs (HTTP/HTTPS).
           },
         },
         required: ['prompt'],
-        additionalProperties: false,
       },
     },
   ] as const satisfies GeneralFunctionSchema[];
@@ -211,7 +207,6 @@ The natural language instruction for processing the video. Be specific to get th
         },
       },
       required: ['video_url', 'prompt'],
-      additionalProperties: false,
     },
   },
 ] as const satisfies GeneralFunctionSchema[];
@@ -271,7 +266,7 @@ The comprehensive, narrative description of the image to be generated.
         },
       },
       required: ['message_id', 'prompt', 'aspect_ratio'],
-      additionalProperties: false,
+
     },
   },
 ] as const satisfies GeneralFunctionSchema[]; */
@@ -304,7 +299,6 @@ Provides a Python execution environment for mathematical calculations, data anal
         },
       },
       required: ['prompt'],
-      additionalProperties: false,
     },
   },
 ] as const satisfies GeneralFunctionSchema[];
@@ -358,7 +352,6 @@ Generates and sends a downloadable file artifact to the user. This is the **REQU
         },
       },
       required: ['message_id', 'content', 'name', 'type'],
-      additionalProperties: false,
     },
   },
   {
@@ -401,7 +394,6 @@ Applies an expressive emoji reaction to a specific message to enhance conversati
         },
       },
       required: ['message_id', 'reaction'],
-      additionalProperties: false,
     },
   },
 ] as const satisfies GeneralFunctionSchema[];
@@ -437,7 +429,6 @@ Persists information to your long-term memory for future conversations.
         },
       },
       required: ['fact'],
-      additionalProperties: false,
     },
   },
 

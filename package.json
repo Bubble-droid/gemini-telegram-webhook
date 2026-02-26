@@ -22,7 +22,7 @@
     "push:github": "git add . && git commit -m \"Update $(date +'%Y-%m-%d %H:%M:%S')\" && git push"
   },
   "dependencies": {
-    "@google/genai": "^1.42.0",
+    "@google/genai": "^1.43.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "fastify": "^5.7.4",
     "google-auth-library": "^10.6.1",
@@ -32,10 +32,10 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
-    "@types/node": "^24.10.13",
+    "@types/node": "^24.10.14",
     "eslint": "^9.39.3",
     "eslint-config-prettier": "^10.1.8",
-    "grammy": "^1.40.0",
+    "grammy": "^1.40.1",
     "madge": "^8.0.0",
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",

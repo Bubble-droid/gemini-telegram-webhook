@@ -1,4 +1,5 @@
 import type { Content, GenerateContentResponse, Part } from '@google/genai';
+import { DEFAULT_SYSTEM_PROMPT } from '@shared/core/constants.js';
 import { deepClone } from '@shared/utils/helpers.js';
 
 export const simplifyResponse = (res: GenerateContentResponse): GenerateContentResponse => {
@@ -25,4 +26,8 @@ const simplifyParts = (parts: Part[] | undefined) => {
     if (p.thoughtSignature) p.thoughtSignature = '[THOUGHT_SIGNATURE]';
     if (p.inlineData?.data) p.inlineData.data = '[BASE64_DATA]';
   });
+};
+
+export const mergeSystemPrompt = (additionalPrompt?: string) => {
+  return `${DEFAULT_SYSTEM_PROMPT}\n\n${additionalPrompt ? `<additional_prompt>\n${additionalPrompt}\n</additional_prompt>` : ''}`.trim();
 };

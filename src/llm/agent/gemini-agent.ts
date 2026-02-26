@@ -37,7 +37,7 @@ const handleToolCall = async (
     return createToolResponse({ response: { error: 'Tool name not provided' } }, 'N/A', id);
   }
 
-  logger.info(`[ChatAgent] Executing tool: ${name}`, { args });
+  logger.info(`Gemini Agent Calling tool:`, { name, args });
 
   if (onStatusUpdate) {
     const statusText = `${responseText?.trim() ?? ''}\n\n🔧 Calling ${name}`.trim();

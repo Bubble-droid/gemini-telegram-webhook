@@ -13,6 +13,7 @@ import { AgentError, AppError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import { formatTime, ms } from '@shared/utils/helpers.js';
 import { hasFile } from '@shared/utils/message.js';
+import { isCoreContentSimilar } from '@shared/utils/string-similarity.js';
 import { sendFormattedChunks } from '@telegram/bot/formatted-send.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
 import type { HandlerWorkers } from '@telegram/handlers/types.js';
@@ -48,11 +49,31 @@ export class MentionHandler {
     try {
       await this.checkFile(ctx);
 
-      const chatContents = await this.makeChatContents(messages);
+      const chatContents = await this.buildChatContents(messages);
 
       if (!this.checkContents(chatContents, ctx)) return;
 
-      const completeContents: Content[] = [...chatHistory.get(ctx.chat.id, ctx.user.id), ...chatContents];
+      const historyContents = chatHistory.get(chat.id, user.id);
+
+      if (chatContents.at(0)?.role === 'model' && historyContents.at(-1)?.role === 'model') {
+        const isConnectedSimilar = isCoreContentSimilar(
+          chatContents
+            .at(0)
+            ?.parts?.map((p) => p.text ?? '')
+            .join('')
+            .trim() ?? '',
+          historyContents
+            .at(-1)
+            ?.parts?.map((p) => p.text ?? '')
+            .join('')
+            .trim() ?? '',
+        );
+        if (isConnectedSimilar) {
+          chatContents.shift();
+        }
+      }
+
+      const completeContents = [...historyContents, ...chatContents];
 
       await ctx.reply(BotMessages.thinking);
 
@@ -101,6 +122,7 @@ export class MentionHandler {
     return this.agent.run(contents, {
       onStatusUpdate,
       generateConfig: {
+        temperature: 0,
         systemInstruction: [{ text: systemPrompt }],
         tools: [{ functionDeclarations: getFunctionTools(this.mcpClient.getLoadedServers()) }],
         toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
@@ -117,7 +139,7 @@ export class MentionHandler {
     chatHistory.update(ctx.chat.id, ctx.user.id, completeContents);
   }
 
-  private async makeChatContents(messages: Message[]): Promise<Content[]> {
+  private async buildChatContents(messages: Message[]): Promise<Content[]> {
     const contents: Content[] = [];
     const replyToMessage = messages.find((m) => m.reply_to_message)?.reply_to_message;
     const quotedText = messages.find((m) => m.quote)?.quote?.text;
@@ -173,7 +195,7 @@ export class MentionHandler {
             .replace(mentionRegex, '')
             .replace(/^:ask/gi, '')
             .replace(/^🤖 模型：.*?\n+/g, '')
-            .replace(/⚠️ 本 AI[\s\S]*$/m, '')
+            .replace(/Reply by[\s\S]*$/m, '')
             .trim(),
         ];
       })

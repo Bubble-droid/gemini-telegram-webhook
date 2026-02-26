@@ -42,6 +42,6 @@
     "moduleDetection": "force",
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "*.js", "*.ts"],
+  "include": ["src/**/*.ts", "run/**/*.ts", "*.js", "*.ts"],
   "exclude": ["node_modules/", "dist/", "draft/"]
 }

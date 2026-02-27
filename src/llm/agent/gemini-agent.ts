@@ -2,7 +2,7 @@ import { BotMessages } from '@configs/bot-messages.js';
 import type { GenerateContentResponse } from '@google/genai';
 import { type Content, type FunctionCall, type FunctionResponse, type Part } from '@google/genai';
 import type { GeminiApiClient } from '@llm/client/gemini-api-client.js';
-import { parseToolCalls } from '@llm/lib/tool-call-parse.js';
+import { parseToolCalls } from '@llm/lib/tool-call-parser.js';
 import type { GeminiAgentOpts, StandardizedFunctionResponse } from '@llm/types/agent.js';
 import { THOUGHT_SIGNATURE_PLACEHOLDER } from '@shared/core/constants.js';
 import { AgentError } from '@shared/core/errors.js';

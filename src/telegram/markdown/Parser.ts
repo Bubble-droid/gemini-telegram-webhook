@@ -1,5 +1,5 @@
 import type { AstNode, NodeType } from '@shared/types/markdown.js';
-import { REGEX_CODE_BLOCK } from './helper.js';
+import { REGEX_CODE_BLOCK } from './config.js';
 
 // Define strictly typed match groups for RegEx
 export interface CodeBlockMatchGroups {

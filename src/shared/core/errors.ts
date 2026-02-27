@@ -152,3 +152,10 @@ export class TelegramError extends AppError {
     this.name = 'TelegramError';
   }
 }
+
+export class TelegraphError extends AppError {
+  constructor(message: string) {
+    super(`Telegraph API Error: ${message}`);
+    this.name = 'TelegraphError';
+  }
+}

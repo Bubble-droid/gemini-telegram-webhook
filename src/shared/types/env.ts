@@ -13,6 +13,8 @@ export interface RawEnv {
   GITHUB_ACCESS_TOKEN: string;
   GITHUB_REPOSITORY: string;
 
+  TELEGRAPH_ACCOUNT_INFO: string;
+
   WEBHOOK_RECEIVE_URL: string;
   WEBHOOK_SECRET_TOKEN: string;
 

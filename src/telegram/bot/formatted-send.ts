@@ -2,12 +2,10 @@ import type { GenerateContentResponse } from '@google/genai';
 import { TelegramError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import type { ApiResult } from '@shared/types/telegram.js';
-import { makeFile, ms } from '@shared/utils/helpers.js';
+import { ms } from '@shared/utils/helpers.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
 import { getHtmlChunks, getPlainTextChunks } from '@telegram/markdown/index.js';
 import type { ParseMode } from 'grammy/types';
-
-const FILE_CAPTION = 'Output too long, sent as file.';
 
 const sendTextChunks = async (
   textChunks: string[],
@@ -56,15 +54,13 @@ export const sendFormattedChunks = async (response: GenerateContentResponse, ctx
   const { text, modelVersion } = response;
   const htmlChunks = getHtmlChunks(text!);
   if (htmlChunks.length > 1) {
-    if (ctx.lastMessageId) {
-      await ctx.api.deleteMessage(ctx.chat.id, ctx.lastMessageId);
-    }
-    const file = makeFile(text!, 'response.md', 'text/markdown');
-    const res = await ctx.api.sendDocument(ctx.chat.id, file, {
-      caption: FILE_CAPTION,
+    const page = await ctx.api.publishTelegraphPost(`Reply-by-${response.modelVersion}`, text!);
+    const textToSend = `Content too long, sent as telegraph post: ${page.url}`;
+    const res = await ctx.reply(textToSend, {
+      link_preview_options: { url: page.url },
       deleteAfterMs: ms['1d'],
-      replyToMessageId: ctx.message.message_id,
     });
+
     if (!res.ok) {
       throw new TelegramError(res.error);
     }

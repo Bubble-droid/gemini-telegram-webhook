@@ -17,6 +17,8 @@ import type { Evaluate } from '@shared/types/utils.js';
 import { shortenString } from '@shared/utils/helpers.js';
 import { httpRequest } from '@shared/utils/http.js';
 import { Escaper } from '@telegram/markdown/Escaper.js';
+import type { TelegraphApiClient } from '@telegram/telegraph/client.js';
+import { markdownToTelegraph } from '@telegram/telegraph/parser.js';
 import type {
   ApiResponse,
   BotCommand,
@@ -50,10 +52,12 @@ const isMessageIdProperty = (data: unknown): data is MessageIdProperty => {
 
 export class TelegramBotApi {
   private readonly token: string;
+  private readonly telegraph: TelegraphApiClient;
   private scheduler: IScheduler | undefined;
 
-  constructor(token: string) {
+  constructor(token: string, telegraph: TelegraphApiClient) {
     this.token = token;
+    this.telegraph = telegraph;
   }
 
   public setScheduler(s: IScheduler) {
@@ -74,6 +78,17 @@ export class TelegramBotApi {
 
   public deleteWebhook(drop_pending_updates: boolean): Promise<ApiResult<'deleteWebhook'>> {
     return this.requestJson('deleteWebhook', { drop_pending_updates });
+  }
+
+  public async publishTelegraphPost(postTitle: string, markdownText: string) {
+    const nodes = await markdownToTelegraph(markdownText);
+    const page = await this.telegraph.createPage({
+      title: postTitle,
+      content: nodes,
+      return_content: true,
+    });
+    logger.trace(`Telegraph Page Created Successfully.`, { page });
+    return page;
   }
 
   public async sendMessage(
@@ -209,11 +224,11 @@ export class TelegramBotApi {
     const res = await this.requestJson(
       'editMessageText',
       {
+        link_preview_options: { is_disabled: true },
         ...this.buildOptionalParams(opts),
         chat_id,
         message_id,
         text,
-        link_preview_options: { is_disabled: true },
       },
       shortenString(text),
     );

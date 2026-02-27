@@ -1,6 +1,6 @@
 import type { FunctionCall } from '@google/genai';
 import type { OpenAiClient } from '@llm/client/openai-client.js';
-import { parseToolCalls } from '@llm/lib/tool-call-parse.js';
+import { parseToolCalls } from '@llm/lib/tool-call-parser.js';
 import type { OpenAiClientParams, ToolCall } from '@llm/types/agent.js';
 import { AgentError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';

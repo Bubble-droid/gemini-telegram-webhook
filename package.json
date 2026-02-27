@@ -27,12 +27,14 @@
     "fastify": "^5.7.4",
     "google-auth-library": "^10.6.1",
     "lowdb": "^7.0.1",
+    "marked": "^17.0.3",
+    "node-html-parser": "^7.0.2",
     "openai": "^6.25.0",
     "tslog": "^4.10.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
-    "@types/node": "^24.10.14",
+    "@types/node": "^24.10.15",
     "eslint": "^9.39.3",
     "eslint-config-prettier": "^10.1.8",
     "grammy": "^1.40.1",

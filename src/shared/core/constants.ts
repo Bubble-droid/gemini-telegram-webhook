@@ -24,6 +24,8 @@ export const GITHUB_BASE_URL = 'https://github.com';
 export const GITHUB_RAW_URL = 'https://raw.githubusercontent.com';
 
 export const TELEGRAM_BASE_URL = 'https://api.telegram.org';
+export const TELEGRAPH_BASE_URL = 'https://api.telegra.ph';
+
 export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com';
 
 export const GENERATE_CONTENT_METHOD = 'generateContent';

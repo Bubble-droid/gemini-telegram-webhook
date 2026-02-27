@@ -35,6 +35,7 @@ import { handleBotCommand } from '@telegram/handlers/messages/command-handler.js
 import { MentionHandler } from '@telegram/handlers/messages/mention-handler.js';
 import { NormalMessageHandler } from '@telegram/handlers/messages/normal-message-handler.js';
 import { UpdateHandler } from '@telegram/handlers/update-handler.js';
+import { TelegraphApiClient } from '@telegram/telegraph/client.js';
 import path from 'node:path';
 
 const MCP_SERVERS_PATH = path.join(DATA_DIR, MCP_SERVERS_FILE);
@@ -54,7 +55,9 @@ const start = async () => {
   const mcpClient = new McpClient(MCP_SERVERS_PATH);
   await mcpClient.discoverMcpServers();
 
-  const bot = new TelegramBotApi(CONFIG.TELEGRAM_BOT_TOKEN);
+  const telegraph = new TelegraphApiClient(CONFIG.TELEGRAPH_ACCOUNT_INFO);
+
+  const bot = new TelegramBotApi(CONFIG.TELEGRAM_BOT_TOKEN, telegraph);
   const taskScheduler = new TaskScheduler(bot);
   bot.setScheduler(taskScheduler);
 

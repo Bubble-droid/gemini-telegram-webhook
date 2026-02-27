@@ -4,24 +4,21 @@ import { longTermMemory } from '@data/long-term-memory.js';
 import { promptStore } from '@data/prompt-store.js';
 import { type Content, type Part } from '@google/genai';
 import type { OpenAiAgent } from '@llm/agent/openai-agent.js';
-import {
-  convertChatCompletionMessageToGeminiContent,
-  convertGeminiContentsToOpenAiMessages,
-} from '@llm/lib/converter.js';
+import { convertGeminiContentsToOpenAiMessages } from '@llm/lib/converter.js';
 import type { McpClient } from '@llm/mcp/mcp-client.js';
 import type { ToolCallerInjectedDeps, ToolName } from '@llm/types/tool.js';
 import type { FileHandler } from '@services/file-service.js';
 import { CONFIG } from '@shared/core/config.js';
 import { OPENAI_MODEL } from '@shared/core/constants.js';
-import { AppError } from '@shared/core/errors.js';
+import { AppError, TelegramError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import type { Recordable } from '@shared/types/common.js';
-import type { ChitchatState } from '@shared/types/telegram.js';
+import type { ApiResult, ChitchatState } from '@shared/types/telegram.js';
 import { formatTime, ms } from '@shared/utils/helpers.js';
 import { hasImage } from '@shared/utils/message.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
 import type { HandlerWorkers } from '@telegram/handlers/types.js';
-import { toHtml } from '@telegram/markdown/index.js';
+import { getHtmlChunks } from '@telegram/markdown/index.js';
 import type { Chat, Message, MessageOrigin, User } from 'grammy/types';
 import type { ChatCompletionMessageParam } from 'openai/resources.js';
 
@@ -37,6 +34,7 @@ const HISTORY_LIMIT = 10;
 
 export class ChitchatHandler {
   private locks = new Map<number, Promise<void>>();
+  private readonly chitchatModel = OPENAI_MODEL;
   private agent: OpenAiAgent;
   private fileHandler: FileHandler;
   private mcpClient: McpClient;
@@ -111,21 +109,43 @@ export class ChitchatHandler {
         return false;
       }
 
-      state.currentScore = 0;
-
       logger.info(`[ChitChat] Replying.`, logContext);
 
-      await ctx.send(toHtml(responseText), {
-        opts: {
-          parse_mode: 'HTML',
-          deleteAfterMs: ms['1d'],
-        },
-        isToReply: false,
-      });
+      let res: ApiResult<'sendMessage'>;
+      const htmlChunks = getHtmlChunks(responseText);
+      if (htmlChunks.length > 1) {
+        const page = await ctx.api.publishTelegraphPost(`Reply-by-${this.chitchatModel}`, responseText);
+        const textToSend = `Content too long, sent as telegraph post: ${page.url}`;
+        res = await ctx.send(textToSend, {
+          opts: {
+            link_preview_options: { url: page.url },
+            deleteAfterMs: ms['1d'],
+          },
+          isToReply: false,
+        });
+      } else {
+        res = await ctx.send(htmlChunks.join(''), {
+          opts: {
+            parse_mode: 'HTML',
+            deleteAfterMs: ms['1d'],
+          },
+          isToReply: false,
+        });
+      }
 
+      if (!res.ok) {
+        state.currentScore = state.currentScore / 2;
+        throw new TelegramError(res.error);
+      }
+
+      this.appendMessage(state, { role: 'model', parts: [{ text: responseText }] });
+      state.currentScore = 0;
       return true;
     } catch (err) {
-      logger.error('[ChitChatHandler] Error in handle loop', { err });
+      logger.error('Handle message failed in ChitchatHandler', { err });
+      if (err instanceof AppError) {
+        await err.notify(err, ctx, 'Handle message failed in ChitchatHandler');
+      }
       shouldSave = false;
       return false;
     } finally {
@@ -159,7 +179,7 @@ export class ChitchatHandler {
     try {
       const response = await this.agent.run(messages, {
         params: {
-          model: OPENAI_MODEL,
+          model: this.chitchatModel,
           temperature: 0.7,
           /* tools: convertGeminiFunctionsToOpenAi(getFunctionTools(this.mcpClient.getLoadedServers())),
           tool_choice: 'auto', */
@@ -168,8 +188,8 @@ export class ChitchatHandler {
           return this.toolCaller(ctx)[name as ToolName](args as never);
         },
       });
-      this.appendMessage(state, convertChatCompletionMessageToGeminiContent(response));
-      return response.content!;
+
+      return response.content!.replace(/<cot>[\s\S]*?<\/cot>/g, '');
     } catch (err) {
       logger.error('Chat request failed', { err });
       if (err instanceof AppError) {

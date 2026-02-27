@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseToolCalls } from './tool-call-parse.js';
+import { parseToolCalls } from './tool-call-parser.js';
 
 describe('parseToolCalls Utility', () => {
   // --- 场景 1: 理想情况与标准协议 ---

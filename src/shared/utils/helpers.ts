@@ -78,16 +78,10 @@ export const rotateArray = <T>(arr: readonly T[], steps = 1, direction: 'left' |
  */
 export const shortenString = (input: string): string => {
   const MAX = 4000;
-  const HEAD = 2000;
-  const TAIL = 2000;
-
+  const HEAD = 3000;
   const chars = [...input];
-
   if (chars.length <= MAX) return input;
-
-  const headPart = chars.slice(0, HEAD).join('');
-  const tailPart = chars.slice(chars.length - TAIL).join('');
-  return `${headPart}\n\n......\n\n${tailPart}`;
+  return `${chars.slice(0, HEAD).join('')}...`;
 };
 
 /**

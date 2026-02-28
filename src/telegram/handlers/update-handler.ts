@@ -1,13 +1,13 @@
+import type { Update } from '@grammyjs/types';
 import { CONFIG } from '@shared/core/config.js';
 import { AppError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
+import { Escaper } from '@shared/markdown/Escaper.js';
 import type { MaybePromise } from '@shared/types/common.js';
 import { ms, shortenString } from '@shared/utils/helpers.js';
 import { simplifyUpdate } from '@shared/utils/message.js';
 import { ResponseContext } from '@telegram/bot/response-context.js';
 import type { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
-import { Escaper } from '@telegram/markdown/Escaper.js';
-import type { Update } from 'grammy/types';
 
 type SpecificUpdateHandler = (ctx: ResponseContext) => MaybePromise;
 

@@ -26,7 +26,9 @@ import {
   OPENAI_BASE_URL,
   OPENAI_MODEL,
 } from '@shared/core/constants.js';
+import { TelegraphError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
+import { decodeToString } from '@shared/utils/helpers.js';
 import { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
 import { TelegramPoller } from '@telegram/bot/telegram-poller.js';
 import { handleCallbackQuery } from '@telegram/handlers/callback-query-handler.js';
@@ -35,8 +37,8 @@ import { handleBotCommand } from '@telegram/handlers/messages/command-handler.js
 import { MentionHandler } from '@telegram/handlers/messages/mention-handler.js';
 import { NormalMessageHandler } from '@telegram/handlers/messages/normal-message-handler.js';
 import { UpdateHandler } from '@telegram/handlers/update-handler.js';
-import { TelegraphApiClient } from '@telegram/telegraph/client.js';
 import path from 'node:path';
+import { Telegraph, type Account } from 'telegraph-api-client';
 
 const MCP_SERVERS_PATH = path.join(DATA_DIR, MCP_SERVERS_FILE);
 const BOT_UPDATE_MODE = process.env['NODE_ENV'] === 'development' ? 'polling' : 'webhook';
@@ -55,9 +57,21 @@ const start = async () => {
   const mcpClient = new McpClient(MCP_SERVERS_PATH);
   await mcpClient.discoverMcpServers();
 
-  const telegraph = new TelegraphApiClient(CONFIG.TELEGRAPH_ACCOUNT_INFO);
+  const telegraph = new Telegraph();
 
-  const bot = new TelegramBotApi(CONFIG.TELEGRAM_BOT_TOKEN, telegraph);
+  let accountInfo: Account;
+  try {
+    accountInfo = JSON.parse(decodeToString(CONFIG.TELEGRAPH_ACCOUNT_INFO)) as Account;
+  } catch (err) {
+    throw new TelegraphError(`Invalid account JSON format. ${err instanceof Error ? err.message : 'Unknown error'}`);
+  }
+  if (!accountInfo.access_token) {
+    throw new TelegraphError(
+      'Authentication required: No access_token set. Call createAccount or provide token in constructor.',
+    );
+  }
+
+  const bot = new TelegramBotApi(CONFIG.TELEGRAM_BOT_TOKEN, telegraph, accountInfo);
   const taskScheduler = new TaskScheduler(bot);
   bot.setScheduler(taskScheduler);
 

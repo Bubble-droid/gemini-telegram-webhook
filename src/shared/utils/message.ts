@@ -1,4 +1,4 @@
-import type { Message, MessageEntity, Update } from 'grammy/types';
+import type { Message, MessageEntity, Update } from '@grammyjs/types';
 import { deepClone } from './helpers.js';
 
 /**

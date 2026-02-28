@@ -206,19 +206,13 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
         deleteAfterMs: ms['1d'],
         replyToMessageId: message_id,
       });
-      if (!res.ok) {
-        return { response: { error: `Failed to send file. ${res.error}` } };
-      }
-      return { response: { output: 'File sent successfully.' } };
+      return { response: { output: res } };
     },
 
     reaction_to_message: async (args) => {
       const { message_id, reaction } = args;
       const res = await ctx.api.setMessageReaction(ctx.chat.id, message_id, reaction);
-      if (!res.ok) {
-        return { response: { error: `Failed to set message reaction. Error: ${res.error}` } };
-      }
-      return { response: { output: 'Message reaction set successfully.' } };
+      return { response: { output: res } };
     },
 
     save_memory: (args) => {

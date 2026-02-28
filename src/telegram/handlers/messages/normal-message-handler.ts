@@ -1,9 +1,9 @@
 import { BotCommands } from '@configs/bot-commands.js';
 import { faqMatcher } from '@data/faq-matcher.js';
 import { logger } from '@shared/core/logger.js';
+import { toMarkdownV2 } from '@shared/markdown/telegram-converter.js';
 import { ms } from '@shared/utils/helpers.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
-import { toHtml } from '@telegram/markdown/index.js';
 import type { ChitchatHandler } from './chitchat-handler.js';
 
 interface Handlers {
@@ -63,8 +63,8 @@ export class NormalMessageHandler {
       matchedTexts: result.matches,
     });
 
-    await ctx.send(toHtml(result.matchedFaq.answer.trim()), {
-      opts: { parse_mode: 'HTML', deleteAfterMs: ms['5m'] },
+    await ctx.send(toMarkdownV2(result.matchedFaq.answer.trim()), {
+      opts: { parse_mode: 'MarkdownV2', deleteAfterMs: ms['5m'] },
       isToReply: true,
     });
 

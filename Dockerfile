@@ -17,6 +17,4 @@ WORKDIR /app
 
 COPY --from=build /app/dist /app/dist
 
-EXPOSE 39001
-
 CMD [ "node", "/app/dist/index.mjs" ]

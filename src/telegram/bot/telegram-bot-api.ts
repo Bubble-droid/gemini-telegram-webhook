@@ -1,9 +1,19 @@
+import type {
+  ApiResponse,
+  BotCommand,
+  InlineKeyboardMarkup,
+  InlineQueryResult,
+  InputMediaDocument,
+  Message,
+  ReactionTypeEmoji,
+} from '@grammyjs/types';
 import { TELEGRAM_BASE_URL } from '@shared/core/constants.js';
 import { logger } from '@shared/core/logger.js';
+import { Escaper } from '@shared/markdown/Escaper.js';
 import type { Recordable } from '@shared/types/common.js';
 import type { RequestResult } from '@shared/types/http.js';
 import type {
-  ApiErrorResult,
+  ApiError,
   ApiMethod,
   ApiParams,
   ApiResult,
@@ -14,26 +24,13 @@ import type {
   Integer,
 } from '@shared/types/telegram.js';
 import type { Evaluate } from '@shared/types/utils.js';
-import { shortenString } from '@shared/utils/helpers.js';
 import { httpRequest } from '@shared/utils/http.js';
-import { Escaper } from '@telegram/markdown/Escaper.js';
-import type { TelegraphApiClient } from '@telegram/telegraph/client.js';
-import { markdownToTelegraph } from '@telegram/telegraph/parser.js';
-import type {
-  ApiResponse,
-  BotCommand,
-  InlineKeyboardMarkup,
-  InlineQueryResult,
-  InputFile,
-  InputMediaDocument,
-  Message,
-  ReactionTypeEmoji,
-} from 'grammy/types';
+import { markdownToHtml, type Account, type Telegraph } from 'telegraph-api-client';
 
 type CustomParams = CustomReplyParams & AutoDeleteParams;
 
 type MethodExtraParams<M extends ApiMethod> = (M extends `send${string}` ? CustomParams : unknown) &
-  (M extends 'sendMediaGroup' ? Pick<InputMediaDocument, 'caption' | 'parse_mode'> : unknown) &
+  (M extends 'sendMediaGroup' ? Pick<InputMediaDocument<File>, 'caption' | 'parse_mode'> : unknown) &
   (M extends `edit${string}` ? AutoDeleteParams : unknown);
 
 type ExtractParamOptions<M extends ApiMethod, X extends keyof ApiParams<M> & string = never> = Evaluate<
@@ -52,12 +49,14 @@ const isMessageIdProperty = (data: unknown): data is MessageIdProperty => {
 
 export class TelegramBotApi {
   private readonly token: string;
-  private readonly telegraph: TelegraphApiClient;
+  private readonly telegraph: Telegraph;
+  private readonly telegraphAccount: Account;
   private scheduler: IScheduler | undefined;
 
-  constructor(token: string, telegraph: TelegraphApiClient) {
+  constructor(token: string, telegraph: Telegraph, telegraphAccount: Account) {
     this.token = token;
     this.telegraph = telegraph;
+    this.telegraphAccount = telegraphAccount;
   }
 
   public setScheduler(s: IScheduler) {
@@ -80,15 +79,25 @@ export class TelegramBotApi {
     return this.requestJson('deleteWebhook', { drop_pending_updates });
   }
 
-  public async publishTelegraphPost(postTitle: string, markdownText: string) {
-    const nodes = await markdownToTelegraph(markdownText);
+  public async publishTelegraphPost(postTitle: string, markdown: string) {
+    const content = markdownToHtml(markdown);
     const page = await this.telegraph.createPage({
+      accessToken: this.telegraphAccount.access_token!,
+      authorName: this.telegraphAccount.author_name ?? 'Anonymous',
       title: postTitle,
-      content: nodes,
-      return_content: true,
+      content,
+      returnContent: true,
     });
     logger.trace(`Telegraph Page Created Successfully.`, { page });
     return page;
+  }
+
+  public sendChatAction(
+    chat_id: ChatId,
+    action: ApiParams<'sendChatAction'>['action'],
+    opts?: ExtractParamOptions<'sendChatAction', 'chat_id' | 'action'>,
+  ) {
+    return this.requestJson('sendChatAction', { ...this.buildOptionalParams(opts), chat_id, action }, action);
   }
 
   public async sendMessage(
@@ -104,7 +113,7 @@ export class TelegramBotApi {
         chat_id,
         text,
       },
-      shortenString(text),
+      text,
     );
 
     return this.processMessageResult(res, chat_id, opts?.deleteAfterMs);
@@ -124,7 +133,7 @@ export class TelegramBotApi {
         draft_id,
         text,
       },
-      shortenString(text),
+      text,
     );
 
     return this.processMessageResult(res, chat_id, opts?.deleteAfterMs);
@@ -140,7 +149,7 @@ export class TelegramBotApi {
       {
         ...this.buildOptionalParams(opts),
         chat_id,
-        photo: this.createInputFile(file),
+        photo: file,
         show_caption_above_media: true,
       },
       opts?.caption,
@@ -159,7 +168,7 @@ export class TelegramBotApi {
       {
         ...this.buildOptionalParams(opts),
         chat_id,
-        voice: this.createInputFile(file),
+        voice: file,
       },
       opts?.caption,
     );
@@ -177,7 +186,7 @@ export class TelegramBotApi {
       {
         ...this.buildOptionalParams(opts),
         chat_id,
-        document: this.createInputFile(file),
+        document: file,
       },
       opts?.caption,
     );
@@ -192,7 +201,7 @@ export class TelegramBotApi {
   ): Promise<ApiResult<'sendMediaGroup'>> {
     const { caption, parse_mode, ...rest } = opts ?? {};
     const formData = new FormData();
-    const mediaGroup = files.map<InputMediaDocument>((file, i) => {
+    const mediaGroup = files.map<InputMediaDocument<File>>((file, i) => {
       const attachName = `attach_${i}`;
       formData.append(attachName, file, file.name);
       return {
@@ -230,7 +239,7 @@ export class TelegramBotApi {
         message_id,
         text,
       },
-      shortenString(text),
+      text,
     );
 
     return this.processMessageResult(res, chat_id, opts?.deleteAfterMs);
@@ -337,7 +346,7 @@ export class TelegramBotApi {
     logger.info(`[Telegram API] ${method} calling...`);
     logger.debug(`[Telegram API] ${method} params:`, { params });
     try {
-      const res = await this.request(method, params!);
+      const res = await this.request(method, params);
       const result = res.data as unknown as ApiResponse<ApiReturn<M>>;
       if (!result.ok) {
         const desc = `${result.error_code} - ${result.description}`;
@@ -444,14 +453,9 @@ export class TelegramBotApi {
     return res;
   }
 
-  private createInputFile(file: File): InputFile {
-    return file as unknown as InputFile;
-  }
-
   private buildCaptionParams(caption?: string): Pick<ApiParams<'sendDocument'>, 'caption' | 'parse_mode'> {
-    if (!caption) return {};
-    const escaped = Escaper.html(shortenString(caption));
-    return { caption: `<blockquote expandable>${escaped}</blockquote>`, parse_mode: 'HTML' };
+    if (!caption?.length) return {};
+    return { caption: `<blockquote expandable>${Escaper.html(caption)}</blockquote>`, parse_mode: 'HTML' };
   }
 
   private buildReplyParams(replyToMessageId?: number): Pick<ApiParams<'sendMessage'>, 'reply_parameters'> {
@@ -485,7 +489,7 @@ export class TelegramBotApi {
     } as Omit<ApiParams<M>, X>;
   }
 
-  private handleError(err: unknown, method: string, context?: (string | undefined)[]): ApiErrorResult {
+  private handleError(err: unknown, method: string, context?: (string | undefined)[]): ApiError {
     const errMsg = err instanceof Error ? err.message : typeof err === 'string' ? err : String(err);
     const contextInfo = context && context.length > 0 ? context.filter(Boolean).join('\n') : 'N/A';
     logger.warn(`Failed to call Telegram API [${method}]: ${errMsg}`, {

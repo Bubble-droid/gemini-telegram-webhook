@@ -4,21 +4,21 @@ import { chatHistory } from '@data/chat-history.js';
 import { longTermMemory } from '@data/long-term-memory.js';
 import { promptStore } from '@data/prompt-store.js';
 import { FunctionCallingConfigMode, type Content, type GenerateContentResponse, type Part } from '@google/genai';
+import type { Message } from '@grammyjs/types';
 import type { GeminiAgent } from '@llm/agent/gemini-agent.js';
 import type { McpClient } from '@llm/mcp/mcp-client.js';
 import type { ToolCallerInjectedDeps, ToolName } from '@llm/types/tool.js';
 import type { FileHandler } from '@services/file-service.js';
 import { CONFIG } from '@shared/core/config.js';
-import { AgentError, AppError } from '@shared/core/errors.js';
+import { AgentError, AppError, TelegramError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
+import { convertToMarkdownV2Chunks, toMarkdownV2 } from '@shared/markdown/telegram-converter.js';
+import type { ApiResult } from '@shared/types/telegram.js';
 import { formatTime, ms } from '@shared/utils/helpers.js';
 import { hasFile } from '@shared/utils/message.js';
 import { isCoreContentSimilar } from '@shared/utils/string-similarity.js';
-import { sendFormattedChunks } from '@telegram/bot/formatted-send.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
 import type { HandlerWorkers } from '@telegram/handlers/types.js';
-import { toHtml } from '@telegram/markdown/index.js';
-import type { Message } from 'grammy/types';
 
 export class MentionHandler {
   private fileHandler: FileHandler;
@@ -69,6 +69,9 @@ export class MentionHandler {
             .trim() ?? '',
         );
         if (isConnectedSimilar) {
+          logger.info(
+            'The quoted object in the message is similar to the final model response, and it has been removed from the content.',
+          );
           chatContents.shift();
         }
       }
@@ -107,7 +110,7 @@ export class MentionHandler {
     });
 
     const onStatusUpdate = (text: string) => {
-      return ctx.edit(toHtml(text), { parse_mode: 'HTML' });
+      return ctx.edit(toMarkdownV2(text), { parse_mode: 'MarkdownV2' });
     };
 
     const systemPrompt = promptStore.format('assistant', {
@@ -134,7 +137,27 @@ export class MentionHandler {
   }
 
   private async resolveResponse(ctx: ResponseContext, response: GenerateContentResponse, completeContents: Content[]) {
-    await sendFormattedChunks(response, ctx);
+    const text = `${response.text?.trim()}\n\n *Reply by ${response.modelVersion}*`;
+    const chunks = convertToMarkdownV2Chunks(text);
+    let result: ApiResult<'editMessageText'>;
+    if (chunks.length > 1) {
+      const page = await ctx.api.publishTelegraphPost(text.split('\n')[0]!.slice(0, 256), text);
+      const textToSend = toMarkdownV2(`AI 的回复过长，[点击这里查看](${page.url})`);
+      result = await ctx.reply(textToSend, {
+        link_preview_options: { url: page.url },
+        parse_mode: 'MarkdownV2',
+        deleteAfterMs: ms['1d'],
+      });
+    } else {
+      result = await ctx.reply(chunks.join(''), {
+        parse_mode: 'MarkdownV2',
+        deleteAfterMs: ms['1d'],
+      });
+    }
+
+    if (!result.ok) {
+      throw new TelegramError(result.error);
+    }
     completeContents.push(response.candidates![0]!.content!);
     chatHistory.update(ctx.chat.id, ctx.user.id, completeContents);
   }

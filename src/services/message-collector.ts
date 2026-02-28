@@ -1,6 +1,6 @@
+import type { Message } from '@grammyjs/types';
 import { logger } from '@shared/core/logger.js';
 import { delay, ms } from '@shared/utils/helpers.js';
-import type { Message } from 'grammy/types';
 
 const DEBOUNCE_MS = ms.sec(3);
 

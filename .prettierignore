@@ -3,4 +3,5 @@ dist/
 pnpm-lock.yaml
 ./data/
 
-**/*.md
+data/**/*.md
+# draft/**/*.md

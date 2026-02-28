@@ -1,11 +1,11 @@
 import { BotCommands } from '@configs/bot-commands.js';
+import type { CallbackQuery, Chat, Message, MessageEntity, Update, User } from '@grammyjs/types';
 import { CONFIG } from '@shared/core/config.js';
 import { DataError } from '@shared/core/errors.js';
 import type { ApiResult } from '@shared/types/telegram.js';
 import type { ExtractMethods } from '@shared/types/utils.js';
 import { hasFile, hasImage } from '@shared/utils/message.js';
 import type { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
-import type { CallbackQuery, Chat, Message, MessageEntity, Update, User } from 'grammy/types';
 
 type BotApiMethod = ExtractMethods<TelegramBotApi>;
 type BotApiOptions<M extends BotApiMethod, N extends number> = Parameters<TelegramBotApi[M]>[N];

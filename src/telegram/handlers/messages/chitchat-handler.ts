@@ -3,6 +3,7 @@ import { chatHistory } from '@data/chat-history.js';
 import { longTermMemory } from '@data/long-term-memory.js';
 import { promptStore } from '@data/prompt-store.js';
 import { type Content, type Part } from '@google/genai';
+import type { Chat, Message, MessageOrigin, User } from '@grammyjs/types';
 import type { OpenAiAgent } from '@llm/agent/openai-agent.js';
 import { convertGeminiContentsToOpenAiMessages } from '@llm/lib/converter.js';
 import type { McpClient } from '@llm/mcp/mcp-client.js';
@@ -12,14 +13,13 @@ import { CONFIG } from '@shared/core/config.js';
 import { OPENAI_MODEL } from '@shared/core/constants.js';
 import { AppError, TelegramError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
+import { convertToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
 import type { Recordable } from '@shared/types/common.js';
-import type { ApiResult, ChitchatState } from '@shared/types/telegram.js';
+import type { ChitchatState } from '@shared/types/telegram.js';
 import { formatTime, ms } from '@shared/utils/helpers.js';
 import { hasImage } from '@shared/utils/message.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
 import type { HandlerWorkers } from '@telegram/handlers/types.js';
-import { getHtmlChunks } from '@telegram/markdown/index.js';
-import type { Chat, Message, MessageOrigin, User } from 'grammy/types';
 import type { ChatCompletionMessageParam } from 'openai/resources.js';
 
 // 绝对沉默期：上次回复后，至少要累积这么多“注意力分”才开始从 0 计算概率
@@ -111,31 +111,33 @@ export class ChitchatHandler {
 
       logger.info(`[ChitChat] Replying.`, logContext);
 
-      let res: ApiResult<'sendMessage'>;
-      const htmlChunks = getHtmlChunks(responseText);
-      if (htmlChunks.length > 1) {
-        const page = await ctx.api.publishTelegraphPost(`Reply-by-${this.chitchatModel}`, responseText);
-        const textToSend = `Content too long, sent as telegraph post: ${page.url}`;
-        res = await ctx.send(textToSend, {
-          opts: {
-            link_preview_options: { url: page.url },
-            deleteAfterMs: ms['1d'],
-          },
-          isToReply: false,
-        });
+      const chunks = convertToMarkdownV2Chunks(responseText);
+      if (chunks.length > 1) {
+        for (const chunk of chunks) {
+          const res = await ctx.send(chunk, {
+            opts: {
+              parse_mode: 'MarkdownV2',
+              deleteAfterMs: ms['1d'],
+            },
+            isToReply: false,
+          });
+          if (!res.ok) {
+            state.currentScore = state.currentScore / 2;
+            throw new TelegramError(res.error);
+          }
+        }
       } else {
-        res = await ctx.send(htmlChunks.join(''), {
+        const res = await ctx.send(chunks.join(''), {
           opts: {
-            parse_mode: 'HTML',
+            parse_mode: 'MarkdownV2',
             deleteAfterMs: ms['1d'],
           },
           isToReply: false,
         });
-      }
-
-      if (!res.ok) {
-        state.currentScore = state.currentScore / 2;
-        throw new TelegramError(res.error);
+        if (!res.ok) {
+          state.currentScore = state.currentScore / 2;
+          throw new TelegramError(res.error);
+        }
       }
 
       this.appendMessage(state, { role: 'model', parts: [{ text: responseText }] });

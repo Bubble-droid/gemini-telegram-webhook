@@ -1,9 +1,9 @@
+import type { Update } from '@grammyjs/types';
 import { logger } from '@shared/core/logger.js';
 import type { ApiParams } from '@shared/types/telegram.js';
 import { delay, ms } from '@shared/utils/helpers.js';
 import type { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
 import type { UpdateHandler } from '@telegram/handlers/update-handler.js';
-import type { Update } from 'grammy/types';
 
 type AllowedUpdates = NonNullable<ApiParams<'getUpdates'>>['allowed_updates'];
 

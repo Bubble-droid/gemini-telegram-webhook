@@ -2,11 +2,11 @@ import { chatHistory } from '@data/chat-history.js';
 import { faqMatcher } from '@data/faq-matcher.js';
 import { promptStore } from '@data/prompt-store.js';
 import { CONFIG } from '@shared/core/config.js';
+import { toMarkdownV2 } from '@shared/markdown/telegram-converter.js';
 import type { MaybePromise } from '@shared/types/common.js';
 import { ms } from '@shared/utils/helpers.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
-import { toHtml } from '@telegram/markdown/index.js';
-import type { BotCommand } from 'grammy/types';
+import type { BotCommand } from '@grammyjs/types';
 import { BotMessages, Keyboards } from './bot-messages.js';
 
 interface CommandActionArgs {
@@ -28,8 +28,8 @@ export const BotCommands = [
     command: 'start',
     description: '开始使用',
     action: async ({ ctx }) => {
-      await ctx.reply(toHtml(BotMessages.getStartText()), {
-        parse_mode: 'HTML',
+      await ctx.reply(toMarkdownV2(BotMessages.getStartText()), {
+        parse_mode: 'MarkdownV2',
         reply_markup: Keyboards.getStart(ctx.user.id),
         deleteAfterMs: ms['3m'],
       });
@@ -39,8 +39,8 @@ export const BotCommands = [
     command: 'faq',
     description: '常见问题',
     action: async ({ ctx }) => {
-      await ctx.reply(toHtml(BotMessages.faqSimplified), {
-        parse_mode: 'HTML',
+      await ctx.reply(toMarkdownV2(BotMessages.faqSimplified), {
+        parse_mode: 'MarkdownV2',
         reply_markup: Keyboards.getBackToStart(ctx.user.id),
         deleteAfterMs: ms['5m'],
       });

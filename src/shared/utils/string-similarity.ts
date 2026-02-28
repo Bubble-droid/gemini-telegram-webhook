@@ -1,3 +1,5 @@
+import { logger } from '@shared/core/logger.js';
+
 /**
  * Normalizes text by removing all punctuation, whitespace, emojis, and markdown characters.
  * It strictly retains letters (including CJK ideographs) and numbers from any language.
@@ -8,13 +10,13 @@
 export const normalizeText = (text: string): string => {
   // \p{L} matches letters from any language (including Chinese characters)
   // \p{N} matches numbers
-  // The 'g' flag is for global replacement, and 'u' is required for unicode properties.
+  // 'u' flag is critical for Unicode property escapes
   return text.replace(/[^\p{L}\p{N}]+/gu, '').toLowerCase();
 };
 
 /**
  * Calculates the Levenshtein distance between two strings using an optimized
- * O(min(N, M)) spatial complexity algorithm (using only two rows).
+ * O(min(N, M)) spatial complexity algorithm.
  *
  * @param a The first string.
  * @param b The second string.
@@ -25,27 +27,36 @@ const calculateEditDistance = (a: string, b: string): number => {
   if (a.length === 0) return b.length;
   if (b.length === 0) return a.length;
 
-  // Use only two rows to minimize memory consumption for large texts
+  // Use strictly typed arrays
+  // Initialize 'prevRow' with 0..b.length
   let prevRow: number[] = Array.from({ length: b.length + 1 }, (_, i) => i);
-  let currRow: number[] = new Array<number>(b.length + 1);
+  // 'currRow' will be reused to avoid garbage collection overhead
+  let currRow: number[] = new Array<number>(b.length + 1).fill(0);
 
   for (let i = 1; i <= a.length; i++) {
+    // Initialize the first column of the current row (deletion distance from empty string)
     currRow[0] = i;
+
     for (let j = 1; j <= b.length; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      currRow[j] = Math.min(
-        currRow[j - 1] ?? 0 + 1, // Insertion
-        prevRow[j] ?? 0 + 1, // Deletion
-        prevRow[j - 1] ?? 0 + cost, // Substitution
-      );
+
+      // CRITICAL FIX: Parentheses added to ensure addition happens AFTER null check.
+      // Although indices are guaranteed within bounds here, the '?? 0' safeguards against
+      // theoretical undefined results in strict mode if bounds were loose.
+      const insertionCost = (currRow[j - 1] ?? 0) + 1;
+      const deletionCost = (prevRow[j] ?? 0) + 1;
+      const substitutionCost = (prevRow[j - 1] ?? 0) + cost;
+
+      currRow[j] = Math.min(insertionCost, deletionCost, substitutionCost);
     }
 
-    // Swap rows for the next iteration
+    // Swap references for the next iteration to avoid creating new arrays
     const temp = prevRow;
     prevRow = currRow;
     currRow = temp;
   }
 
+  // After the swap, 'prevRow' actually holds the results of the last iteration
   return prevRow[b.length] ?? 0;
 };
 
@@ -61,7 +72,10 @@ export const calculateTextSimilarity = (rawText1: string, rawText2: string): num
   const normalized2 = normalizeText(rawText2);
 
   const maxLength = Math.max(normalized1.length, normalized2.length);
-  if (maxLength === 0) return 1.0; // Both strings are empty or only contained noise
+
+  // Edge case: Both strings are empty or noise-only -> consider them identical (or 0 depending on logic)
+  // Usually, if both are empty, they are "similar".
+  if (maxLength === 0) return 1.0;
 
   const distance = calculateEditDistance(normalized1, normalized2);
 
@@ -79,5 +93,13 @@ export const calculateTextSimilarity = (rawText1: string, rawText2: string): num
  */
 export const isCoreContentSimilar = (rawText1: string, rawText2: string, threshold = 0.95): boolean => {
   const score = calculateTextSimilarity(rawText1, rawText2);
+
+  // Trace log for debugging
+  logger.trace('Similarity check complete', {
+    score,
+    text1Length: rawText1.length,
+    text2Length: rawText2.length,
+  });
+
   return score >= threshold;
 };

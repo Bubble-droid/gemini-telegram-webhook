@@ -1,11 +1,11 @@
 import { type Blob as GBlob, type Part } from '@google/genai';
+import type { Animation, Audio, Document, Message, PhotoSize, Sticker, Video, Voice } from '@grammyjs/types';
 import { CONFIG } from '@shared/core/config.js';
 import { FILE_EXT_MIMES, SUPPORTED_MIME_TYPES, TELEGRAM_BASE_URL } from '@shared/core/constants.js';
 import { DataError, HttpError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import { httpRequest } from '@shared/utils/http.js';
 import type { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
-import type { Animation, Audio, Document, Message, PhotoSize, Sticker, Video, Voice } from 'grammy/types';
 import path from 'node:path';
 
 type FileExtension = keyof typeof FILE_EXT_MIMES;

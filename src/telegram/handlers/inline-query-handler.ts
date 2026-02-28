@@ -1,5 +1,5 @@
+import type { InlineQuery } from '@grammyjs/types';
 import { logger } from '@shared/core/logger.js';
-import type { InlineQuery } from 'grammy/types';
 
 /**
  * @description 处理 Telegram 行内查询 (Inline Query)。

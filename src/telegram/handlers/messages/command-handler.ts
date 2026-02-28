@@ -1,7 +1,7 @@
 import { BotCommands } from '@configs/bot-commands.js';
+import type { BotCommand } from '@grammyjs/types';
 import { logger } from '@shared/core/logger.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
-import type { BotCommand } from 'grammy/types';
 
 export const handleBotCommand = async (ctx: ResponseContext) => {
   const { chat, user } = ctx;

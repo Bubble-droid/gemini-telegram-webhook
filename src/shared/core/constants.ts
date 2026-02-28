@@ -6,7 +6,7 @@ import {
   type SafetySetting,
   type ThinkingConfig,
 } from '@google/genai';
-import type { ReactionTypeEmoji } from 'grammy/types';
+import type { ReactionTypeEmoji } from '@grammyjs/types';
 import path from 'node:path';
 
 export const DATA_DIR = process.env['NODE_ENV'] === 'development' ? path.join(process.cwd(), 'data') : '/data';
@@ -54,7 +54,7 @@ export const GEMINI_TEXT_MODELS = [
 
 export const GEMINI_MULTIMODAL_MODELS = ['gemini-3-pro-image-preview', 'gemini-2.5-flash-image'];
 
-export const GEMMA_MODELS = ['gemma-3-27b-it'];
+export const GEMMA_MODEL = 'gemma-3-27b-it';
 
 export const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
 

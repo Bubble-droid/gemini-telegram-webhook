@@ -1,7 +1,7 @@
 import { CONFIG } from '@shared/core/config.js';
 import { GEMINI_TEXT_MODELS } from '@shared/core/constants.js';
 import type { Recordable } from '@shared/types/common.js';
-import type { InlineKeyboardButton, InlineKeyboardMarkup } from 'grammy/types';
+import type { InlineKeyboardButton, InlineKeyboardMarkup } from '@grammyjs/types';
 
 export const BotMessages = {
   getStartText: (): string => {

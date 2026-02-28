@@ -1,7 +1,7 @@
 import { logger } from '@shared/core/logger.js';
 import type { UpdateHandler } from '@telegram/handlers/update-handler.js';
 import type { FastifyInstance } from 'fastify';
-import type { Update } from 'grammy/types';
+import type { Update } from '@grammyjs/types';
 import { checkAuthToken } from './guards.js';
 import { WebhookBodySchema, WebhookHeadersSchema, type TWebhookHeaders } from './route-schema.js';
 

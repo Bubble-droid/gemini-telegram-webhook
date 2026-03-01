@@ -198,21 +198,27 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
       return { response: { output: addCitations(result) } };
     },
 
-    reply_to_file: async (args) => {
+    reply_file: async (args) => {
       const { message_id, content, name, type, describe } = args;
       const file = makeFile(content, name, type);
-      const res = await ctx.api.sendDocument(ctx.chat.id, file, {
+      const result = await ctx.api.sendDocument(ctx.chat.id, file, {
         ...(describe && { caption: describe }),
         deleteAfterMs: ms['1d'],
         replyToMessageId: message_id,
       });
-      return { response: { output: res } };
+      return { response: { output: JSON.stringify(result) } };
+    },
+
+    publish_post: async (args) => {
+      const { title, content } = args;
+      const page = await ctx.api.publishTelegraphPost(title, content);
+      return { response: { output: JSON.stringify(page) } };
     },
 
     reaction_to_message: async (args) => {
       const { message_id, reaction } = args;
-      const res = await ctx.api.setMessageReaction(ctx.chat.id, message_id, reaction);
-      return { response: { output: res } };
+      const result = await ctx.api.setMessageReaction(ctx.chat.id, message_id, reaction);
+      return { response: { output: JSON.stringify(result) } };
     },
 
     save_memory: (args) => {

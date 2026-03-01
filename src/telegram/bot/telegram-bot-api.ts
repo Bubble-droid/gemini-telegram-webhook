@@ -86,7 +86,7 @@ export class TelegramBotApi {
       authorName: this.telegraphAccount.author_name ?? 'Anonymous',
       title: postTitle,
       content,
-      returnContent: true,
+      returnContent: false,
     });
     logger.trace(`Telegraph Page Created Successfully.`, { page });
     return page;

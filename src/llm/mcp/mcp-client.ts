@@ -152,6 +152,13 @@ export class McpClient {
         duration: `${Date.now() - startTime}ms`,
       });
 
+      if (Array.isArray(toolResult.content)) {
+        (toolResult.content as { text: string }[]).forEach((c) => {
+          c.text =
+            c.text.length > 100_000 * 4 ? c.text.slice(0, 100_000 * 4) + '...(Result too long, truncated)' : c.text;
+        });
+      }
+
       return {
         response: { output: toolResult },
       };

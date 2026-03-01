@@ -142,7 +142,7 @@ export class MentionHandler {
     let result: ApiResult<'editMessageText'>;
     if (chunks.length > 1) {
       const page = await ctx.api.publishTelegraphPost(text.split('\n')[0]!.slice(0, 256), text);
-      const textToSend = toMarkdownV2(`AI 的回复过长，[点击这里查看](${page.url})`);
+      const textToSend = toMarkdownV2(`内容过长，[点击这里查看](${page.url})`);
       result = await ctx.reply(textToSend, {
         link_preview_options: { url: page.url },
         parse_mode: 'MarkdownV2',

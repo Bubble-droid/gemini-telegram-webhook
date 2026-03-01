@@ -26,9 +26,8 @@ export class NormalMessageHandler {
     }
 
     try {
-      if (await this.handleKeywordReply(ctx)) return;
-
-      if (await this.chitchat.handle(ctx)) return;
+      await this.handleKeywordReply(ctx);
+      await this.chitchat.handle(ctx);
     } catch (err) {
       logger.error(`[NormalMessageHandler] Passive processing error`, { err });
     }

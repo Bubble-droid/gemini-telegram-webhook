@@ -308,21 +308,22 @@ Provides a Python execution environment for mathematical calculations, data anal
  */
 export const INTERACTIVE_TOOLS = [
   {
-    name: 'reply_to_file',
+    name: 'reply_file',
     description: `
-**[MANDATORY FOR ALL LENGTHY CONTENT]**
-Generates and sends a downloadable file artifact to the user. This is the **REQUIRED** method for delivering any response that exceeds a standard conversational length.
+**[MANDATORY FOR DELIVERING DOWNLOADABLE ARTIFACTS]**
+Generates and sends a downloadable file artifact to the user. This is the **REQUIRED** method for delivering any content that is primarily intended for local storage, execution, or detailed review as a file.
 
 **Usage Strategy:**
 1. **Chat Hygiene**: You MUST use this tool proactively to prevent "Wall of Text" syndrome. Do NOT flood the chat interface with massive amounts of text.
-2. **Universal Scope**: This applies to **ALL** content types, not just code. If the output is an article, a long technical explanation, a detailed report, a markdown document, or a large configuration, it MUST be sent as a file.
-3. **Threshold**: As a rule of thumb, use this tool for any content exceeding **50 lines** or approximately **1000 characters**.
-4. **Proactive Decision**: Do not wait for the user to ask "can you send this as a file?". If the response is long, deliver it as a file immediately to maintain a clean chat experience.
+2. **Specific Scope**: This tool applies to **code, configuration files, raw data, detailed technical reports, or extensive markdown documents** that are better consumed as a downloadable file for local access, execution, or storage.
+3. **Threshold**: As a rule of thumb, use this tool for any content exceeding **50 lines** or approximately **1000 characters** that fits the 'downloadable artifact' criteria.
+4. **Exclusions**: Do NOT use this tool for narrative articles, blog posts, tutorials, or documentation primarily intended for web-based reading. For such content, consider web publishing tools.
+5. **Proactive Decision**: Do not wait for the user to ask "can you send this as a file?". If the response is a long code block, configuration, or data, deliver it as a file immediately.
 
 **Supported Formats:**
-- **Documentation**: .md, .txt, .pdf (text-based)
 - **Code/Config**: .ts, .js, .py, .json, .yaml, .conf
 - **Data**: .csv, .log
+- **Documentation (for local use/storage)**: .md, .txt, .pdf (text-based)
 `.trim(),
     parametersJsonSchema: {
       type: 'object',
@@ -365,12 +366,12 @@ Applies an expressive emoji reaction to a specific message to enhance conversati
 - **Constraint**: Strict Rate Limit: Maximum 1 reaction per turn. Do NOT react to every single message; reserve it for significant moments.
 
 **Scenarios:**
-- **Resolved/Success**: \`👍\`, \`👌\`, \`✅\`
+- **Resolved/Success**: \`👍\`, \`👌\`
 - **Looking into it**: \`👀\`, \`👨‍💻\`
-- **Funny/Witty**: \`🤣\`, \`😂\`
-- **Great/Impressive**: \`🔥\`, \`🚀\`, \`👏\`, \`🏆\`
+- **Funny/Witty**: \`🤣\`, \`😁\`
+- **Great/Impressive**: \`🔥\`, \`👏\`, \`🏆\`
 - **Confused/Ambiguous**: \`🤔\`, \`🤨\`
-- **Love/Thanks**: \`❤️\`, \`🥰\`, \`🙏\`
+- **Love/Thanks**: \`🥰\`, \`🙏\`
 `.trim(),
     parametersJsonSchema: {
       type: 'object',
@@ -383,17 +384,51 @@ Applies an expressive emoji reaction to a specific message to enhance conversati
           type: 'string',
           format: 'enum',
           enum: ALLOWED_REACTIONS,
-          description: `The specific emoji to apply. Select the most appropriate emotion from the allowed list:
-- '👍', '👌', '✅': Confirmation, agreement, or task completion.
+          description: `The specific emoji to apply. Select the most appropriate emotion from the allowed list,
+example:
+- '👍', '👌': Confirmation, agreement, or task completion.
 - '👀', '👨‍💻': Acknowledgment that you are investigating or reading.
-- '🔥', '🚀', '👏', '🏆': Praise for user achievements or code.
-- '🤣', '😂': Laughter at a joke or witty remark.
+- '🔥', '👏', '🏆': Praise for user achievements or code.
+- '🤣', '😁': Laughter at a joke or witty remark.
 - '🤔', '🤨': Puzzlement or need for clarification.
-- '❤️', '🥰', '🙏': Gratitude or affection.
+- '🥰', '🙏': Gratitude or affection.
 - '😢', '😭': Sympathy for errors or problems.`,
         },
       },
       required: ['message_id', 'reaction'],
+    },
+  },
+  {
+    name: 'publish_post',
+    description: `
+Publishes a long-form article, document, or tutorial as a web-based post. This tool is designed for content that is best consumed as a shareable web article rather than a downloadable file.
+
+**Usage Strategy:**
+- **Primary Use**: Use this tool for generating and publishing human-readable, narrative content such as articles, blog posts, tutorials, detailed explanations, or comprehensive documentation that benefits from a web format for easy sharing and viewing.
+- **Differentiate from File Delivery**: Do NOT use this for content types primarily intended for local storage, execution, or file-based sharing, such as code snippets, configuration files, raw data, or very large, complex markdown documents meant for local editing.
+- **Content Format**: The content provided MUST be in standard Markdown format.
+- **Proactive Decision**: If the generated content is an article, tutorial, or similar long-form text, proactively publish it rather than waiting for user instruction.
+
+**Supported Content Examples:**
+- **Articles**: Blog posts, analyses, reports (when suitable for web publication).
+- **Tutorials**: Step-by-step guides, how-to's.
+- **Documentation**: Explanations, overviews designed for web readership.
+`.trim(),
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'The title of the Telegraph page (1-256 characters).',
+          minLength: 1,
+          maxLength: 256,
+        },
+        content: {
+          type: 'string',
+          description: 'The complete raw content of the post in standard Markdown format.',
+        },
+      },
+      required: ['title', 'content'],
     },
   },
 ] as const satisfies GeneralFunctionSchema[];

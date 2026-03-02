@@ -155,6 +155,10 @@ export const decodeToString = (base64: string): string => {
   return Buffer.from(base64, 'base64').toString('utf-8').trim();
 };
 
+export const encodeToBase64 = (str: string): string => {
+  return Buffer.from(str).toString('base64');
+};
+
 export const shuffleArray = <T>(array: T[]): T[] => {
   if (!array.length) return [];
   const shuffled = [...array];

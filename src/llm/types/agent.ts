@@ -1,4 +1,9 @@
-import type { FunctionResponse, GenerateContentConfig, GenerateContentParameters } from '@google/genai';
+import type {
+  FunctionDeclaration,
+  FunctionResponse,
+  GenerateContentConfig,
+  GenerateContentParameters,
+} from '@google/genai';
 import type { MaybePromise, Recordable } from '@shared/types/common.js';
 import type { JSONSchema } from '@shared/types/schema.js';
 import type { ChatCompletionCreateParamsBase } from 'openai/resources/chat/completions.mjs';
@@ -27,10 +32,13 @@ export interface StandardizedFunctionResponse<T = unknown> extends Omit<Function
   response: NormalizedResponse<T>;
 }
 
-export interface GeneralFunctionSchema {
+export interface GeneralFunctionSchema extends Omit<
+  FunctionDeclaration,
+  'name' | 'parametersJsonSchema' | 'responseJsonSchema'
+> {
   name: string;
-  description?: string;
   parametersJsonSchema?: JSONSchema;
+  responseJsonSchema?: JSONSchema;
 }
 
 export type OpenAiClientParams = Omit<ChatCompletionCreateParamsBase, 'messages' | 'n' | 'stream'>;

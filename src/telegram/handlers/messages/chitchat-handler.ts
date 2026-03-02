@@ -11,9 +11,9 @@ import type { ToolCallerInjectedDeps, ToolName } from '@llm/types/tool.js';
 import type { FileHandler } from '@services/file-service.js';
 import { CONFIG } from '@shared/core/config.js';
 import { OPENAI_MODEL } from '@shared/core/constants.js';
-import { AppError, TelegramError } from '@shared/core/errors.js';
+import { AppError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
-import { convertToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
+import { markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
 import type { Recordable } from '@shared/types/common.js';
 import type { ChitchatState } from '@shared/types/telegram.js';
 import { formatTime, ms } from '@shared/utils/helpers.js';
@@ -68,7 +68,7 @@ export class ChitchatHandler {
 
     const messageParts: Part[] = [];
 
-    const imageParts = await this.fileHandler.batchProcessFiles([message], hasImage);
+    const imageParts = await this.fileHandler.batchProcessFiles([message!], hasImage);
 
     if (imageParts.length === 0 && !text?.length) {
       logger.trace(`[ChitChat] No message content.`, { chatId: chat.id });
@@ -77,7 +77,7 @@ export class ChitchatHandler {
 
     messageParts.push(...imageParts);
 
-    const contextMarkdown = formatContextToMarkdown(message);
+    const contextMarkdown = formatContextToMarkdown(message!);
 
     messageParts.push({ text: contextMarkdown });
 
@@ -89,7 +89,7 @@ export class ChitchatHandler {
     this.appendMessage(state, messageContent);
 
     // 3. 计算注意力分
-    const weight = this.calculateMessageWeight(message);
+    const weight = this.calculateMessageWeight(message!);
 
     state.currentScore += weight;
 
@@ -102,8 +102,9 @@ export class ChitchatHandler {
       }
 
       const responseText = await this.requestChat(state, ctx);
+      const sanitizedResponse = sanitizeResponse(responseText);
 
-      if (!responseText) {
+      if (!responseText?.length || !sanitizedResponse.length) {
         state.currentScore = state.currentScore / 2;
         logger.warn('闲聊处理器未能生成回复，重置回合目标。', logContext);
         return false;
@@ -111,33 +112,19 @@ export class ChitchatHandler {
 
       logger.info(`[ChitChat] Replying.`, logContext);
 
-      const chunks = convertToMarkdownV2Chunks(responseText);
+      const chunks = markdownToMarkdownV2Chunks(sanitizedResponse);
       if (chunks.length > 1) {
         for (const chunk of chunks) {
-          const res = await ctx.send(chunk, {
-            opts: {
-              parse_mode: 'MarkdownV2',
-              deleteAfterMs: ms['1d'],
-            },
-            isToReply: false,
-          });
-          if (!res.ok) {
-            state.currentScore = state.currentScore / 2;
-            throw new TelegramError(res.error);
-          }
-        }
-      } else {
-        const res = await ctx.send(chunks.join(''), {
-          opts: {
+          await ctx.send(chunk, {
             parse_mode: 'MarkdownV2',
             deleteAfterMs: ms['1d'],
-          },
-          isToReply: false,
-        });
-        if (!res.ok) {
-          state.currentScore = state.currentScore / 2;
-          throw new TelegramError(res.error);
+          });
         }
+      } else {
+        await ctx.send(chunks.join(''), {
+          parse_mode: 'MarkdownV2',
+          deleteAfterMs: ms['1d'],
+        });
       }
 
       this.appendMessage(state, { role: 'model', parts: [{ text: responseText }] });
@@ -148,6 +135,7 @@ export class ChitchatHandler {
       if (err instanceof AppError) {
         await err.notify(err, ctx, 'Handle message failed in ChitchatHandler');
       }
+      state.currentScore = state.currentScore / 2;
       shouldSave = false;
       return false;
     } finally {
@@ -191,7 +179,7 @@ export class ChitchatHandler {
         },
       });
 
-      return sanitizeResponse(response.content!);
+      return response.content;
     } catch (err) {
       logger.error('Chat request failed', { err });
       if (err instanceof AppError) {
@@ -512,7 +500,7 @@ const isChineseChar = (char: string): boolean => {
  *    - Pick the LAST Island as the user's intended response.
  *    - Extend the start of that Island backwards to capture prefix English words (e.g., "Dev" in "Dev的意思").
  */
-const sanitizeResponse = (rawContent: string): string => {
+const sanitizeResponse = (rawContent: string | null): string => {
   if (!rawContent) return '';
 
   // 1. Basic Cleanup: Remove <cot> tags

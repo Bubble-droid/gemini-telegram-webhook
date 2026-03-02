@@ -28,6 +28,8 @@
     "fastify": "^5.7.4",
     "google-auth-library": "^10.6.1",
     "lowdb": "^7.0.1",
+    "marked": "^17.0.3",
+    "node-html-parser": "^7.0.2",
     "openai": "^6.25.0",
     "telegraph-api-client": "^1.2.0",
     "tg-markdown-converter": "^1.1.1",
@@ -35,7 +37,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
-    "@grammyjs/types": "^3.24.0",
+    "@grammyjs/types": "^3.25.0",
     "@types/node": "^24.11.0",
     "dpdm": "^4.0.1",
     "eslint": "^9.39.3",

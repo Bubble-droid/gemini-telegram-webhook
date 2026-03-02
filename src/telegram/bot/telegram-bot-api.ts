@@ -8,15 +8,14 @@ import type {
   ReactionTypeEmoji,
 } from '@grammyjs/types';
 import { TELEGRAM_BASE_URL } from '@shared/core/constants.js';
+import { TelegramError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
-import { Escaper } from '@shared/markdown/Escaper.js';
+import { markdownToTelegraph } from '@shared/markdown/telegraph-converter.js';
 import type { Recordable } from '@shared/types/common.js';
 import type { RequestResult } from '@shared/types/http.js';
 import type {
-  ApiError,
   ApiMethod,
   ApiParams,
-  ApiResult,
   ApiReturn,
   AutoDeleteParams,
   ChatId,
@@ -25,7 +24,7 @@ import type {
 } from '@shared/types/telegram.js';
 import type { Evaluate } from '@shared/types/utils.js';
 import { httpRequest } from '@shared/utils/http.js';
-import { markdownToHtml, type Account, type Telegraph } from 'telegraph-api-client';
+import { type Account, type Telegraph } from 'telegraph-api-client';
 
 type CustomParams = CustomReplyParams & AutoDeleteParams;
 
@@ -63,29 +62,25 @@ export class TelegramBotApi {
     this.scheduler = s;
   }
 
-  public getUpdates(opts?: ApiParams<'getUpdates'>): Promise<ApiResult<'getUpdates'>> {
+  public getUpdates(opts?: ApiParams<'getUpdates'>) {
     return this.requestJson('getUpdates', { ...opts });
   }
 
-  public setWebhook(
-    url: string,
-    drop_pending_updates: boolean,
-    opts?: ExtractParamOptions<'setWebhook', 'url'>,
-  ): Promise<ApiResult<'setWebhook'>> {
-    return this.requestJson('setWebhook', { ...this.buildOptionalParams(opts), url, drop_pending_updates }, url);
+  public setWebhook(url: string, drop_pending_updates: boolean, opts?: ExtractParamOptions<'setWebhook', 'url'>) {
+    return this.requestJson('setWebhook', { ...this.buildOptionalParams(opts), url, drop_pending_updates });
   }
 
-  public deleteWebhook(drop_pending_updates: boolean): Promise<ApiResult<'deleteWebhook'>> {
+  public deleteWebhook(drop_pending_updates: boolean) {
     return this.requestJson('deleteWebhook', { drop_pending_updates });
   }
 
   public async publishTelegraphPost(postTitle: string, markdown: string) {
-    const content = markdownToHtml(markdown);
+    const nodes = await markdownToTelegraph(markdown);
     const page = await this.telegraph.createPage({
       accessToken: this.telegraphAccount.access_token!,
       authorName: this.telegraphAccount.author_name ?? 'Anonymous',
       title: postTitle,
-      content,
+      content: nodes,
       returnContent: false,
     });
     logger.trace(`Telegraph Page Created Successfully.`, { page });
@@ -97,26 +92,22 @@ export class TelegramBotApi {
     action: ApiParams<'sendChatAction'>['action'],
     opts?: ExtractParamOptions<'sendChatAction', 'chat_id' | 'action'>,
   ) {
-    return this.requestJson('sendChatAction', { ...this.buildOptionalParams(opts), chat_id, action }, action);
+    return this.requestJson('sendChatAction', { ...this.buildOptionalParams(opts), chat_id, action });
   }
 
   public async sendMessage(
     chat_id: ChatId,
     text: string,
     opts?: ExtractParamOptions<'sendMessage', 'chat_id' | 'text'>,
-  ): Promise<ApiResult<'sendMessage'>> {
-    const res = await this.requestJson(
-      'sendMessage',
-      {
-        link_preview_options: { is_disabled: true },
-        ...this.buildOptionalParams(opts),
-        chat_id,
-        text,
-      },
+  ) {
+    const res = await this.requestJson('sendMessage', {
+      link_preview_options: { is_disabled: true },
+      ...this.buildOptionalParams(opts),
+      chat_id,
       text,
-    );
+    });
 
-    return this.processMessageResult(res, chat_id, opts?.deleteAfterMs);
+    return this.processMessageResult<'sendMessage'>(res, chat_id, opts?.deleteAfterMs);
   }
 
   public async sendMessageDraft(
@@ -124,91 +115,66 @@ export class TelegramBotApi {
     draft_id: Integer,
     text: string,
     opts?: ExtractParamOptions<'sendMessageDraft', 'chat_id' | 'draft_id' | 'text'>,
-  ): Promise<ApiResult<'sendMessageDraft'>> {
-    const res = await this.requestJson(
-      'sendMessageDraft',
-      {
-        ...this.buildOptionalParams(opts),
-        chat_id,
-        draft_id,
-        text,
-      },
+  ) {
+    const res = await this.requestJson('sendMessageDraft', {
+      ...this.buildOptionalParams(opts),
+      chat_id,
+      draft_id,
       text,
-    );
+    });
 
-    return this.processMessageResult(res, chat_id, opts?.deleteAfterMs);
+    return this.processMessageResult<'sendMessageDraft'>(res, chat_id, opts?.deleteAfterMs);
   }
 
-  public async sendPhoto(
-    chat_id: ChatId,
-    file: File,
-    opts?: ExtractParamOptions<'sendPhoto', 'chat_id' | 'photo'>,
-  ): Promise<ApiResult<'sendPhoto'>> {
-    const res = await this.requestJson(
-      'sendPhoto',
-      {
-        ...this.buildOptionalParams(opts),
-        chat_id,
-        photo: file,
-        show_caption_above_media: true,
-      },
-      opts?.caption,
-    );
-
-    return this.processMessageResult(res, chat_id, opts?.deleteAfterMs);
+  public async sendPhoto(chat_id: ChatId, file: File, opts?: ExtractParamOptions<'sendPhoto', 'chat_id' | 'photo'>) {
+    const res = await this.requestJson('sendPhoto', {
+      ...this.buildOptionalParams(opts),
+      chat_id,
+      photo: file,
+      show_caption_above_media: true,
+    });
+    return this.processMessageResult<'sendPhoto'>(res, chat_id, opts?.deleteAfterMs);
   }
 
-  public async sendVoice(
-    chat_id: ChatId,
-    file: File,
-    opts?: ExtractParamOptions<'sendVoice', 'chat_id' | 'voice'>,
-  ): Promise<ApiResult<'sendVoice'>> {
-    const res = await this.requestJson(
-      'sendVoice',
-      {
-        ...this.buildOptionalParams(opts),
-        chat_id,
-        voice: file,
-      },
-      opts?.caption,
-    );
+  public async sendVoice(chat_id: ChatId, file: File, opts?: ExtractParamOptions<'sendVoice', 'chat_id' | 'voice'>) {
+    const res = await this.requestJson('sendVoice', {
+      ...this.buildOptionalParams(opts),
+      chat_id,
+      voice: file,
+    });
 
-    return this.processMessageResult(res, chat_id, opts?.deleteAfterMs);
+    return this.processMessageResult<'sendVoice'>(res, chat_id, opts?.deleteAfterMs);
   }
 
   public async sendDocument(
     chat_id: ChatId,
     file: File,
     opts?: ExtractParamOptions<'sendDocument', 'chat_id' | 'document'>,
-  ): Promise<ApiResult<'sendDocument'>> {
-    const res = await this.requestJson(
-      'sendDocument',
-      {
-        ...this.buildOptionalParams(opts),
-        chat_id,
-        document: file,
-      },
-      opts?.caption,
-    );
+  ) {
+    const res = await this.requestJson('sendDocument', {
+      ...this.buildOptionalParams(opts),
+      chat_id,
+      document: file,
+    });
 
-    return this.processMessageResult(res, chat_id, opts?.deleteAfterMs);
+    return this.processMessageResult<'sendDocument'>(res, chat_id, opts?.deleteAfterMs);
   }
 
   public async sendMediaGroup(
     chat_id: ChatId,
     files: File[],
     opts?: ExtractParamOptions<'sendMediaGroup', 'chat_id' | 'media'>,
-  ): Promise<ApiResult<'sendMediaGroup'>> {
+  ) {
     const { caption, parse_mode, ...rest } = opts ?? {};
     const formData = new FormData();
-    const mediaGroup = files.map<InputMediaDocument<File>>((file, i) => {
+    const mediaGroup = files.map((file, i): InputMediaDocument<File> => {
       const attachName = `attach_${i}`;
       formData.append(attachName, file, file.name);
       return {
         type: 'document',
         media: `attach://${attachName}`,
         ...(i === 0 && {
-          ...this.buildCaptionParams(caption),
+          caption,
           ...(parse_mode && { parse_mode: parse_mode }),
         }),
       };
@@ -219,9 +185,9 @@ export class TelegramBotApi {
       media: mediaGroup,
     };
     const finalFormData = this.makeFormData(params, formData);
-    const res = await this.requestJson('sendMediaGroup', finalFormData, caption);
+    const res = await this.requestJson('sendMediaGroup', finalFormData);
 
-    return this.processMessageResult(res, chat_id, opts?.deleteAfterMs);
+    return this.processMessageResult<'sendMediaGroup'>(res, chat_id, opts?.deleteAfterMs);
   }
 
   public async editMessageText(
@@ -229,20 +195,16 @@ export class TelegramBotApi {
     message_id: Integer,
     text: string,
     opts?: ExtractParamOptions<'editMessageText', 'chat_id' | 'message_id' | 'text'>,
-  ): Promise<ApiResult<'editMessageText'>> {
-    const res = await this.requestJson(
-      'editMessageText',
-      {
-        link_preview_options: { is_disabled: true },
-        ...this.buildOptionalParams(opts),
-        chat_id,
-        message_id,
-        text,
-      },
+  ) {
+    const res = await this.requestJson('editMessageText', {
+      link_preview_options: { is_disabled: true },
+      ...this.buildOptionalParams(opts),
+      chat_id,
+      message_id,
       text,
-    );
+    });
 
-    return this.processMessageResult(res, chat_id, opts?.deleteAfterMs);
+    return this.processMessageResult<'editMessageText'>(res, chat_id, opts?.deleteAfterMs);
   }
 
   public async editMessageReplyMarkup(
@@ -250,108 +212,93 @@ export class TelegramBotApi {
     message_id: Integer,
     reply_markup: InlineKeyboardMarkup,
     opts?: ExtractParamOptions<'editMessageReplyMarkup', 'chat_id' | 'message_id' | 'reply_markup'>,
-  ): Promise<ApiResult<'editMessageReplyMarkup'>> {
-    const res = await this.requestJson(
-      'editMessageReplyMarkup',
-      {
-        ...this.buildOptionalParams(opts),
-        chat_id,
-        message_id,
-        reply_markup,
-      },
-      'Edit Markup',
-    );
+  ) {
+    const res = await this.requestJson('editMessageReplyMarkup', {
+      ...this.buildOptionalParams(opts),
+      chat_id,
+      message_id,
+      reply_markup,
+    });
 
-    return this.processMessageResult(res, chat_id, opts?.deleteAfterMs);
+    return this.processMessageResult<'editMessageReplyMarkup'>(res, chat_id, opts?.deleteAfterMs);
   }
 
-  public deleteMessage(chat_id: ChatId, message_id: Integer): Promise<ApiResult<'deleteMessage'>> {
-    return this.requestJson('deleteMessage', { chat_id, message_id }, String(message_id));
+  public deleteMessage(chat_id: ChatId, message_id: Integer) {
+    return this.requestJson('deleteMessage', { chat_id, message_id });
   }
 
-  public deleteMessages(chat_id: ChatId, message_ids: Integer[]): Promise<ApiResult<'deleteMessages'>> {
-    return this.requestJson('deleteMessages', { chat_id, message_ids }, `${message_ids.length} msgs`);
+  public deleteMessages(chat_id: ChatId, message_ids: Integer[]) {
+    return this.requestJson('deleteMessages', { chat_id, message_ids });
   }
 
-  public setMessageReaction(
-    chat_id: ChatId,
-    message_id: Integer,
-    emoji: ReactionTypeEmoji['emoji'],
-  ): Promise<ApiResult<'setMessageReaction'>> {
-    return this.requestJson('setMessageReaction', { chat_id, message_id, reaction: [{ type: 'emoji', emoji }] }, emoji);
+  public setMessageReaction(chat_id: ChatId, message_id: Integer, emoji: ReactionTypeEmoji['emoji']) {
+    return this.requestJson('setMessageReaction', { chat_id, message_id, reaction: [{ type: 'emoji', emoji }] });
   }
 
-  public setBotCommands(
-    commands: BotCommand[],
-    chat_id: ChatId,
-    user_id: Integer,
-  ): Promise<ApiResult<'setMyCommands'>> {
-    return this.requestJson(
-      'setMyCommands',
-      {
-        commands,
-        scope: { type: 'chat_member', chat_id, user_id },
-      },
-      JSON.stringify(commands),
-    );
+  public setBotCommands(commands: BotCommand[], chat_id: ChatId, user_id: Integer) {
+    return this.requestJson('setMyCommands', {
+      commands,
+      scope: { type: 'chat_member', chat_id, user_id },
+    });
   }
 
-  public getFile(file_id: string): Promise<ApiResult<'getFile'>> {
-    return this.requestJson('getFile', { file_id }, file_id);
+  public getFile(file_id: string) {
+    return this.requestJson('getFile', { file_id });
   }
 
-  public getChatMember(chat_id: ChatId, user_id: Integer): Promise<ApiResult<'getChatMember'>> {
-    return this.requestJson('getChatMember', { chat_id, user_id }, String(user_id));
+  public getChatMember(chat_id: ChatId, user_id: Integer) {
+    return this.requestJson('getChatMember', { chat_id, user_id });
   }
 
   public answerCallbackQuery(
     callback_query_id: string,
     opts?: ExtractParamOptions<'answerCallbackQuery', 'callback_query_id'>,
-  ): Promise<ApiResult<'answerCallbackQuery'>> {
-    return this.requestJson(
-      'answerCallbackQuery',
-      {
-        ...this.buildOptionalParams(opts),
-        callback_query_id,
-      },
+  ) {
+    return this.requestJson('answerCallbackQuery', {
+      ...this.buildOptionalParams(opts),
       callback_query_id,
-    );
+    });
   }
 
   public answerInlineQuery(
     inline_query_id: string,
     results: InlineQueryResult[],
     opts?: ExtractParamOptions<'answerInlineQuery', 'inline_query_id' | 'results'>,
-  ): Promise<ApiResult<'answerInlineQuery'>> {
-    return this.requestJson(
-      'answerInlineQuery',
-      {
-        ...this.buildOptionalParams(opts),
-        inline_query_id,
-        results,
-      },
+  ) {
+    return this.requestJson('answerInlineQuery', {
+      ...this.buildOptionalParams(opts),
       inline_query_id,
-    );
+      results,
+    });
   }
 
-  public leaveChat(chat_id: ChatId): Promise<ApiResult<'leaveChat'>> {
-    return this.requestJson('leaveChat', { chat_id }, String(chat_id));
+  public leaveChat(chat_id: ChatId) {
+    return this.requestJson('leaveChat', { chat_id });
   }
 
-  public async requestJson<M extends ApiMethod>(
-    method: M,
-    params: ApiParams<M> | FormData,
-    ...context: (string | undefined)[]
-  ): Promise<ApiResult<M>> {
+  public async requestJson<M extends ApiMethod>(method: M, params: ApiParams<M> | FormData): Promise<ApiReturn<M>> {
     logger.info(`[Telegram API] ${method} calling...`);
     logger.debug(`[Telegram API] ${method} params:`, { params });
     try {
-      const res = await this.request(method, params);
-      const result = res.data as unknown as ApiResponse<ApiReturn<M>>;
+      const apiUrl = this.getUrl(method);
+      let response: RequestResult<'json'>;
+      if (params instanceof FormData) {
+        response = await this.formDataRequest(apiUrl, params);
+      } else {
+        const hasFile = Object.values(params).some((v) => v instanceof File || v instanceof Blob);
+        if (hasFile) {
+          const formData = this.makeFormData(params);
+          response = await this.formDataRequest(apiUrl, formData);
+        } else {
+          response = await this.jsonRequest(apiUrl, params);
+        }
+      }
+      const result = response.data as unknown as ApiResponse<ApiReturn<M>>;
       if (!result.ok) {
         const desc = `${result.error_code} - ${result.description}`;
-        return this.handleError(desc, method, [JSON.stringify(result.parameters)]);
+        throw new TelegramError(this.handleError(desc, method, [JSON.stringify(result.parameters)]));
       }
+
       logger.debug(`[Telegram API] ${method} result:`, {
         ...result,
         result:
@@ -359,28 +306,14 @@ export class TelegramBotApi {
             ? { ...result.result, entities: [] }
             : result.result,
       });
-      return { ok: true, data: result.result };
+      return result.result;
     } catch (err) {
-      return this.handleError(err, method, context);
+      throw new TelegramError(this.handleError(err, method));
     }
   }
 
-  private generateApiUrl(method: ApiMethod): string {
+  private getUrl(method: ApiMethod): string {
     return `${TELEGRAM_BASE_URL}/bot${this.token}/${method}`;
-  }
-
-  private request(method: ApiMethod, params: Recordable | FormData): Promise<RequestResult<'json'>> {
-    const apiUrl = this.generateApiUrl(method);
-    if (params instanceof FormData) {
-      return this.formDataRequest(apiUrl, params);
-    }
-    for (const value of Object.values(params)) {
-      if (value instanceof File || value instanceof Blob) {
-        const formData = this.makeFormData(params);
-        return this.formDataRequest(apiUrl, formData);
-      }
-    }
-    return this.jsonRequest(apiUrl, params);
   }
 
   private jsonRequest(url: string, params: Recordable) {
@@ -402,16 +335,16 @@ export class TelegramBotApi {
     });
   }
 
-  private makeFormData(params: Recordable, formData: FormData = new FormData()): FormData {
+  private makeFormData(params: Recordable, formData: FormData = new FormData()) {
     for (const [key, value] of Object.entries(params)) {
       if (value instanceof File) {
         formData.append(key, value, value.name);
       } else if (value instanceof Blob) {
         formData.append(key, value, 'blob');
-      } else if (typeof value === 'string') {
-        formData.append(key, value);
-      } else {
+      } else if (typeof value === 'object') {
         formData.append(key, JSON.stringify(value));
+      } else {
+        formData.append(key, value);
       }
     }
     return formData;
@@ -422,40 +355,33 @@ export class TelegramBotApi {
    * Handles extraction of message IDs and delegates auto-deletion logic.
    */
   private processMessageResult<T extends ApiMethod>(
-    res: ApiResult<T>,
+    result: ApiReturn<T>,
     chat_id: ChatId,
     deleteAfterMs?: number,
-  ): ApiResult<T> {
-    if (!res.ok || !deleteAfterMs) return res;
+  ): ApiReturn<T> {
     if (!this.scheduler) {
       logger.warn('Scheduler is not set.');
-      return res;
+      return result;
     }
 
-    // Normalize data: boolean -> msgId (if applicable), object -> msgId, array -> msgIds
-    const data = res.data;
-    let messageIdsToDelete: Integer[] = [];
+    if (!deleteAfterMs) return result;
 
-    if (Array.isArray(data)) {
-      const ids: Integer[] = data
+    let messageIdsToDelete: Integer[] = [];
+    if (Array.isArray(result)) {
+      const ids: Integer[] = result
         .map((item) => (isMessageIdProperty(item) ? item.message_id : null))
         .filter((id): id is Integer => id !== null);
 
       messageIdsToDelete = ids;
-    } else if (isMessageIdProperty(data)) {
-      messageIdsToDelete = [data.message_id];
+    } else if (isMessageIdProperty(result)) {
+      messageIdsToDelete = [result.message_id];
     }
 
     if (messageIdsToDelete.length > 0) {
       this.scheduler.schedule('deleteMessages', { chat_id, message_ids: messageIdsToDelete }, deleteAfterMs);
     }
 
-    return res;
-  }
-
-  private buildCaptionParams(caption?: string): Pick<ApiParams<'sendDocument'>, 'caption' | 'parse_mode'> {
-    if (!caption?.length) return {};
-    return { caption: `<blockquote expandable>${Escaper.html(caption)}</blockquote>`, parse_mode: 'HTML' };
+    return result;
   }
 
   private buildReplyParams(replyToMessageId?: number): Pick<ApiParams<'sendMessage'>, 'reply_parameters'> {
@@ -485,17 +411,16 @@ export class TelegramBotApi {
     return {
       ...rest,
       ...this.buildReplyParams(replyToMessageId),
-      ...this.buildCaptionParams(caption),
     } as Omit<ApiParams<M>, X>;
   }
 
-  private handleError(err: unknown, method: string, context?: (string | undefined)[]): ApiError {
+  private handleError(err: unknown, method: string, context?: (string | undefined)[]): string {
     const errMsg = err instanceof Error ? err.message : typeof err === 'string' ? err : String(err);
     const contextInfo = context && context.length > 0 ? context.filter(Boolean).join('\n') : 'N/A';
     logger.warn(`Failed to call Telegram API [${method}]: ${errMsg}`, {
       err,
       context: contextInfo,
     });
-    return { ok: false, error: errMsg };
+    return errMsg;
   }
 }

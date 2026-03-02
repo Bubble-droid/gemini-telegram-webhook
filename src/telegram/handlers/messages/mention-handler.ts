@@ -1,5 +1,5 @@
-import { BotMessages } from '@configs/bot-messages.js';
 import { getFunctionTools } from '@configs/function-tools.js';
+import { MENTIONED_ALIAS, Messages } from '@configs/messages.js';
 import { chatHistory } from '@data/chat-history.js';
 import { longTermMemory } from '@data/long-term-memory.js';
 import { promptStore } from '@data/prompt-store.js';
@@ -10,10 +10,9 @@ import type { McpClient } from '@llm/mcp/mcp-client.js';
 import type { ToolCallerInjectedDeps, ToolName } from '@llm/types/tool.js';
 import type { FileHandler } from '@services/file-service.js';
 import { CONFIG } from '@shared/core/config.js';
-import { AgentError, AppError, TelegramError } from '@shared/core/errors.js';
+import { AgentError, AppError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
-import { convertToMarkdownV2Chunks, toMarkdownV2 } from '@shared/markdown/telegram-converter.js';
-import type { ApiResult } from '@shared/types/telegram.js';
+import { markdownToMarkdownV2, markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
 import { formatTime, ms } from '@shared/utils/helpers.js';
 import { hasFile } from '@shared/utils/message.js';
 import { isCoreContentSimilar } from '@shared/utils/string-similarity.js';
@@ -41,17 +40,17 @@ export class MentionHandler {
     logger.debug('Received mention', {
       chatId: chat.id,
       userId: user.id,
-      messageId: message.message_id,
+      messageId: message?.message_id,
     });
 
-    if (!this.checkProcessingLocks(ctx)) return;
+    if (!(await this.checkProcessingLocks(ctx))) return;
 
     try {
       await this.checkFile(ctx);
 
       const chatContents = await this.buildChatContents(messages);
 
-      if (!this.checkContents(chatContents, ctx)) return;
+      if (!(await this.checkContents(chatContents, ctx))) return;
 
       const historyContents = chatHistory.get(chat.id, user.id);
 
@@ -78,16 +77,15 @@ export class MentionHandler {
 
       const completeContents = [...historyContents, ...chatContents];
 
-      await ctx.reply(BotMessages.thinking);
+      await ctx.updateMessage(Messages.thinking);
 
       const geminiResponse = await this.delegateQuestionProcess(completeContents, ctx);
-
       await this.resolveResponse(ctx, geminiResponse, completeContents);
     } catch (apiError) {
       logger.error('Error during Gemini API call or response processing.', {
         err: apiError,
         chatId: chat.id,
-        messageId: message.message_id,
+        messageId: message?.message_id,
       });
       throw apiError instanceof AppError
         ? apiError
@@ -97,11 +95,14 @@ export class MentionHandler {
     }
   }
 
-  private delegateQuestionProcess(contents: Content[], ctx: ResponseContext): Promise<GenerateContentResponse> {
+  private delegateQuestionProcess(
+    contents: Content[],
+    ctx: ResponseContext,
+  ): Promise<GenerateContentResponse | Content[]> {
     const userId = ctx.user.id;
     const userLanguage = ctx.user.language_code;
     const chatId = ctx.chat.id;
-    const messageId = ctx.message.message_id;
+    const messageId = ctx.message?.message_id;
 
     logger.info(`Processing over to ChatAgent`, {
       chatId,
@@ -109,8 +110,10 @@ export class MentionHandler {
       messageId,
     });
 
-    const onStatusUpdate = (text: string) => {
-      return ctx.edit(toMarkdownV2(text), { parse_mode: 'MarkdownV2' });
+    const onStatusUpdate = async (text: string) => {
+      await ctx.updateMessage(markdownToMarkdownV2(text), { parse_mode: 'MarkdownV2' }).catch((err: unknown) => {
+        logger.warn(`Update status message failed.`, { err });
+      });
     };
 
     const systemPrompt = promptStore.format('assistant', {
@@ -136,29 +139,34 @@ export class MentionHandler {
     });
   }
 
-  private async resolveResponse(ctx: ResponseContext, response: GenerateContentResponse, completeContents: Content[]) {
-    const text = `${response.text?.trim()}\n\n *Reply by ${response.modelVersion}*`;
-    const chunks = convertToMarkdownV2Chunks(text);
-    let result: ApiResult<'editMessageText'>;
-    if (chunks.length > 1) {
-      const page = await ctx.api.publishTelegraphPost(text.split('\n')[0]!.slice(0, 256), text);
-      const textToSend = toMarkdownV2(`内容过长，[点击这里查看](${page.url})`);
-      result = await ctx.reply(textToSend, {
-        link_preview_options: { url: page.url },
-        parse_mode: 'MarkdownV2',
-        deleteAfterMs: ms['1d'],
-      });
+  private async resolveResponse(
+    ctx: ResponseContext,
+    response: GenerateContentResponse | Content[],
+    completeContents: Content[],
+  ) {
+    if (!Array.isArray(response)) {
+      const text = `${response.text?.trim()}\n\n *Reply by ${response.modelVersion}*`;
+      const chunks = markdownToMarkdownV2Chunks(text);
+      if (chunks.length > 1) {
+        const page = await ctx.api.publishTelegraphPost(text.split('\n')[0]!.slice(0, 256), text);
+        const textToSend = markdownToMarkdownV2(`内容过长，[点击这里查看](${page.url})`);
+        await ctx.updateMessage(textToSend, {
+          link_preview_options: { url: page.url },
+          parse_mode: 'MarkdownV2',
+          deleteAfterMs: ms['1d'],
+        });
+      } else {
+        await ctx.updateMessage(chunks.join(''), {
+          parse_mode: 'MarkdownV2',
+          deleteAfterMs: ms['1d'],
+        });
+      }
+    }
+    if (Array.isArray(response)) {
+      completeContents.push(...response);
     } else {
-      result = await ctx.reply(chunks.join(''), {
-        parse_mode: 'MarkdownV2',
-        deleteAfterMs: ms['1d'],
-      });
+      completeContents.push(response.candidates![0]!.content!);
     }
-
-    if (!result.ok) {
-      throw new TelegramError(result.error);
-    }
-    completeContents.push(response.candidates![0]!.content!);
     chatHistory.update(ctx.chat.id, ctx.user.id, completeContents);
   }
 
@@ -207,8 +215,7 @@ export class MentionHandler {
 
     parts.push(...fileParts);
 
-    const mentionRegex = new RegExp(`@${this.botName}`, 'gi');
-
+    const mentionRegex = new RegExp(`@${this.botName}|^${MENTIONED_ALIAS}`, 'g');
     const combinedText = messages
       .flatMap((msg) => {
         const text = msg.text ?? msg.caption;
@@ -216,8 +223,6 @@ export class MentionHandler {
         return [
           text
             .replace(mentionRegex, '')
-            .replace(/^:ask/gi, '')
-            .replace(/^🤖 模型：.*?\n+/g, '')
             .replace(/Reply by[\s\S]*$/m, '')
             .trim(),
         ];
@@ -236,30 +241,28 @@ export class MentionHandler {
     return parts;
   }
 
-  private checkProcessingLocks(ctx: ResponseContext): boolean {
+  private async checkProcessingLocks(ctx: ResponseContext) {
     const lockKey = this.generateLockKey(ctx);
     if (!this.processingLocks.has(lockKey)) {
       this.processingLocks.add(lockKey);
       return true;
     }
-
     logger.warn(`[MentionHandler] Ignored concurrent request from ${lockKey}`);
-    void ctx.send(BotMessages.pendingRequest, {
-      opts: { deleteAfterMs: ms['3m'] },
-      isToReply: true,
+    await ctx.reply(Messages.pendingRequest, {
+      deleteAfterMs: ms['3m'],
     });
     return false;
   }
 
   private async checkFile(ctx: ResponseContext) {
     if (!ctx.isFile) return;
-    await ctx.send(BotMessages.uploading, { isToReply: true });
+    await ctx.reply(Messages.uploading);
   }
 
-  private checkContents(contents: Content[], ctx: ResponseContext): boolean {
+  private async checkContents(contents: Content[], ctx: ResponseContext) {
     if (contents.at(-1)?.role === 'model' || contents.length === 0) {
       logger.warn(`Invalid contents ignored.`);
-      void ctx.reply(BotMessages.invalidContents, {
+      await ctx.updateMessage(Messages.invalidContents, {
         deleteAfterMs: ms['3m'],
       });
 

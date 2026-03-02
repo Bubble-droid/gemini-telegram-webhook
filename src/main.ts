@@ -1,7 +1,11 @@
 import buildApp from '@app.js';
+import { CALLBACKS } from '@configs/callbacks.js';
+import { canPerformAction, COMMANDS } from '@configs/commands.js';
+import { Messages } from '@configs/messages.js';
 import { faqMatcher } from '@data/faq-matcher.js';
 import { pathResolver } from '@data/path-resolver.js';
 import { promptStore } from '@data/prompt-store.js';
+import type { BotCommand } from '@grammyjs/types';
 import { GeminiAgent } from '@llm/agent/gemini-agent.js';
 import { OpenAiAgent } from '@llm/agent/openai-agent.js';
 import { GeminiApiClient } from '@llm/client/gemini-api-client.js';
@@ -28,12 +32,10 @@ import {
 } from '@shared/core/constants.js';
 import { TelegraphError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
-import { decodeToString } from '@shared/utils/helpers.js';
+import { decodeToString, ms } from '@shared/utils/helpers.js';
 import { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
 import { TelegramPoller } from '@telegram/bot/telegram-poller.js';
-import { handleCallbackQuery } from '@telegram/handlers/callback-query-handler.js';
 import { ChitchatHandler } from '@telegram/handlers/messages/chitchat-handler.js';
-import { handleBotCommand } from '@telegram/handlers/messages/command-handler.js';
 import { MentionHandler } from '@telegram/handlers/messages/mention-handler.js';
 import { NormalMessageHandler } from '@telegram/handlers/messages/normal-message-handler.js';
 import { UpdateHandler } from '@telegram/handlers/update-handler.js';
@@ -130,25 +132,53 @@ const start = async () => {
 
   const updateHandler = new UpdateHandler(bot);
 
-  updateHandler.onUpdate('callback_query', async (ctx) => {
-    await handleCallbackQuery(ctx);
+  const botCommands = COMMANDS.map((cmd): BotCommand => {
+    const { action, permissions, ...rest } = cmd;
+    return rest;
   });
-  updateHandler.onUpdate('message', (ctx) => {
-    messageCollector.append(ctx.message);
+
+  COMMANDS.forEach((c) => {
+    updateHandler.command(c.command, async (ctx) => {
+      await ctx.api.setBotCommands(botCommands, ctx.chat.id, ctx.user.id).catch((err: unknown) => {
+        logger.warn('Failed to set bot commands:', { err });
+      });
+      if (c.permissions) {
+        if (await canPerformAction(ctx)) {
+          return;
+        }
+      }
+      await c.action({ ctx });
+    });
   });
-  updateHandler.onUpdate('message', async (ctx) => {
-    if (ctx.isBotCommand) {
-      await handleBotCommand(ctx);
-      return;
-    }
 
-    if (ctx.isBotMentioned || ctx.isReplyToBot || ctx.isMentionAlias) {
-      const messages = await messageCollector.getMessages(ctx.message);
-      await mentionHandler.handle(ctx, messages);
-      return;
-    }
+  CALLBACKS.forEach((c) => {
+    updateHandler.callback(c.data, async (ctx) => {
+      await ctx.api.answerCallbackQuery(ctx.callbackQueryId).catch((err: unknown) => {
+        logger.warn('Failed to answer callback query:', { err });
+      });
+      await c.action({ ctx, mentionHandler }).catch(async (err: unknown) => {
+        logger.warn('Failed to handle callback query:', { err });
+        await ctx.updateCallbackMessage(Messages.callbackFailed, {
+          deleteAfterMs: ms['3m'],
+        });
+      });
+    });
+  });
 
+  updateHandler.message((ctx) => {
+    messageCollector.append(ctx.message!);
+  });
+
+  updateHandler.message(async (ctx, done) => {
+    if (!ctx.isBotMentioned) return;
+    const messages = await messageCollector.getMessages(ctx.message!);
+    await mentionHandler.handle(ctx, messages);
+    done();
+  });
+
+  updateHandler.message(async (ctx, done) => {
     await normalMessageHandler.handle(ctx);
+    done();
   });
 
   logger.info(`Environment: ${process.env['NODE_ENV']}`);
@@ -163,6 +193,7 @@ const start = async () => {
   await promptStore.reload();
   await faqMatcher.reload();
 
+  await bot.deleteWebhook(true);
   if (BOT_UPDATE_MODE === 'webhook') {
     registerWebhookRoute(server, updateHandler);
     await bot.setWebhook(url, true, {
@@ -171,7 +202,7 @@ const start = async () => {
     });
   } else {
     const poller = new TelegramPoller(bot, updateHandler);
-    await poller.start(['callback_query', 'message']);
+    poller.start(['callback_query', 'message']);
   }
 
   await server.listen({ host, port });

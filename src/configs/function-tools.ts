@@ -38,6 +38,14 @@ const SYSTEM_PROMPT_PROPERTY = {
   } as const satisfies JSONSchema,
 };
 
+const BLOCKING_RESPONSE_PROPERTY = {
+  blocking: {
+    type: 'boolean',
+    description:
+      'If you can complete the response directly after calling this tool without further explanation, please include this parameter to force the response to end.',
+  } as const satisfies JSONSchema,
+};
+
 /**
  * Tools for information retrieval and external data access.
  */
@@ -77,6 +85,7 @@ This is your **FIRST RESORT** for finding factual evidence, configuration detail
           },
         },
         required: ['prompt', 'file_search_stores'],
+        additionalProperties: false,
       },
     },
     {
@@ -96,20 +105,24 @@ Available agents:
 ${mcpServers.map(({ name, description }) => `- **${name}**: ${description}`).join('\n')}
 `.trim(),
       parametersJsonSchema: {
-        type: 'object',
-        properties: {
-          ...SYSTEM_PROMPT_PROPERTY,
-          agent_name: {
-            type: 'string',
-            description: 'The name of the sub-agent to which the task is to be delegated.',
+        anyOf: mcpServers.map((server) => ({
+          type: 'object',
+          properties: {
+            ...SYSTEM_PROMPT_PROPERTY,
+            agent_name: {
+              type: 'string',
+              const: server.name,
+              description: server.description,
+            },
+            objective: {
+              type: 'string',
+              description:
+                "The comprehensive objective for the sub-agent. You MUST include:\n1. The user's original goal.\n2. Context found so far.\n3. Specific questions or actions required.\n4. **Explicit instructions to use pagination (e.g., 'Get the latest 10 items')** if calling list-based tools.",
+            },
           },
-          objective: {
-            type: 'string',
-            description:
-              "The comprehensive objective for the sub-agent. You MUST include:\n1. The user's original goal.\n2. Context found so far.\n3. Specific questions or actions required.\n4. **Explicit instructions to use pagination (e.g., 'Get the latest 10 items')** if calling list-based tools.",
-          },
-        },
-        required: ['agent_name', 'objective'],
+          required: ['agent_name', 'objective'],
+          additionalProperties: false,
+        })),
       },
     },
     {
@@ -328,6 +341,7 @@ Generates and sends a downloadable file artifact to the user. This is the **REQU
     parametersJsonSchema: {
       type: 'object',
       properties: {
+        ...BLOCKING_RESPONSE_PROPERTY,
         message_id: {
           type: 'number',
           description: 'The numeric ID of the user message that this file is responding to.',
@@ -376,6 +390,7 @@ Applies an expressive emoji reaction to a specific message to enhance conversati
     parametersJsonSchema: {
       type: 'object',
       properties: {
+        ...BLOCKING_RESPONSE_PROPERTY,
         message_id: {
           type: 'number',
           description: 'The numeric identifier of the specific user message you are reacting to.',
@@ -396,6 +411,7 @@ example:
         },
       },
       required: ['message_id', 'reaction'],
+      additionalProperties: false,
     },
   },
   {
@@ -404,22 +420,24 @@ example:
 Publishes a long-form article, document, or tutorial as a web-based post. This tool is designed for content that is best consumed as a shareable web article rather than a downloadable file.
 
 **Usage Strategy:**
-- **Primary Use**: Use this tool for generating and publishing human-readable, narrative content such as articles, blog posts, tutorials, detailed explanations, or comprehensive documentation that benefits from a web format for easy sharing and viewing.
-- **Differentiate from File Delivery**: Do NOT use this for content types primarily intended for local storage, execution, or file-based sharing, such as code snippets, configuration files, raw data, or very large, complex markdown documents meant for local editing.
+- **Primary Use**: Use this tool for generating and publishing human-readable, narrative text, explanations, and descriptive content such as articles, blog posts, tutorials, or comprehensive documentation that benefits from a web format for easy sharing and viewing.
+- **Content Restriction**: Content **MUST NOT** include lengthy code blocks or configuration files. This tool is for narrative and explanatory text only.
+- **Differentiate from File Delivery**: Do NOT use this for content types primarily intended for local storage, execution, or file-based sharing, such as code snippets, raw data, or very large, complex markdown documents meant for local editing.
 - **Content Format**: The content provided MUST be in standard Markdown format.
-- **Proactive Decision**: If the generated content is an article, tutorial, or similar long-form text, proactively publish it rather than waiting for user instruction.
+- **Proactive Decision**: If the generated content is an article, tutorial, or similar long-form narrative text, proactively publish it rather than waiting for user instruction.
 
 **Supported Content Examples:**
-- **Articles**: Blog posts, analyses, reports (when suitable for web publication).
-- **Tutorials**: Step-by-step guides, how-to's.
+- **Articles**: Blog posts, analyses, reports (when suitable for web publication, without code/config).
+- **Tutorials**: Step-by-step guides, how-to's (focus on explanation, not code dump).
 - **Documentation**: Explanations, overviews designed for web readership.
 `.trim(),
     parametersJsonSchema: {
       type: 'object',
       properties: {
+        ...BLOCKING_RESPONSE_PROPERTY,
         title: {
           type: 'string',
-          description: 'The title of the Telegraph page (1-256 characters).',
+          description: 'The title of the web page (1-256 characters).',
           minLength: 1,
           maxLength: 256,
         },
@@ -429,6 +447,53 @@ Publishes a long-form article, document, or tutorial as a web-based post. This t
         },
       },
       required: ['title', 'content'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'seek_clarification',
+    description: `
+Proactively requests further information or verification from the user to resolve ambiguity, gather diagnostic details, or confirm factual discrepancies. When this tool is called, you **MUST immediately pause your response** and await user input.
+
+**Usage Strategy:**
+- **Ambiguity Resolution**: Use when the user's request is vague or lacks critical details required to proceed (e.g., "My software isn't working").
+- **Diagnostic Information**: Employ to gather necessary diagnostic data for problem-solving (e.g., specific error messages, versions, operating systems).
+- **Factual Discrepancy Verification**: Trigger when internal research or knowledge contradicts the user's initial statement, requiring confirmation before continuing (e.g., verifying a product name or version).
+- **Guided Input**: Provide a list of predefined, **comprehensive response scenarios for the user** to select from or use as a guide for their reply. Each answer **MUST provide a combined response to the full scope of the multi-part \`question\`**, phrased in the first-person perspective (e.g., '我使用的是 X 客户端，操作系统是 Y，遇到了 Z 问题').
+
+**Call Flow**:
+1.  Identify the need for clarification or verification.
+2.  Formulate a precise 'question'.
+3.  Craft a list of concise, pure-text 'answers' that represent complete, user-perspective response scenarios.
+4.  Call this tool and then stop processing, awaiting the user's reply.
+
+**Constraint**: Each item in 'answers' MUST be a single, short sentence and contain NO MARKDOWN, NO FURTHER QUESTIONS, just direct user statements in the first-person, providing a combined response.
+`.trim(),
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        ...BLOCKING_RESPONSE_PROPERTY,
+        question: {
+          type: 'string',
+          description: 'All relevant issues that need to be clarified by the user.',
+          minLength: 200,
+          maxLength: 4000,
+        },
+        answers: {
+          type: 'array',
+          description:
+            'A list of predefined, concise, pure-text comprehensive user response options for the user to select from or use as a guide. Each answer MUST be in the first-person perspective and provide a combined response to the full scope of the multi-part question (e.g., "我使用的是 GUI.for.SingBox 客户端，操作系统是 Windows，启动时没有反应。"). NO MARKDOWN, NO FURTHER QUESTIONS, single concise combined statement per item.',
+          items: {
+            type: 'string',
+            description:
+              'A single, concise, pure-text hypothetical combined response option from the user\'s first-person perspective, addressing all parts of the question (e.g., "我是用的是 GUI.for.SingBox，操作系统是 Windows，并且没有看到任何错误提示"). NO MARKDOWN, NO LENGTHY TEXT, NO QUESTIONS.',
+          },
+          minItems: 2,
+          maxItems: 10,
+        },
+      },
+      required: ['question', 'answers'],
+      additionalProperties: false,
     },
   },
 ] as const satisfies GeneralFunctionSchema[];

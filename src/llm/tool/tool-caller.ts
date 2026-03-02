@@ -1,11 +1,14 @@
 import { longTermMemory } from '@data/long-term-memory.js';
+import type { GenerateContentResponse } from '@google/genai';
 import { FunctionCallingConfigMode, type Content } from '@google/genai';
+import type { InlineKeyboardButton } from '@grammyjs/types';
 import type { GeminiAgent } from '@llm/agent/gemini-agent.js';
 import type { OpenAiAgent } from '@llm/agent/openai-agent.js';
 import { mergeSystemPrompt } from '@llm/lib/helper.js';
 import type { McpClient } from '@llm/mcp/mcp-client.js';
 import type { ToolCallerInjectedDeps } from '@llm/types/tool.js';
 import { logger } from '@shared/core/logger.js';
+import { markdownToMarkdownV2 } from '@shared/markdown/telegram-converter.js';
 import { addCitations } from '@shared/utils/citation-generate.js';
 import { makeFile, ms } from '@shared/utils/helpers.js';
 
@@ -34,18 +37,15 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
       ) {
         file_search_stores.push('sourcecode/plugin-hub');
       }
-      if (!file_search_stores.includes('documents/gui-for-cores')) {
-        file_search_stores.push('documents/gui-for-cores');
-      }
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
-      const result = await geminiApiAgent.run(contents, {
+      const result = (await geminiApiAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
           temperature: 0.7,
           systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
           tools: [{ fileSearch: { fileSearchStoreNames: file_search_stores } }],
         },
-      });
+      })) as GenerateContentResponse;
       return {
         response: {
           output: {
@@ -59,14 +59,14 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     web_search: async (args) => {
       const { prompt, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
-      const result = await geminiApiAgent.run(contents, {
+      const result = (await geminiApiAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
           temperature: 0.7,
           systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
           tools: [{ googleSearch: {} }],
         },
-      });
+      })) as GenerateContentResponse;
       return {
         response: {
           output: {
@@ -80,14 +80,14 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     web_fetch: async (args) => {
       const { prompt, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
-      const result = await geminiApiAgent.run(contents, {
+      const result = (await geminiApiAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
           temperature: 0.4,
           systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
           tools: [{ urlContext: {} }],
         },
-      });
+      })) as GenerateContentResponse;
       return {
         response: {
           output: {
@@ -101,7 +101,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     delegate_to_agent: async (args) => {
       const { agent_name, objective, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: objective }] }];
-      const result = await geminiApiAgent.run(contents, {
+      const result = (await geminiApiAgent.run(contents, {
         onStatusUpdate,
         callTool: (name, args) => {
           return mcpClient.callTool(name, args);
@@ -113,7 +113,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
           toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
           automaticFunctionCalling: { disable: true },
         },
-      });
+      })) as GenerateContentResponse;
       return { response: { output: result.text! } };
     },
 
@@ -132,13 +132,13 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
           ],
         },
       ];
-      const result = await geminiApiAgent.run(contents, {
+      const result = (await geminiApiAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
           temperature: 0.7,
           systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
         },
-      });
+      })) as GenerateContentResponse;
       return { response: { output: result.text! } };
     },
 
@@ -187,22 +187,23 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     code_execution: async (args) => {
       const { prompt, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
-      const result = await geminiApiAgent.run(contents, {
+      const result = (await geminiApiAgent.run(contents, {
         onStatusUpdate,
         generateConfig: {
           temperature: 0,
           systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
           tools: [{ codeExecution: {} }],
         },
-      });
+      })) as GenerateContentResponse;
       return { response: { output: addCitations(result) } };
     },
 
     reply_file: async (args) => {
       const { message_id, content, name, type, describe } = args;
       const file = makeFile(content, name, type);
-      const result = await ctx.api.sendDocument(ctx.chat.id, file, {
-        ...(describe && { caption: describe }),
+      const result = await ctx.replyWithDocument(file, {
+        ...(describe && { caption: markdownToMarkdownV2(describe) }),
+        parse_mode: 'MarkdownV2',
         deleteAfterMs: ms['1d'],
         replyToMessageId: message_id,
       });
@@ -217,7 +218,25 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
 
     reaction_to_message: async (args) => {
       const { message_id, reaction } = args;
-      const result = await ctx.api.setMessageReaction(ctx.chat.id, message_id, reaction);
+      const result = await ctx.reaction(reaction, message_id);
+      return { response: { output: JSON.stringify(result) } };
+    },
+
+    seek_clarification: async (args) => {
+      const { question, answers } = args;
+      const InlineKeyboardButtons: InlineKeyboardButton[][] = answers.map((answer, i): InlineKeyboardButton[] => {
+        return [
+          {
+            text: answer,
+            callback_data: `answer_${ctx.user.id}_${i}`,
+          },
+        ];
+      });
+
+      const result = await ctx.updateMessage(markdownToMarkdownV2(question), {
+        reply_markup: { inline_keyboard: InlineKeyboardButtons },
+        parse_mode: 'MarkdownV2',
+      });
       return { response: { output: JSON.stringify(result) } };
     },
 

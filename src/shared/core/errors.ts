@@ -1,5 +1,4 @@
-import { convertToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
-import type { ApiResult } from '@shared/types/telegram.js';
+import { markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
 import { formatTime, makeFile } from '@shared/utils/helpers.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
 import { CONFIG } from './config.js';
@@ -34,21 +33,17 @@ export class AppError extends Error {
         `❌ **错误信息:**\n\`\`\`\n${err.message}\n\`\`\`\n\n` +
         `🛠 **堆栈追踪:**\n\`\`\`javascript\n${rawStack}\n\`\`\``;
 
-      const chunks = convertToMarkdownV2Chunks(message);
+      const chunks = markdownToMarkdownV2Chunks(message);
 
-      let res: ApiResult<'sendDocument' | 'sendMessage'>;
       if (chunks.length > 1) {
         const file = makeFile(message, 'error-report.md', 'text/markdown');
-        res = await ctx.api.sendDocument(ownerId, file, {
+        await ctx.api.sendDocument(ownerId, file, {
           caption: 'Too long error report, sent as a file.',
         });
       } else {
-        res = await ctx.api.sendMessage(ownerId, chunks.join(''), {
+        await ctx.api.sendMessage(ownerId, chunks.join(''), {
           parse_mode: 'MarkdownV2',
         });
-      }
-      if (!res.ok) {
-        throw new TelegramError(`Failed to send error notification. ${res.error}`);
       }
     } catch (err) {
       logger.warn('Failed to send error notification.', {
@@ -147,7 +142,7 @@ export class DataError extends AppError {
 
 export class TelegramError extends AppError {
   constructor(message: string) {
-    super(message);
+    super(`Telegram API Error: ${message}`);
     this.name = 'TelegramError';
   }
 }

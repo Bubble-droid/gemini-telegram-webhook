@@ -1,15 +1,18 @@
-import { BotMessages } from '@configs/bot-messages.js';
+import { Messages } from '@configs/messages.js';
 import type { GenerateContentResponse } from '@google/genai';
 import { type Content, type FunctionCall, type FunctionResponse, type Part } from '@google/genai';
 import type { GeminiApiClient } from '@llm/client/gemini-api-client.js';
 import { parseToolCalls } from '@llm/lib/tool-call-parser.js';
 import type { GeminiAgentOpts, StandardizedFunctionResponse } from '@llm/types/agent.js';
+import type { ToolName } from '@llm/types/tool.js';
 import { THOUGHT_SIGNATURE_PLACEHOLDER } from '@shared/core/constants.js';
 import { AgentError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import { delay, ms } from '@shared/utils/helpers.js';
 
 const MAX_AGENT_ROUNDS = 16;
+
+const BLOCK_RESPONSE_TOOLS: ToolName[] = ['seek_clarification'];
 
 const createToolResponse = (
   res: StandardizedFunctionResponse,
@@ -49,7 +52,7 @@ const handleToolCall = async (
     return createToolResponse(result, name, id);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    logger.warn(`[ChatAgent] Tool execution error: ${name}`, { err });
+    logger.warn(`Gemini Agent Tool execution error: ${name}`, { err });
     return createToolResponse({ response: { error: errorMsg } }, name, id);
   }
 };
@@ -61,7 +64,7 @@ export class GeminiAgent {
     this.client = client;
   }
 
-  public async run(contents: Content[], opts: GeminiAgentOpts): Promise<GenerateContentResponse> {
+  public async run(contents: Content[], opts: GeminiAgentOpts): Promise<GenerateContentResponse | Content[]> {
     const { maxRounds = MAX_AGENT_ROUNDS, onStatusUpdate, callTool, generateConfig, generateModel } = opts;
     const agentContents = [...contents];
     let round = 0;
@@ -122,9 +125,16 @@ export class GeminiAgent {
 
       agentContents.push({ role: 'user', parts: toolResults });
 
+      if (
+        functionCalls.some((call) => !!call.args?.['blocking'] || BLOCK_RESPONSE_TOOLS.includes(call.name as ToolName))
+      ) {
+        logger.info(`Model calling blocking response tools.`);
+        return agentContents.slice(-2);
+      }
+
       await delay(ms.sec(3));
 
-      await onStatusUpdate?.(BotMessages.thinking);
+      await onStatusUpdate?.(Messages.thinking);
     } while (functionCalls.length > 0);
 
     logger.info(`[GeminiAgent] Task completed`, { rounds: round + 1 });

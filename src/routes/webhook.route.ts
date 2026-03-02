@@ -1,7 +1,7 @@
+import type { Update } from '@grammyjs/types';
 import { logger } from '@shared/core/logger.js';
 import type { UpdateHandler } from '@telegram/handlers/update-handler.js';
 import type { FastifyInstance } from 'fastify';
-import type { Update } from '@grammyjs/types';
 import { checkAuthToken } from './guards.js';
 import { WebhookBodySchema, WebhookHeadersSchema, type TWebhookHeaders } from './route-schema.js';
 
@@ -27,7 +27,7 @@ export const registerWebhookRoute = (app: FastifyInstance, updateHandler: Update
         remoteIp: req.ip,
       });
       rep.code(202).type('application/json').send({ code: 202, message: `Processing webhook` });
-      void updateHandler.handle(req.body);
+      void updateHandler.handleUpdate(req.body);
     },
   });
 };

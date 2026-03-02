@@ -1,6 +1,6 @@
+import type { FaqItem } from '@configs/faq-data.js';
 import { DATA_DIR, FAQ_DATA_FILE } from '@shared/core/constants.js';
 import { logger } from '@shared/core/logger.js';
-import type { FaqItem } from '@shared/types/data.js';
 import path from 'node:path';
 import { loadData } from './data-load.js';
 

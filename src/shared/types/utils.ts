@@ -31,5 +31,5 @@ export type RequiredKeys<T> = {
 export type VerifyExactKeys<K, U extends readonly unknown[]> = [K] extends [U[number]]
   ? [U[number]] extends [K]
     ? U
-    : '❌ 缺少必选属性'
-  : '❌ 包含多余或错误的属性';
+    : '❌ Missing required properties'
+  : '❌ Properties do not match';

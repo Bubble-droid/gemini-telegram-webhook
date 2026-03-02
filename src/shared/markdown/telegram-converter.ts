@@ -1,10 +1,9 @@
 import { converter } from 'tg-markdown-converter';
-import { TELEGRAM_CONVERTER_OPTIONS } from './config.js';
 
-export const convertToMarkdownV2Chunks = (markdown: string): string[] => {
-  return converter(markdown, TELEGRAM_CONVERTER_OPTIONS);
+export const markdownToMarkdownV2Chunks = (markdown: string): string[] => {
+  return converter(markdown, { splitAt: 4096 });
 };
 
-export const toMarkdownV2 = (markdown: string): string => {
-  return convertToMarkdownV2Chunks(markdown).join('');
+export const markdownToMarkdownV2 = (markdown: string): string => {
+  return markdownToMarkdownV2Chunks(markdown).join('');
 };

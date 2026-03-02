@@ -2,7 +2,7 @@ import { type Blob as GBlob, type Part } from '@google/genai';
 import type { Animation, Audio, Document, Message, PhotoSize, Sticker, Video, Voice } from '@grammyjs/types';
 import { CONFIG } from '@shared/core/config.js';
 import { FILE_EXT_MIMES, SUPPORTED_MIME_TYPES, TELEGRAM_BASE_URL } from '@shared/core/constants.js';
-import { DataError, HttpError } from '@shared/core/errors.js';
+import { DataError, HttpError, TelegramError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import { httpRequest } from '@shared/utils/http.js';
 import type { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
@@ -151,10 +151,10 @@ export class FileHandler {
   private async downloadAndEncode(fileId: string, mimeType: MimeType): Promise<GBlob> {
     // 1. 获取 Telegram 文件路径
     const fileResult = await this.api.getFile(fileId);
-    if (!fileResult.ok || !fileResult.data.file_path) {
-      throw new HttpError(`获取文件路径失败: ${fileId}`);
+    if (!fileResult.file_path) {
+      throw new TelegramError(`获取文件路径失败: ${fileId}`);
     }
-    const fileUrl = this.generateFileUrl(fileResult.data.file_path);
+    const fileUrl = this.generateFileUrl(fileResult.file_path);
     try {
       // 2. 下载文件
       const { headers, data } = await httpRequest(fileUrl, {

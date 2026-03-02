@@ -1,6 +1,5 @@
 import { loadLowdb } from '@data/data-load.js';
 import { DATA_DIR, SCHEDULED_TASK_FILE } from '@shared/core/constants.js';
-import { HttpError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import type { Recordable } from '@shared/types/common.js';
 import type { ApiMethod, ApiParams } from '@shared/types/telegram.js';
@@ -187,9 +186,7 @@ export class TaskScheduler {
 
   private async executeTask(action: ApiMethod, params: unknown) {
     logger.info(`[TaskScheduler] Executing: ${action}`, { params });
-
-    const result = await this.bot.requestJson(action, params as ApiParams<ApiMethod>);
-    if (!result.ok) throw new HttpError(result.error);
+    await this.bot.requestJson(action, params as ApiParams<ApiMethod>);
   }
 
   /**

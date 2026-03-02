@@ -1,9 +1,11 @@
+import type { InlineKeyboardButton, InlineKeyboardMarkup } from '@grammyjs/types';
 import { CONFIG } from '@shared/core/config.js';
 import { GEMINI_TEXT_MODELS } from '@shared/core/constants.js';
 import type { Recordable } from '@shared/types/common.js';
-import type { InlineKeyboardButton, InlineKeyboardMarkup } from '@grammyjs/types';
 
-export const BotMessages = {
+export const MENTIONED_ALIAS = `;Q`;
+
+export const Messages = {
   getStartText: (): string => {
     const { TELEGRAM_BOT_USERNAME: botName } = CONFIG;
     return `
@@ -20,10 +22,10 @@ export const BotMessages = {
 
 * **💬 发起新话题**
 * \`@${botName}\` + 你想问的问题
-* \`:ask\` + 你想问的问题
+* \`${MENTIONED_ALIAS}\` + 你想问的问题
 
 * **🔗 引用他人消息提问**
-* 回复或引用**他人**的消息时，请务必加上 \`@${botName}\` 或 \`:ask\`，我就会针对该消息（及其附件）进行解答。
+* 回复或引用**他人**的消息时，请务必加上 \`@${botName}\` 或 \`${MENTIONED_ALIAS}\`，我就会针对该消息（及其附件）进行解答。
 
 👍 由 ClawCloud Run 和 Google Gemini 提供支持
 `.trim();

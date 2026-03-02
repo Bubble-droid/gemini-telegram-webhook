@@ -1,4 +1,3 @@
-import type { Update } from '@grammyjs/types';
 import { logger } from '@shared/core/logger.js';
 import type { ApiParams } from '@shared/types/telegram.js';
 import { delay, ms } from '@shared/utils/helpers.js';
@@ -25,7 +24,7 @@ export class TelegramPoller {
    * Starts the polling loop.
    * This method is async but creates a background loop, so it does not resolve until stopped.
    */
-  public async start(allowedUpdates?: AllowedUpdates) {
+  public start(allowedUpdates?: AllowedUpdates) {
     if (this.isPolling) {
       logger.warn('Polling is already active.');
       return;
@@ -33,8 +32,6 @@ export class TelegramPoller {
 
     this.isPolling = true;
     logger.info('🚀 Telegram Long Polling started.');
-
-    await this.bot.deleteWebhook(true);
 
     void this.pollLoop(allowedUpdates);
   }
@@ -53,8 +50,12 @@ export class TelegramPoller {
           ...(allowedUpdates && { allowed_updates: allowedUpdates }),
         });
 
-        if (result.ok && result.data.length > 0) {
-          this.processUpdates(result.data);
+        if (result.length > 0) {
+          for (const update of result) {
+            // Update offset to acknowledge this update
+            this.offset = update.update_id + 1;
+            void this.updateHandler.handleUpdate(update);
+          }
         }
       } catch (err: unknown) {
         logger.error('Polling error occurred:', { err });
@@ -63,13 +64,5 @@ export class TelegramPoller {
       }
     }
     logger.info('Telegram Long Polling stopped.');
-  }
-
-  private processUpdates(updates: Update[]) {
-    for (const update of updates) {
-      // Update offset to acknowledge this update
-      this.offset = update.update_id + 1;
-      void this.updateHandler.handle(update);
-    }
   }
 }

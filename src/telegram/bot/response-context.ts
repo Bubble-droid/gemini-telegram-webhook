@@ -21,6 +21,10 @@ export class ResponseContext {
     public readonly api: TelegramBotApi,
   ) {}
 
+  public get latestRepliedMessageId() {
+    return this.repliedMessageId;
+  }
+
   public get callbackQuery() {
     return this.update.callback_query;
   }
@@ -104,18 +108,29 @@ export class ResponseContext {
 
   public async reply(text: string, opts?: BotApiOptions<'sendMessage', 2>) {
     const result = await this.api.sendMessage(this.chat.id, text, {
-      ...opts,
       replyToMessageId: this.message?.message_id,
+      ...opts,
     });
     this.updateRepliedMessageId(result);
     return result;
   }
 
-  public replyWithDocument(file: File, opts?: BotApiOptions<'sendDocument', 2>) {
-    return this.api.sendDocument(this.chat.id, file, {
-      ...opts,
+  public replyWithDocument(document: File, opts?: BotApiOptions<'sendDocument', 2>) {
+    return this.api.sendDocument(this.chat.id, document, {
       replyToMessageId: this.message?.message_id,
+      ...opts,
     });
+  }
+
+  public replyWithPhoto(photo: File, opts?: BotApiOptions<'sendPhoto', 2>) {
+    return this.api.sendPhoto(this.chat.id, photo, {
+      replyToMessageId: this.message?.message_id,
+      ...opts,
+    });
+  }
+
+  public replyWithChatAction(action: BotApiOptions<'sendChatAction', 1>, opts?: BotApiOptions<'sendChatAction', 2>) {
+    return this.api.sendChatAction(this.chat.id, action, opts);
   }
 
   public send(text: string, opts?: Omit<BotApiOptions<'sendMessage', 2>, 'replyToMessageId'>) {
@@ -131,7 +146,14 @@ export class ResponseContext {
     return this.api.editMessageText(this.chat.id, this.callbackQueryMessage!.message_id, text, opts);
   }
 
-  public reaction(emoji: ReactionTypeEmoji['emoji'], messageId?: Integer) {
+  public delete(messageId?: Integer) {
+    return this.api.deleteMessage(
+      this.chat.id,
+      messageId ?? this.callbackQueryMessage?.message_id ?? this.message?.message_id!,
+    );
+  }
+
+  public react(emoji: ReactionTypeEmoji['emoji'], messageId?: Integer) {
     return this.api.setMessageReaction(this.chat.id, messageId ?? this.message?.message_id!, emoji);
   }
 

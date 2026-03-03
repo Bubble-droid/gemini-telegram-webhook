@@ -54,8 +54,7 @@ export const RESEARCH_TOOLS = (mcpServers: LoadedMcpServer[]) => {
     {
       name: 'file_search',
       description: `
-**[PRIORITY 1: PRIMARY KNOWLEDGE SOURCE]**
-Performs a high-speed semantic search within the vector file stores (knowledge bases).
+Performs a high-speed semantic search within the RAG file stores (knowledge bases).
 This is your **FIRST RESORT** for finding factual evidence, configuration details, or source code analysis of internal projects.
 
 **Usage Strategy:**
@@ -91,7 +90,6 @@ This is your **FIRST RESORT** for finding factual evidence, configuration detail
     {
       name: 'delegate_to_agent',
       description: `
-**[PRIORITY 2: SPECIALIZED AGENTS]**
 Delegates tasks to specialized Model Context Protocol (MCP) servers.
 Use this when you need to interact with external APIs or fetch official library documentation.
 
@@ -128,7 +126,6 @@ ${mcpServers.map(({ name, description }) => `- **${name}**: ${description}`).joi
     {
       name: 'web_search',
       description: `
-**[PRIORITY 3: INTERNET INTELLIGENCE & DISCOVERY]**
 Executes a Google Search to retrieve current events, real-time data, or broad internet knowledge.
 
 **Usage Strategy:**
@@ -155,7 +152,6 @@ Executes a Google Search to retrieve current events, real-time data, or broad in
     {
       name: 'web_fetch',
       description: `
-**[PRIORITY 3: DEEP CONTEXT ACQUISITION]**
 Retrieves and processes the full textual content of specific URLs (HTTP/HTTPS).
 
 **Usage Strategy:**
@@ -183,7 +179,6 @@ export const VIDEO_TOOLS = [
   {
     name: 'analyze_youtube_video',
     description: `
-**[NATIVE VIDEO INTELLIGENCE]**
 If the user provides a link to a full YouTube video, this tool can be used to analyze it.
 Processes YouTube videos directly via multimodal vision capabilities (no text transcripts).
 Use this tool to "watch" a video and extract visual details, audio nuances, and temporal events that text-only tools miss.
@@ -231,7 +226,6 @@ The natural language instruction for processing the video. Be specific to get th
   {
     name: 'generate_image',
     description: `
-**[PRIORITY 2: MULTIMODAL VISUAL ARCHITECT]**
 Delegates image generation and visual reasoning to multimodal engine.
 This tool is designed for professional asset production, utilizing advanced "Thinking" to follow complex, multi-turn instructions and render high-fidelity text.
 
@@ -291,7 +285,6 @@ export const COMPUTATION_TOOLS = [
   {
     name: 'code_execution',
     description: `
-**[PROACTIVE EXECUTION REQUIRED]**
 Provides a Python execution environment for mathematical calculations, data analysis, string manipulation, and algorithmic logic.
 
 **Usage Strategy:**
@@ -323,7 +316,6 @@ export const INTERACTIVE_TOOLS = [
   {
     name: 'reply_file',
     description: `
-**[MANDATORY FOR DELIVERING DOWNLOADABLE ARTIFACTS]**
 Generates and sends a downloadable file artifact to the user. This is the **REQUIRED** method for delivering any content that is primarily intended for local storage, execution, or detailed review as a file.
 
 **Usage Strategy:**
@@ -505,7 +497,6 @@ export const STORE_TOOLS = [
   {
     name: 'save_memory',
     description: `
-**[AUTONOMOUS MEMORY MANAGEMENT]**
 Persists information to your long-term memory for future conversations.
 
 **Usage Strategy:**

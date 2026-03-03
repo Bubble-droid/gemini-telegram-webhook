@@ -24,7 +24,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
   const { geminiApiAgent, mcpClient } = deps;
   // const multimodalModelRotator = new ListRotator(shuffleArray(GEMINI_MULTIMODAL_MODELS));
 
-  return (ctx, onStatusUpdate) => ({
+  return (ctx, updateStatus) => ({
     file_search: async (args) => {
       const { prompt, file_search_stores, system_prompt } = args;
       if (!file_search_stores.length) {
@@ -39,7 +39,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
       }
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
       const result = (await geminiApiAgent.run(contents, {
-        onStatusUpdate,
+        updateStatus,
         generateConfig: {
           temperature: 0.7,
           systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
@@ -60,7 +60,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
       const { prompt, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
       const result = (await geminiApiAgent.run(contents, {
-        onStatusUpdate,
+        updateStatus,
         generateConfig: {
           temperature: 0.7,
           systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
@@ -81,7 +81,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
       const { prompt, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
       const result = (await geminiApiAgent.run(contents, {
-        onStatusUpdate,
+        updateStatus,
         generateConfig: {
           temperature: 0.4,
           systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
@@ -102,7 +102,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
       const { agent_name, objective, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: objective }] }];
       const result = (await geminiApiAgent.run(contents, {
-        onStatusUpdate,
+        updateStatus,
         callTool: (name, args) => {
           return mcpClient.callTool(name, args);
         },
@@ -133,7 +133,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
         },
       ];
       const result = (await geminiApiAgent.run(contents, {
-        onStatusUpdate,
+        updateStatus,
         generateConfig: {
           temperature: 0.7,
           systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
@@ -152,7 +152,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
         },
       ];
       const result = await geminiCliAgent.run(contents, {
-        onStatusUpdate,
+        updateStatus,
         generateConfig: {
           temperature: 0.7,
           systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
@@ -188,7 +188,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
       const { prompt, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
       const result = (await geminiApiAgent.run(contents, {
-        onStatusUpdate,
+        updateStatus,
         generateConfig: {
           temperature: 0,
           systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
@@ -224,16 +224,18 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
 
     seek_clarification: async (args) => {
       const { question, answers } = args;
-      const InlineKeyboardButtons: InlineKeyboardButton[][] = answers.map((answer, i): InlineKeyboardButton[] => {
-        return [
-          {
-            text: answer,
+      const InlineKeyboardButtons: InlineKeyboardButton[][] = [
+        answers.map((_a, i): InlineKeyboardButton => {
+          return {
+            text: String(i + 1),
             callback_data: `answer_${ctx.user.id}_${i}`,
-          },
-        ];
-      });
+          };
+        }),
+      ];
 
-      const result = await ctx.updateMessage(markdownToMarkdownV2(question), {
+      const candidate = answers.map((a, i) => `${i + 1}. ${a}`).join('\n');
+      const text = `${question}\n\n<select>\n${candidate}\n</select>`;
+      const result = await ctx.updateMessage(markdownToMarkdownV2(text), {
         reply_markup: { inline_keyboard: InlineKeyboardButtons },
         parse_mode: 'MarkdownV2',
       });

@@ -59,8 +59,8 @@ export class UpdateHandler {
   public command(name: CommandType, handle: UpdateHandleCallback) {
     this.on('message', async (ctx, done) => {
       if (!ctx.isBotCommand || ctx.command?.name !== name) return;
-      await handle(ctx, done);
       done();
+      await handle(ctx, done);
     });
   }
 
@@ -73,8 +73,8 @@ export class UpdateHandler {
       const isMatch =
         typeof pattern === 'string' ? data === pattern || data.startsWith(`${pattern}_`) : pattern.test(data);
       if (!isMatch) return;
-      await handle(ctx, done);
       done();
+      await handle(ctx, done);
     });
   }
 

@@ -11,7 +11,11 @@ export const loadLowdb = <T>(path: string, data: T): LowSync<T> => {
   }
   const adapter = new JSONFileSync<T>(path);
   const db = new LowSync(adapter, data);
-  db.read();
+  try {
+    db.read();
+  } catch {
+    //
+  }
   db.data ??= { ...data };
   db.write();
   return db;

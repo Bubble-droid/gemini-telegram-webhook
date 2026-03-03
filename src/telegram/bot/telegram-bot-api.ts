@@ -74,6 +74,10 @@ export class TelegramBotApi {
     return this.requestJson('deleteWebhook', { drop_pending_updates });
   }
 
+  public getMe() {
+    return this.requestJson('getMe', {});
+  }
+
   public async publishTelegraphPost(postTitle: string, markdown: string) {
     const nodes = await markdownToTelegraph(markdown);
     const page = await this.telegraph.createPage({

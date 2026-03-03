@@ -143,7 +143,7 @@ const start = async () => {
         logger.warn('Failed to set bot commands:', { err });
       });
       if (c.permissions) {
-        if (await canPerformAction(ctx)) {
+        if (!(await canPerformAction(ctx))) {
           return;
         }
       }
@@ -171,14 +171,13 @@ const start = async () => {
 
   updateHandler.message(async (ctx, done) => {
     if (!ctx.isBotMentioned) return;
+    done();
     const messages = await messageCollector.getMessages(ctx.message!);
     await mentionHandler.handle(ctx, messages);
-    done();
   });
 
-  updateHandler.message(async (ctx, done) => {
+  updateHandler.message(async (ctx) => {
     await normalMessageHandler.handle(ctx);
-    done();
   });
 
   logger.info(`Environment: ${process.env['NODE_ENV']}`);

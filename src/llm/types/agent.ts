@@ -6,6 +6,7 @@ import type {
 } from '@google/genai';
 import type { MaybePromise, Recordable } from '@shared/types/common.js';
 import type { JSONSchema } from '@shared/types/schema.js';
+import type { ResponseContext } from '@telegram/bot/response-context.js';
 import type { ChatCompletionCreateParamsBase } from 'openai/resources/chat/completions.mjs';
 
 export type BaseToolResult<R = unknown> = MaybePromise<StandardizedFunctionResponse<R>>;
@@ -19,9 +20,9 @@ export interface CallBackFns {
 }
 
 export interface GeminiAgentOpts {
-  maxRounds?: number;
+  ctx: ResponseContext;
   callTool?: ToolCall;
-  onStatusUpdate?: StatusUpdateCallback | undefined;
+  updateStatus?: StatusUpdateCallback | undefined;
   generateConfig?: GenerateContentConfig | undefined;
   generateModel?: GenerateContentParameters['model'];
 }

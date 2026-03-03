@@ -3,6 +3,12 @@
     {
       "path": "./",
     },
+    {
+      "path": "../../tmp/telegram-bot-api",
+    },
+    {
+      "path": "../openai-api-client",
+    },
   ],
   "settings": {
     "typescript.format.enable": false,

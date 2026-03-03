@@ -22,7 +22,7 @@ export class AppError extends Error {
     }
 
     try {
-      const err = error instanceof Error ? error : new AppError(String(error));
+      const err = error instanceof Error ? error : new AppError(typeof error === 'string' ? error : String(error));
       const rawStack = err.stack ?? 'No stack trace available';
       const currentTime = formatTime(Date.now());
 

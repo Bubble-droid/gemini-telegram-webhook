@@ -13,7 +13,7 @@ import { CONFIG } from '@shared/core/config.js';
 import { AgentError, AppError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import { markdownToMarkdownV2, markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
-import { formatTime, ms } from '@shared/utils/helpers.js';
+import { delay, formatTime, ms } from '@shared/utils/helpers.js';
 import { hasFile } from '@shared/utils/message.js';
 import { isCoreContentSimilar } from '@shared/utils/string-similarity.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
@@ -99,18 +99,15 @@ export class MentionHandler {
     contents: Content[],
     ctx: ResponseContext,
   ): Promise<GenerateContentResponse | Content[]> {
-    const userId = ctx.user.id;
-    const userLanguage = ctx.user.language_code;
-    const chatId = ctx.chat.id;
-    const messageId = ctx.message?.message_id;
+    const { chat, user, message } = ctx;
 
     logger.info(`Processing over to ChatAgent`, {
-      chatId,
-      userId,
-      messageId,
+      chatId: chat.id,
+      userId: user.id,
+      messageId: message?.message_id,
     });
 
-    const onStatusUpdate = async (text: string) => {
+    const updateStatus = async (text: string) => {
       await ctx.updateMessage(markdownToMarkdownV2(text), { parse_mode: 'MarkdownV2' }).catch((err: unknown) => {
         logger.warn(`Update status message failed.`, { err });
       });
@@ -118,15 +115,15 @@ export class MentionHandler {
 
     const systemPrompt = promptStore.format('assistant', {
       time: formatTime(Date.now()),
-      chatId: String(chatId),
-      userId: String(userId),
-      userLanguage: userLanguage ?? 'unknown',
-      messageId: String(messageId),
-      userMemories: longTermMemory.getMemories(userId),
+      chat: JSON.stringify(chat),
+      user: JSON.stringify(user),
+      messageId: String(message?.message_id),
+      userMemories: longTermMemory.getMemories(user.id),
     });
 
     return this.agent.run(contents, {
-      onStatusUpdate,
+      ctx,
+      updateStatus,
       generateConfig: {
         temperature: 0,
         systemInstruction: [{ text: systemPrompt }],
@@ -134,7 +131,7 @@ export class MentionHandler {
         toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
       },
       callTool: (name, args) => {
-        return this.toolCaller(ctx, onStatusUpdate)[name as ToolName](args as never);
+        return this.toolCaller(ctx, updateStatus)[name as ToolName](args as never);
       },
     });
   }
@@ -145,9 +142,12 @@ export class MentionHandler {
     completeContents: Content[],
   ) {
     if (!Array.isArray(response)) {
+      await ctx.replyWithChatAction('typing').catch((err: unknown) => {
+        logger.warn(`Send chat action failed.`, { err });
+      });
       const text = `${response.text?.trim()}\n\n *Reply by ${response.modelVersion}*`;
-      const chunks = markdownToMarkdownV2Chunks(text);
-      if (chunks.length > 1) {
+      const chunks = markdownToMarkdownV2Chunks(text, 300);
+      if (chunks.length > 20) {
         const page = await ctx.api.publishTelegraphPost(text.split('\n')[0]!.slice(0, 256), text);
         const textToSend = markdownToMarkdownV2(`内容过长，[点击这里查看](${page.url})`);
         await ctx.updateMessage(textToSend, {
@@ -156,10 +156,20 @@ export class MentionHandler {
           deleteAfterMs: ms['1d'],
         });
       } else {
-        await ctx.updateMessage(chunks.join(''), {
-          parse_mode: 'MarkdownV2',
-          deleteAfterMs: ms['1d'],
-        });
+        for (const [i, chunk] of chunks.entries()) {
+          if (i === 0) {
+            await ctx.updateMessage(chunk, {
+              parse_mode: 'MarkdownV2',
+              deleteAfterMs: ms['1d'],
+            });
+          } else {
+            await ctx.send(chunk, {
+              parse_mode: 'MarkdownV2',
+              deleteAfterMs: ms['1d'],
+            });
+          }
+          await delay(1_500);
+        }
       }
     }
     if (Array.isArray(response)) {

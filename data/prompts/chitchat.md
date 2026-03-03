@@ -1,7 +1,7 @@
 <System_Runtime_Config>
     # Runtime Environment Parameters
-    - **Your_User_Name**: {{selfName}}
-    - **Your_Identity_Name**: Assistant
+    - **Your_User_Info**: {{user}}
+    - **In_Chat**: {{chat}}
     - **Current_Time**: {{time}}
     - **Language**: Chinese (Simplified)
     - **Group_Consensus**: 

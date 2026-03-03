@@ -1,7 +1,7 @@
 import { chatHistory } from '@data/chat-history.js';
 import { faqMatcher } from '@data/faq-matcher.js';
 import { promptStore } from '@data/prompt-store.js';
-import type { BotCommand } from '@grammyjs/types';
+import type { BotCommand, InlineKeyboardButton } from '@grammyjs/types';
 import { CONFIG } from '@shared/core/config.js';
 import { markdownToMarkdownV2 } from '@shared/markdown/telegram-converter.js';
 import type { MaybePromise } from '@shared/types/common.js';
@@ -27,6 +27,28 @@ export const canPerformAction = async (ctx: ResponseContext) => {
 };
 
 export const COMMANDS = [
+  {
+    command: 'test',
+    description: '测试',
+    permissions: true,
+    action: async ({ ctx }) => {
+      await ctx.reaction('👍');
+      const InlineKeyboardButtons: InlineKeyboardButton[][] = [
+        COMMANDS.map((_c, i): InlineKeyboardButton => {
+          return {
+            text: String(i + 1),
+            callback_data: `select_${i}`,
+          };
+        }),
+      ];
+      const candidate = COMMANDS.map((c, i) => `${i + 1}. ${c.command} - ${c.description}`).join('\n');
+      const text = `<select>\n${candidate}\n</select>`;
+      await ctx.reply(markdownToMarkdownV2(text), {
+        reply_markup: { inline_keyboard: InlineKeyboardButtons },
+        parse_mode: 'MarkdownV2',
+      });
+    },
+  },
   {
     command: 'start',
     description: '开始使用',
@@ -64,6 +86,18 @@ export const COMMANDS = [
   },
 
   // Admin Commands
+  {
+    command: 'rm',
+    description: '删除消息',
+    permissions: true,
+    action: async ({ ctx }) => {
+      for (const id of [ctx.replyToMessage?.message_id, ctx.message?.message_id]) {
+        if (id) {
+          await ctx.delete(id);
+        }
+      }
+    },
+  },
   {
     command: 'reload_prompts',
     description: '重载所有系统指令',

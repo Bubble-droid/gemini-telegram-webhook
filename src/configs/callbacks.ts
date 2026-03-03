@@ -20,14 +20,15 @@ export const CALLBACKS = [
     data: 'answer',
     action: async (args) => {
       const { ctx, mentionHandler } = args;
-      const [, targetUser, answerIndex] = ctx.callbackQueryData.split('_');
-      if (ctx.user.id !== Number(targetUser) || !answerIndex) return;
-      const answer = ctx.callbackQueryMessage?.reply_markup?.inline_keyboard[Number(answerIndex)]?.[0]?.text!;
-      const answered = `Question: ${ctx.callbackQueryMessage?.text}\n\nAnswer: ${answer}`;
+      const [, targetUser, index] = ctx.callbackQueryData.split('_');
+      if (ctx.user.id !== Number(targetUser) || index === undefined) return;
+      const matched = /<select>(?<content>[\s\S]*?)<\/select>/gi.exec(ctx.callbackQueryMessage?.text!);
+      if (!matched) return;
+      const selectedAnswer = matched.groups!['content']!.trim().split('\n')[Number(index)]?.replace(/\d+\./, '').trim();
+      if (!selectedAnswer) return;
+      const answered = `Question: ${ctx.callbackQueryMessage?.text?.replace(/<select>[\s\S]*?<\/select>/gi, '').trim()}\n\nAnswer: ${selectedAnswer}`;
       await ctx.updateCallbackMessage(answered);
-
       const replyToMessage = ctx.callbackQueryMessage?.reply_to_message as unknown as Update['message'];
-
       const update: Update = {
         update_id: ctx.update.update_id + 1,
         message: {
@@ -39,7 +40,7 @@ export const CALLBACKS = [
           from: {
             ...replyToMessage?.from!,
           },
-          text: answer,
+          text: selectedAnswer,
         },
       };
       const responseContext = new ResponseContext(update, ctx.api);

@@ -8,6 +8,7 @@ import type { ToolName } from '@llm/types/tool.js';
 import { THOUGHT_SIGNATURE_PLACEHOLDER } from '@shared/core/constants.js';
 import { AgentError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
+import { markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
 import { delay, ms } from '@shared/utils/helpers.js';
 
 const MAX_AGENT_ROUNDS = 16;
@@ -31,22 +32,12 @@ const createToolResponse = (
 const handleToolCall = async (
   call: FunctionCall,
   callTool: NonNullable<GeminiAgentOpts['callTool']>,
-  responseText: string | undefined,
-  onStatusUpdate?: GeminiAgentOpts['onStatusUpdate'],
 ): Promise<Pick<Part, 'functionResponse'>> => {
   const { id, name, args } = call;
-
   if (!name) {
     return createToolResponse({ response: { error: 'Tool name not provided' } }, 'N/A', id);
   }
-
   logger.info(`Gemini Agent Calling tool:`, { name, args });
-
-  if (onStatusUpdate) {
-    const statusText = `${responseText?.trim() ?? ''}\n\n🔧 Calling ${name}`.trim();
-    await onStatusUpdate(statusText);
-  }
-
   try {
     const result = await callTool(name, args);
     return createToolResponse(result, name, id);
@@ -58,21 +49,19 @@ const handleToolCall = async (
 };
 
 export class GeminiAgent {
-  private client: GeminiApiClient;
+  private readonly maxRounds = MAX_AGENT_ROUNDS;
 
-  constructor(client: GeminiApiClient) {
-    this.client = client;
-  }
+  constructor(private readonly client: GeminiApiClient) {}
 
   public async run(contents: Content[], opts: GeminiAgentOpts): Promise<GenerateContentResponse | Content[]> {
-    const { maxRounds = MAX_AGENT_ROUNDS, onStatusUpdate, callTool, generateConfig, generateModel } = opts;
+    const { ctx, updateStatus, callTool, generateConfig, generateModel } = opts;
     const agentContents = [...contents];
     let round = 0;
-    let response: GenerateContentResponse;
+    let response: GenerateContentResponse | Content[];
     let functionCalls: FunctionCall[] | undefined;
     do {
-      if (round >= maxRounds) {
-        throw new AgentError(`Agent exceeded maximum rounds (${maxRounds})`);
+      if (round >= this.maxRounds) {
+        throw new AgentError(`Agent exceeded maximum rounds (${this.maxRounds})`);
       }
       logger.debug(`[GeminiAgent] Round ${round++} started.`);
 
@@ -110,9 +99,26 @@ export class GeminiAgent {
 
       logger.debug(`Model requested ${functionCalls.length} tool calls.`);
 
+      for (const part of response.candidates[0].content.parts!) {
+        if (part.text) {
+          const chunks = markdownToMarkdownV2Chunks(part.text.trim(), 300);
+          for (const chunk of chunks) {
+            await ctx.send(chunk, {
+              parse_mode: 'MarkdownV2',
+              deleteAfterMs: ms['1d'],
+            });
+            await delay(1_500);
+          }
+        }
+      }
+
+      await updateStatus?.(
+        `<tool_calls>\n${functionCalls.map((c) => `🔧 Calling ${c.name}`).join('\n')}\n</tool_calls>`.trim(),
+      );
+
       const toolResults = await Promise.all(
         functionCalls.map(async (call): Promise<Part> => {
-          const result = await handleToolCall(call, callTool, response.text, onStatusUpdate);
+          const result = await handleToolCall(call, callTool);
           if (generateModel?.startsWith('gemma-')) {
             return {
               text: JSON.stringify(result),
@@ -123,18 +129,19 @@ export class GeminiAgent {
         }),
       );
 
-      agentContents.push({ role: 'user', parts: toolResults });
-
       if (
         functionCalls.some((call) => !!call.args?.['blocking'] || BLOCK_RESPONSE_TOOLS.includes(call.name as ToolName))
       ) {
         logger.info(`Model calling blocking response tools.`);
-        return agentContents.slice(-2);
+        response = agentContents.slice(-1);
+        break;
       }
+
+      agentContents.push({ role: 'user', parts: toolResults });
 
       await delay(ms.sec(3));
 
-      await onStatusUpdate?.(Messages.thinking);
+      await updateStatus?.(Messages.thinking);
     } while (functionCalls.length > 0);
 
     logger.info(`[GeminiAgent] Task completed`, { rounds: round + 1 });

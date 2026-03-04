@@ -10,9 +10,9 @@ import { logger } from '@shared/core/logger.js';
 import { markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
 import { delay, ms } from '@shared/utils/helpers.js';
 
-const MAX_AGENT_ROUNDS = 16;
+export const MAX_AGENT_ROUNDS = 16;
 
-const FORCE_BLOCKING_TOOLS: string[] = ['seek_clarification'] satisfies ToolName[];
+export const FORCE_BLOCKING_TOOLS: string[] = ['seek_clarification'] satisfies ToolName[];
 
 const createToolResponse = (
   res: StandardizedFunctionResponse,
@@ -137,7 +137,7 @@ export class GeminiAgent {
       logger.debug(`Model requested ${functionCalls.length} tool calls.`);
 
       await updateStatus?.(
-        `<tool_calls>\n${functionCalls.map((c) => `🔧 Calling ${c.name}\nParameters: ${JSON.stringify(c.args).slice(0, 30)}...`).join('\n\n')}\n</tool_calls>`.trim(),
+        `<tool_calls>\n${functionCalls.map((c) => `🔧 Calling ${c.name}\nParameters: ${JSON.stringify(c.args).slice(0, 50)}...`).join('\n\n')}\n</tool_calls>`.trim(),
       );
 
       const toolResults = await Promise.all(

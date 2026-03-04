@@ -46,6 +46,11 @@ const BLOCKING_RESPONSE_PROPERTY = {
   } as const satisfies JSONSchema,
 };
 
+export const DEEP_RESEARCH = {
+  name: 'deep_research',
+  description: '',
+} as const satisfies GeneralFunctionSchema;
+
 /**
  * Tools for information retrieval and external data access. These tools are designed to operate in parallel
  * to provide comprehensive, multi-dimensional research coverage.

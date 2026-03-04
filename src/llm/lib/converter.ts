@@ -1,22 +1,28 @@
 import type { Content } from '@google/genai';
 import type { GeneralFunctionSchema } from '@llm/types/agent.js';
-import type { FunctionParameters } from 'openai/resources';
-import type { ChatCompletionContentPart, ChatCompletionMessage, ChatCompletionMessageParam } from 'openai/resources.js';
+import type {
+  ChatCompletionContentPart,
+  ChatCompletionMessage,
+  ChatCompletionMessageParam,
+  FunctionParameters,
+} from 'openai/resources.js';
 import type { FunctionTool } from 'openai/resources/beta.js';
 
-export const convertGeminiFunctionsToOpenAi = (functions: GeneralFunctionSchema[]): FunctionTool[] => {
-  return functions.map((f) => ({
-    type: 'function',
-    function: {
-      name: f.name,
-      ...(f.description && { description: f.description }),
-      parameters: f.parametersJsonSchema as FunctionParameters,
-      strict: true,
-    },
-  }));
+export const mappingGeminiToolsToOpenAi = (functions: GeneralFunctionSchema[]): FunctionTool[] => {
+  return functions.map(
+    (f): FunctionTool => ({
+      type: 'function',
+      function: {
+        name: f.name,
+        ...(f.description && { description: f.description }),
+        ...(f.parametersJsonSchema && { parameters: f.parametersJsonSchema as FunctionParameters }),
+        strict: true,
+      },
+    }),
+  );
 };
 
-export const convertGeminiContentsToOpenAiMessages = (contents: Content[]): ChatCompletionMessageParam[] => {
+export const mappingGeminiContentsToOpenAiMessages = (contents: Content[]): ChatCompletionMessageParam[] => {
   return contents.map((c): ChatCompletionMessageParam => {
     const { role, parts } = c;
     const chatRole = role === 'user' ? 'user' : 'assistant';

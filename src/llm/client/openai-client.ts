@@ -4,7 +4,7 @@ import { OpenAiApiError } from '@shared/core/errors.js';
 import { ms } from '@shared/utils/helpers.js';
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources';
-import type { ChatCompletion } from 'openai/resources.js';
+import type { ChatCompletion, ChatCompletionCreateParamsNonStreaming } from 'openai/resources.js';
 
 interface ExtraGoogleParams {
   google: {
@@ -17,21 +17,23 @@ interface ExtraGoogleParams {
   };
 }
 
-interface BaseParams extends OpenAiClientParams {
+interface BaseParams extends Omit<OpenAiClientParams, 'model'> {
   extra_body?: ExtraGoogleParams;
 }
 
 export class OpenAiClient {
   private client: OpenAI;
-  private baseParams: BaseParams;
 
-  constructor(apiKey: string, baseURL: string, baseParams: BaseParams) {
+  constructor(
+    apiKey: string,
+    baseURL: string,
+    private readonly baseParams?: BaseParams,
+  ) {
     this.client = new OpenAI({
       apiKey,
       baseURL,
       timeout: ms.min(5),
     });
-    this.baseParams = baseParams;
   }
 
   public async chatCompletion(
@@ -45,7 +47,7 @@ export class OpenAiClient {
         messages,
         n: 1,
         stream: false,
-      });
+      } as ChatCompletionCreateParamsNonStreaming);
     } catch (err) {
       throw new OpenAiApiError(`Request to OpenAI API Failed. ${err instanceof Error ? err.message : String(err)}`);
     }

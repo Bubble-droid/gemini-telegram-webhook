@@ -31,9 +31,7 @@ export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com';
 export const GENERATE_CONTENT = 'generateContent';
 export const GENERATE_CONTENT_STREAM = 'generateContentStream';
 
-export const OPENAI_BASE_URL = 'https://gen.pollinations.ai/v1';
-
-export const OPENAI_MODEL = 'gemini-fast';
+export const OPENAI_BASE_URL = 'https://openrouter.ai/api/v1';
 
 export const DEFAULT_SERVER_LISTEN_PORT = 39001;
 
@@ -56,6 +54,12 @@ export const GEMINI_TEXT_MODELS = [
 export const GEMINI_MULTIMODAL_MODELS = ['gemini-3-pro-image-preview', 'gemini-2.5-flash-image'];
 
 export const GEMMA_MODEL = 'gemma-3-27b-it';
+
+export const OPENAI_MODELS = [
+  'qwen/qwen3-vl-235b-a22b-thinking',
+  'qwen/qwen3-vl-30b-a3b-thinking',
+  'nvidia/nemotron-nano-12b-v2-vl:free',
+];
 
 export const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
 

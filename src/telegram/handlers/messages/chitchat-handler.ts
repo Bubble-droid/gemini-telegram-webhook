@@ -4,18 +4,21 @@ import { longTermMemory } from '@data/long-term-memory.js';
 import { promptStore } from '@data/prompt-store.js';
 import { type Content, type Part } from '@google/genai';
 import type { Chat, Message, MessageOrigin, User } from '@grammyjs/types';
+import { mappingGeminiContentsToOpenAiMessages, mappingGeminiToolsToOpenAi } from '@llm/lib/converter.js';
 import type { McpClient } from '@llm/mcp/mcp-client.js';
 import type { ToolCallerInjectedDeps, ToolName } from '@llm/types/tool.js';
 import type { FileHandler } from '@services/file-service.js';
-import { GEMMA_MODEL } from '@shared/core/constants.js';
+import { OPENAI_MODELS } from '@shared/core/constants.js';
 import { AppError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import type { Recordable } from '@shared/types/common.js';
 import type { ChitchatState } from '@shared/types/telegram.js';
-import { formatTime } from '@shared/utils/helpers.js';
+import { formatTime, shuffleArray } from '@shared/utils/helpers.js';
+import { ListRotator } from '@shared/utils/list-rotator.js';
 import { hasImage } from '@shared/utils/message.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
 import type { HandlerWorkers } from '@telegram/handlers/types.js';
+import type { ChatCompletionMessageParam } from 'openai/resources.js';
 
 // 绝对沉默期：上次回复后，至少要累积这么多“注意力分”才开始从 0 计算概率
 // 相当于人类说完话后的“贤者时间”
@@ -28,6 +31,7 @@ const MAX_ATTENTION_SCORE = 15;
 const HISTORY_LIMIT = 12;
 
 export class ChitchatHandler {
+  private readonly modelList = new ListRotator(shuffleArray(OPENAI_MODELS));
   private readonly locks = new Map<number, Promise<void>>();
   private readonly fileHandler: FileHandler;
   private readonly mcpClient: McpClient;
@@ -55,8 +59,6 @@ export class ChitchatHandler {
   private async handleMessage(ctx: ResponseContext): Promise<boolean> {
     const { chat, message, text } = ctx;
     const state = this.getChatState(chat.id);
-
-    let shouldSave = true;
 
     const messageParts: Part[] = [];
 
@@ -93,16 +95,14 @@ export class ChitchatHandler {
         return false;
       }
 
-      const responseText = await this.requestChat(state, ctx);
-      if (!responseText?.length) {
-        state.currentScore = state.currentScore / 2;
-        logger.warn('闲聊处理器未能生成回复，重置回合目标。', logContext);
-        return false;
-      }
+      const response = await this.requestChat(state, ctx);
 
       logger.info(`[ChitChat] Replying.`, logContext);
 
-      this.appendMessage(state, { role: 'model', parts: [{ text: responseText }] });
+      this.appendMessage(state, {
+        role: 'model',
+        parts: [{ text: response.content ?? JSON.stringify(response.tool_calls) }],
+      });
       state.currentScore = 0;
       return true;
     } catch (err) {
@@ -111,54 +111,41 @@ export class ChitchatHandler {
         await err.notify(err, ctx, 'Handle message failed in ChitchatHandler');
       }
       state.currentScore = state.currentScore / 2;
-      shouldSave = false;
       return false;
     } finally {
-      if (shouldSave) {
-        this.saveState(chat.id, state);
-      }
+      this.saveState(chat.id, state);
     }
   }
 
-  private async requestChat(state: ChitchatState, ctx: ResponseContext): Promise<string | null> {
+  private async requestChat(state: ChitchatState, ctx: ResponseContext) {
     const systemPrompt = promptStore.format('chitchat', {
       user: JSON.stringify(await ctx.api.getMe().catch(() => ({}))),
       chat: JSON.stringify(ctx.chat),
       time: formatTime(Date.now()),
       groupMemories: longTermMemory.getMemories(ctx.chat.id),
-      functions: JSON.stringify(getFunctionTools(this.mcpClient.getLoadedServers()), null, 2),
+      // functions: JSON.stringify(getFunctionTools(this.mcpClient.getLoadedServers()), null, 2),
     });
 
-    const contents: Content[] = [
+    const messages: ChatCompletionMessageParam[] = [
       {
-        role: 'user',
-        parts: [{ text: systemPrompt }],
+        role: 'system',
+        content: [{ type: 'text', text: systemPrompt }],
       },
-      ...state.groupHistory,
+      ...mappingGeminiContentsToOpenAiMessages(state.groupHistory),
     ];
 
-    try {
-      /* tools: convertGeminiFunctionsToOpenAi(getFunctionTools(this.mcpClient.getLoadedServers())),
-          tool_choice: 'auto', */
-      const response = await this.workers.gemmaAgent.run(contents, {
-        ctx,
-        callTool: (name, args) => {
-          return this.toolCaller(ctx)[name as ToolName](args as never);
-        },
-        generateModel: GEMMA_MODEL,
-        generateConfig: {
-          temperature: 0.7,
-        },
-      });
-
-      return Array.isArray(response) ? null : response.text!;
-    } catch (err) {
-      logger.error('Chat request failed', { err });
-      if (err instanceof AppError) {
-        await err.notify(err, ctx, 'Chat request failed in ChitchatHandler');
-      }
-      return null;
-    }
+    return this.workers.openAiAgent.run(messages, {
+      ctx,
+      callTool: (name, args) => {
+        return this.toolCaller(ctx)[name as ToolName](args as never);
+      },
+      params: {
+        model: this.modelList.next(),
+        temperature: 0.7,
+        tools: mappingGeminiToolsToOpenAi(getFunctionTools(this.mcpClient.getLoadedServers())),
+        tool_choice: 'auto',
+      },
+    });
   }
 
   /**

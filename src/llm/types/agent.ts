@@ -26,7 +26,6 @@ export interface GeminiAgentOpts {
   updateStatus?: StatusUpdateCallback | undefined;
   generateConfig?: GenerateContentConfig | undefined;
   generateModel?: GenerateContentParameters['model'];
-  stream?: boolean;
 }
 
 export interface GeminiAgentResponse extends Pick<GenerateContentResponse, 'candidates' | 'modelVersion'> {

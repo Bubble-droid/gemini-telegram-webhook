@@ -22,13 +22,11 @@ import { CONFIG } from '@shared/core/config.js';
 import {
   CLI_PROXY_BASE_URL,
   DATA_DIR,
-  GEMINI_API_SAFETY_SETTINGS,
   GEMINI_CLIENT_BASE_CONFIG,
   GEMINI_PROXY_BASE_URL,
   GEMINI_SAFETY_SETTINGS,
   MCP_SERVERS_FILE,
   OPENAI_BASE_URL,
-  OPENAI_MODEL,
 } from '@shared/core/constants.js';
 import { TelegraphError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
@@ -91,18 +89,7 @@ const start = async () => {
   const geminiCliAgent = new GeminiAgent(geminiCliClient);
   const gemmaAgent = new GeminiAgent(gemmaClient);
 
-  const openAiClient = new OpenAiClient(CONFIG.OPENAI_API_KEY, OPENAI_BASE_URL, {
-    model: OPENAI_MODEL,
-    extra_body: {
-      google: {
-        thinking_config: {
-          include_thoughts: false,
-          thinking_budget: -1,
-        },
-        safety_settings: GEMINI_API_SAFETY_SETTINGS,
-      },
-    },
-  });
+  const openAiClient = new OpenAiClient(CONFIG.OPENAI_API_KEY, OPENAI_BASE_URL);
 
   const openAiAgent = new OpenAiAgent(openAiClient);
 

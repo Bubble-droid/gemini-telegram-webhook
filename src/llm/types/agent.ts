@@ -3,6 +3,7 @@ import type {
   FunctionResponse,
   GenerateContentConfig,
   GenerateContentParameters,
+  GenerateContentResponse,
 } from '@google/genai';
 import type { MaybePromise, Recordable } from '@shared/types/common.js';
 import type { JSONSchema } from '@shared/types/schema.js';
@@ -20,11 +21,18 @@ export interface CallBackFns {
 }
 
 export interface GeminiAgentOpts {
-  ctx: ResponseContext;
+  ctx?: ResponseContext;
   callTool?: ToolCall;
   updateStatus?: StatusUpdateCallback | undefined;
   generateConfig?: GenerateContentConfig | undefined;
   generateModel?: GenerateContentParameters['model'];
+  stream?: boolean;
+}
+
+export interface GeminiAgentResponse extends Pick<GenerateContentResponse, 'candidates' | 'modelVersion'> {
+  text?: string | undefined;
+  executableCode?: string | undefined;
+  codeExecutionResult?: string | undefined;
 }
 
 export type NormalizedResponse<T = unknown> = { output: T; error?: never } | { error: string; output?: never };

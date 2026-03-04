@@ -8,7 +8,8 @@ import {
   DEFAULT_TEMPERATURE,
   GEMINI_MULTIMODAL_MODELS,
   GEMINI_TEXT_MODELS,
-  GENERATE_CONTENT_METHOD,
+  GENERATE_CONTENT,
+  GENERATE_CONTENT_STREAM,
   THINKING_CONFIG_BUDGET,
   THINKING_CONFIG_LEVER,
 } from '@shared/core/constants.js';
@@ -60,7 +61,7 @@ export const handleGeminiProxyRequest =
     const { params, body } = req;
     const { modelAndMethod } = params;
     const [originalModel, method] = modelAndMethod.split(':');
-    if (method !== GENERATE_CONTENT_METHOD) {
+    if (method !== GENERATE_CONTENT && method !== GENERATE_CONTENT_STREAM) {
       logger.warn(`Unsupported method: ${method}`);
       rep.code(400).type('application/json').send({ error: 'Bad Request' });
       return;

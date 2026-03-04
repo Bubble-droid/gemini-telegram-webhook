@@ -1,5 +1,6 @@
 import { pathResolver } from '@data/path-resolver.js';
-import type { GenerateContentResponse, GroundingChunk } from '@google/genai';
+import type { GroundingChunk } from '@google/genai';
+import type { GeminiAgentResponse } from '@llm/types/agent.js';
 
 /**
  * 辅助函数：将 UTF-8 字节索引转换为 JavaScript 字符串索引
@@ -45,9 +46,9 @@ const extractCitationUrl = (chunk: GroundingChunk): string | null => {
  * @param response Gemini API 的完整响应对象
  * @returns 处理后包含 Markdown 引用的文本
  */
-export const addCitations = (response: GenerateContentResponse): string => {
+export const addCitations = (response: GeminiAgentResponse): string => {
   // 1. 获取原始文本 (兼容 SDK 快捷字段和 Raw JSON)
-  let text = response.text ?? response.candidates?.[0]?.content?.parts?.[0]?.text ?? 'No text found.';
+  let text = response.text ?? 'No text found.';
 
   const candidate = response.candidates?.[0];
   const metadata = candidate?.groundingMetadata;

@@ -47,20 +47,21 @@ const BLOCKING_RESPONSE_PROPERTY = {
 };
 
 /**
- * Tools for information retrieval and external data access.
+ * Tools for information retrieval and external data access. These tools are designed to operate in parallel
+ * to provide comprehensive, multi-dimensional research coverage.
  */
 export const RESEARCH_TOOLS = (mcpServers: LoadedMcpServer[]) => {
   return [
     {
       name: 'file_search',
       description: `
-Performs a high-speed semantic search within the RAG file stores (knowledge bases).
-This is your **FIRST RESORT** for finding factual evidence, configuration details, or source code analysis of internal projects.
+Performs a high-speed semantic search within the RAG file stores (internal knowledge bases).
+This tool provides **static, structured, and highly relevant internal documentation and configuration details.**
 
-**Usage Strategy:**
-1. **Multi-Store Search**: Always search across multiple relevant stores simultaneously to ensure comprehensive coverage. (e.g., for a "SingBox" query, search both 'sing-box' and 'gui-for-cores' stores).
-2. **Specificity**: Use technical terms in your prompt to improve match accuracy.
-3. **Fallback**: Exhaust this internal search first before relying on general internet searches or external APIs (if such alternative capabilities are available to you).
+**Usage Strategy in Parallel Research:**
+1.  **High-Efficiency First Pass**: Leverage this tool for rapid retrieval of foundational knowledge, internal project specifics, and known configurations.
+2.  **Multi-Store Search**: Always search across multiple relevant stores simultaneously to ensure comprehensive coverage within the internal knowledge base (e.g., for a "SingBox" query, search both 'sing-box' and 'gui-for-cores' stores).
+3.  **Specificity**: Use technical terms in your prompt to improve match accuracy.
 `.trim(),
       parametersJsonSchema: {
         type: 'object',
@@ -74,7 +75,7 @@ This is your **FIRST RESORT** for finding factual evidence, configuration detail
           file_search_stores: {
             type: 'array',
             description:
-              'The specific knowledge bases to search against. Select ALL stores that might contain relevant info.',
+              'The specific internal knowledge bases to search against. Select ALL stores that might contain relevant info.',
             items: {
               type: 'string',
               format: 'enum',
@@ -90,14 +91,14 @@ This is your **FIRST RESORT** for finding factual evidence, configuration detail
     {
       name: 'delegate_to_agent',
       description: `
-Delegates tasks to specialized Model Context Protocol (MCP) servers.
-Use this when you need to interact with external APIs or fetch official library documentation.
+Delegates tasks to specialized Model Context Protocol (MCP) servers, which act as dedicated sub-agents for specific external data sources or APIs.
+This tool is used for targeted, external data acquisition as part of a parallel research strategy.
 
 **[CRITICAL CONSTRAINT: TOKEN SAFETY & PAGINATION]**
 When delegating tasks that involve lists (e.g., fetching GitHub issues, commits, file trees, or search results), you **MUST** explicitly instruct the sub-agent (via \`system_prompt\` or \`objective\`) to:
-1. **Strictly Limit Response Size**: ALWAYS set \`per_page\`, \`limit\`, or \`max_results\` to conservative values (recommended: **10-20 items** max).
-2. **Paginate, Don't Dump**: NEVER attempt to fetch an entire dataset in a single turn. Instruct the agent to fetch Page 1, analyze it, and *only then* fetch Page 2 if necessary.
-3. **Avoid Token Overflow**: Massive JSON responses will crash the conversation. Prioritize filtering (e.g., by status or date) over fetching all data.
+1.  **Strictly Limit Response Size**: ALWAYS set \`per_page\`, \`limit\`, or \`max_results\` to conservative values (recommended: **10-20 items** max).
+2.  **Paginate, Don't Dump**: NEVER attempt to fetch an entire dataset in a single turn. Instruct the agent to fetch Page 1, analyze it, and *only then* fetch Page 2 if necessary.
+3.  **Avoid Token Overflow**: Massive JSON responses will crash the conversation. Prioritize filtering (e.g., by status or date) over fetching all data.
 
 Available agents:
 ${mcpServers.map(({ name, description }) => `- **${name}**: ${description}`).join('\n')}
@@ -126,15 +127,12 @@ ${mcpServers.map(({ name, description }) => `- **${name}**: ${description}`).joi
     {
       name: 'web_search',
       description: `
-Executes a Google Search to retrieve current events, real-time data, or broad internet knowledge.
+Executes a Google Search to retrieve **current events, real-time data, or broad internet knowledge that is often unstructured and potentially noisy.**
 
-**Usage Strategy:**
-- **Priority Management**: Use this as a fallback ONLY if internal/domain-specific knowledge bases or specialized agents are unavailable or have failed to yield results.
-- **Scope**: Use for questions like "latest release date of Node.js", "current exchange rates", or general world knowledge.
-
-**Proactive Chaining Strategy:**
-1.  **Discovery & Deep Dive**: Use this tool to discover relevant URLs. If you possess capabilities to fetch and read web pages, immediately use them to extract the actual content of the discovered links.
-2.  **Data Acquisition**: Gather real-time data or statistical facts, which can then be passed to computational or programmatic execution tools (if available) for complex analysis or visualization.
+**Usage Strategy in Parallel Research:**
+-   **Broad Discovery**: Use this tool to discover general information, external documentation, or discussions on topics not covered by internal or dedicated agents.
+-   **Real-time Data**: Ideal for queries requiring the absolute latest information (e.g., "latest release date of Node.js", "current exchange rates").
+-   **Proactive Chaining Strategy**: Use this tool to discover relevant URLs. If you possess capabilities to fetch and read web pages, immediately use \`web_fetch\` to extract the actual content of the discovered links for deeper analysis.
 `.trim(),
       parametersJsonSchema: {
         type: 'object',
@@ -155,9 +153,9 @@ Executes a Google Search to retrieve current events, real-time data, or broad in
 Retrieves and processes the full textual content of specific URLs (HTTP/HTTPS).
 
 **Usage Strategy:**
-- **BE PROACTIVE**: Do NOT wait for the user to ask "can you read this link?".
-- **Autonomous Context Expansion**: If the conversation context, user input, or your prior research reveals a URL containing critical technical details, API references, or release notes, you MUST fetch and read it immediately.
-- **Verification**: Use this to verify uncertain or generalized information by checking the actual primary source.
+-   **BE PROACTIVE**: Do NOT wait for the user to ask "can you read this link?".
+-   **Autonomous Context Expansion**: If the conversation context, user input, or your prior research (especially from \`web_search\`) reveals a URL containing critical technical details, API references, or release notes, you MUST fetch and read it immediately.
+-   **Verification**: Use this to verify uncertain or generalized information by checking the actual primary source.
 `.trim(),
       parametersJsonSchema: {
         type: 'object',
@@ -426,7 +424,6 @@ Publishes a long-form article, document, or tutorial as a web-based post. This t
     parametersJsonSchema: {
       type: 'object',
       properties: {
-        ...BLOCKING_RESPONSE_PROPERTY,
         title: {
           type: 'string',
           description: 'The title of the web page (1-256 characters).',
@@ -525,6 +522,6 @@ Persists information to your long-term memory for future conversations.
 
   {
     name: 'discover_mcp_servers',
-    description: 'You can use this tool to find all configured MCP servers.',
+    description: 'You can use this tool to find all configured MCP servers and all the tools each server has.',
   },
 ] as const satisfies GeneralFunctionSchema[];

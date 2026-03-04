@@ -10,10 +10,9 @@ import type { FileHandler } from '@services/file-service.js';
 import { GEMMA_MODEL } from '@shared/core/constants.js';
 import { AppError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
-import { markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
 import type { Recordable } from '@shared/types/common.js';
 import type { ChitchatState } from '@shared/types/telegram.js';
-import { delay, formatTime, ms } from '@shared/utils/helpers.js';
+import { formatTime } from '@shared/utils/helpers.js';
 import { hasImage } from '@shared/utils/message.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
 import type { HandlerWorkers } from '@telegram/handlers/types.js';
@@ -95,9 +94,7 @@ export class ChitchatHandler {
       }
 
       const responseText = await this.requestChat(state, ctx);
-      const sanitizedResponse = sanitizeResponse(responseText);
-
-      if (!responseText?.length || !sanitizedResponse.length) {
+      if (!responseText?.length) {
         state.currentScore = state.currentScore / 2;
         logger.warn('闲聊处理器未能生成回复，重置回合目标。', logContext);
         return false;
@@ -105,14 +102,6 @@ export class ChitchatHandler {
 
       logger.info(`[ChitChat] Replying.`, logContext);
 
-      const chunks = markdownToMarkdownV2Chunks(sanitizedResponse, 300);
-      for (const chunk of chunks) {
-        await ctx.send(chunk, {
-          parse_mode: 'MarkdownV2',
-          deleteAfterMs: ms['1d'],
-        });
-        await delay(1_500);
-      }
       this.appendMessage(state, { role: 'model', parts: [{ text: responseText }] });
       state.currentScore = 0;
       return true;
@@ -430,152 +419,4 @@ const formatContextToMarkdown = (ctx: Message): string => {
   parts.push(`\n${ctx.text ?? ctx.caption ?? '[Media/File]'}`);
 
   return parts.join('\n');
-};
-
-const SANITIZER_CONFIG = {
-  // Regex pattern to remove <cot> tags and their content
-  cotTagPattern: /<cot>[\s\S]*?<\/cot>/gi,
-
-  // Expanded list of headers found in CoT/Reasoning logs.
-  // We use these to perform an initial "Sledgehammer Cut".
-  reasoningHeaders: [
-    '# Internal Reasoning',
-    '## Internal Reasoning',
-    '# Reasoning Process',
-    '## Perception',
-    '## 1. Perception',
-    '# Analysis',
-    '**Internal Reasoning**',
-    '# Tool Selection',
-    '**Tool Selection**',
-    '# Tool Call',
-    '**Tool Call**',
-    '**Draft Response**',
-    '**Revised Draft Response**',
-    '**Thinking Process**',
-    '**Self-correction**',
-    '**Final Decision**',
-    '**Plan**',
-    '**Hypothesis**',
-  ],
-
-  // Max distance between Chinese characters to be considered part of the same "Island".
-  // If the gap is larger than this (e.g., 50 chars of English), we assume a break between reasoning and response.
-  islandGapThreshold: 60,
-};
-
-/**
- * Checks if a character is a Chinese character.
- */
-const isChineseChar = (char: string): boolean => {
-  return /[\u4e00-\u9fa5]/.test(char);
-};
-
-/**
- * Sanitizes the model response by stripping internal reasoning.
- *
- * Strategy:
- * 1. Remove <cot> tags.
- * 2. Aggressive Header Cut: Find the LAST reasoning header and cut everything before it.
- * 3. Island Detection:
- *    - Scan the remaining text for Chinese characters.
- *    - Group them into "Islands" based on proximity.
- *    - Pick the LAST Island as the user's intended response.
- *    - Extend the start of that Island backwards to capture prefix English words (e.g., "Dev" in "Dev的意思").
- */
-const sanitizeResponse = (rawContent: string | null): string => {
-  if (!rawContent) return '';
-
-  // 1. Basic Cleanup: Remove <cot> tags
-  let content = rawContent.replace(SANITIZER_CONFIG.cotTagPattern, '').trim();
-
-  // 2. Aggressive Header Removal (The Sledgehammer)
-  // Find the LAST occurrence of ANY header. Cut everything before and including it.
-  let lastHeaderEndIndex = -1;
-
-  SANITIZER_CONFIG.reasoningHeaders.forEach((header) => {
-    const idx = content.lastIndexOf(header);
-    if (idx !== -1) {
-      // We want to cut AFTER the header line.
-      // Find the newline after this header.
-      const newlineIdx = content.indexOf('\n', idx);
-      const endOfHeader = newlineIdx !== -1 ? newlineIdx : idx + header.length;
-
-      if (endOfHeader > lastHeaderEndIndex) {
-        lastHeaderEndIndex = endOfHeader;
-      }
-    }
-  });
-
-  if (lastHeaderEndIndex !== -1) {
-    content = content.substring(lastHeaderEndIndex).trim();
-  }
-
-  // 3. Island Detection (The Precision Scalpel)
-  // We now have a string that might still contain English reasoning residue:
-  // e.g., "This fits the persona... "Dev" 通常指的是..."
-
-  // Map out indices of all Chinese characters
-  const chineseIndices: number[] = [];
-  for (let i = 0; i < content.length; i++) {
-    if (isChineseChar(content[i]!)) {
-      chineseIndices.push(i);
-    }
-  }
-
-  // If no Chinese characters found, return content as is (or empty string if strictly enforced)
-  if (chineseIndices.length === 0) {
-    return content;
-  }
-
-  // Group indices into Islands
-  // Island = [start_index, end_index]
-  const islands: { start: number; end: number }[] = [];
-  let currentIslandStart = chineseIndices[0]!;
-  let lastIndex = chineseIndices[0]!;
-
-  for (let i = 1; i < chineseIndices.length; i++) {
-    const currentIndex = chineseIndices[i]!;
-    const distance = currentIndex - lastIndex;
-
-    if (distance > SANITIZER_CONFIG.islandGapThreshold) {
-      // Gap is too big! The previous island has ended.
-      islands.push({ start: currentIslandStart, end: lastIndex });
-      currentIslandStart = currentIndex;
-    }
-    lastIndex = currentIndex;
-  }
-  // Push the final island
-  islands.push({ start: currentIslandStart, end: lastIndex });
-
-  // 4. Select the Target Island
-  // We assume the actual response is the LAST major island.
-  // (Reasoning usually comes first, Response comes last).
-  const targetIsland = islands[islands.length - 1];
-
-  // 5. Backtracking for Sentence Start
-  // The targetIsland.start points to the first Chinese char (e.g., '通' in "Dev" 通常).
-  // We need to walk backwards to find where this sentence actually began.
-  let cutPoint = targetIsland!.start;
-
-  while (cutPoint > 0) {
-    const prevChar = content[cutPoint - 1]!;
-
-    // Stop condition: A distinct sentence terminator followed by a space/newline?
-    // Or just a specific set of "Reasoning Terminators"?
-    // Heuristic: Stop at newlines or explicit punctuation that usually ends English reasoning.
-
-    if (prevChar === '\n') break; // Newline is a hard stop
-
-    // If we hit punctuation (., !, ?), check if it looks like the end of a previous English sentence.
-    // e.g. "witty." -> stop at .
-    if (['.', '!', '?', '。', '！', '？'].includes(prevChar)) {
-      break;
-    }
-
-    // Otherwise, keep walking back (consumes "Dev" or quotes)
-    cutPoint--;
-  }
-
-  return content.substring(cutPoint).trim();
 };

@@ -28,7 +28,8 @@ export const TELEGRAPH_BASE_URL = 'https://api.telegra.ph';
 
 export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com';
 
-export const GENERATE_CONTENT_METHOD = 'generateContent';
+export const GENERATE_CONTENT = 'generateContent';
+export const GENERATE_CONTENT_STREAM = 'generateContentStream';
 
 export const OPENAI_BASE_URL = 'https://gen.pollinations.ai/v1';
 

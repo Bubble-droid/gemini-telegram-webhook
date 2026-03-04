@@ -29,7 +29,9 @@ import { type Account, type Telegraph } from 'telegraph-api-client';
 type CustomParams = CustomReplyParams & AutoDeleteParams;
 
 type MethodExtraParams<M extends ApiMethod> = (M extends `send${string}` ? CustomParams : unknown) &
-  (M extends 'sendMediaGroup' ? Pick<InputMediaDocument<File>, 'caption' | 'parse_mode'> : unknown) &
+  (M extends 'sendMediaGroup' | 'editMessageMedia'
+    ? Pick<InputMediaDocument<File>, 'caption' | 'parse_mode'>
+    : unknown) &
   (M extends `edit${string}` ? AutoDeleteParams : unknown);
 
 type ExtractParamOptions<M extends ApiMethod, X extends keyof ApiParams<M> & string = never> = Evaluate<
@@ -70,7 +72,7 @@ export class TelegramBotApi {
     return this.requestJson('setWebhook', { ...this.buildOptionalParams(opts), url, drop_pending_updates });
   }
 
-  public deleteWebhook(drop_pending_updates: boolean) {
+  public deleteWebhook(drop_pending_updates = false) {
     return this.requestJson('deleteWebhook', { drop_pending_updates });
   }
 
@@ -209,6 +211,33 @@ export class TelegramBotApi {
     });
 
     return this.processMessageResult<'editMessageText'>(res, chat_id, opts?.deleteAfterMs);
+  }
+
+  public async editMessageDocument(
+    chat_id: ChatId,
+    message_id: Integer,
+    file: File,
+    opts?: ExtractParamOptions<'editMessageMedia', 'chat_id' | 'message_id' | 'media'>,
+  ) {
+    const { caption, parse_mode, ...rest } = opts ?? {};
+    const formData = new FormData();
+    const attachName = `attach_file`;
+    formData.append(attachName, file, file.name);
+    const media: InputMediaDocument<File> = {
+      type: 'document',
+      media: `attach://${attachName}`,
+      ...(caption && { caption }),
+      ...(parse_mode && { parse_mode }),
+    };
+    const params: ApiParams<'editMessageMedia'> = {
+      ...this.buildOptionalParams(rest),
+      chat_id,
+      message_id,
+      media,
+    };
+    const finalFormData = this.makeFormData(params, formData);
+    const res = await this.requestJson('editMessageMedia', finalFormData);
+    return this.processMessageResult<'editMessageMedia'>(res, chat_id, opts?.deleteAfterMs);
   }
 
   public async editMessageReplyMarkup(

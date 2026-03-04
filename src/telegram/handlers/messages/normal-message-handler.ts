@@ -55,7 +55,7 @@ export class NormalMessageHandler {
     }
 
     if (!answer) return;
-    const chunks = markdownToMarkdownV2Chunks(answer.trim(), 300);
+    const chunks = markdownToMarkdownV2Chunks(answer.trim(), 400);
     for (const [i, chunk] of chunks.entries()) {
       if (i === 0) {
         await ctx.reply(chunk, {
@@ -68,7 +68,7 @@ export class NormalMessageHandler {
           deleteAfterMs: ms['5m'],
         });
       }
-      await delay(1_500);
+      await delay(500);
     }
   }
 }

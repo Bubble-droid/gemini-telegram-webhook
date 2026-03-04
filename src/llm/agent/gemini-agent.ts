@@ -1,9 +1,8 @@
 import { Messages } from '@configs/messages.js';
-import type { GenerateContentResponse } from '@google/genai';
 import { type Content, type FunctionCall, type FunctionResponse, type Part } from '@google/genai';
 import type { GeminiApiClient } from '@llm/client/gemini-api-client.js';
 import { parseToolCalls } from '@llm/lib/tool-call-parser.js';
-import type { GeminiAgentOpts, StandardizedFunctionResponse } from '@llm/types/agent.js';
+import type { GeminiAgentOpts, GeminiAgentResponse, StandardizedFunctionResponse } from '@llm/types/agent.js';
 import type { ToolName } from '@llm/types/tool.js';
 import { THOUGHT_SIGNATURE_PLACEHOLDER } from '@shared/core/constants.js';
 import { AgentError } from '@shared/core/errors.js';
@@ -13,7 +12,7 @@ import { delay, ms } from '@shared/utils/helpers.js';
 
 const MAX_AGENT_ROUNDS = 16;
 
-const BLOCK_RESPONSE_TOOLS: ToolName[] = ['seek_clarification'];
+const FORCE_BLOCKING_TOOLS: string[] = ['seek_clarification'] satisfies ToolName[];
 
 const createToolResponse = (
   res: StandardizedFunctionResponse,
@@ -32,6 +31,7 @@ const createToolResponse = (
 const handleToolCall = async (
   call: FunctionCall,
   callTool: NonNullable<GeminiAgentOpts['callTool']>,
+  updateStatus?: GeminiAgentOpts['updateStatus'],
 ): Promise<Pick<Part, 'functionResponse'>> => {
   const { id, name, args } = call;
   if (!name) {
@@ -44,6 +44,7 @@ const handleToolCall = async (
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     logger.warn(`Gemini Agent Tool execution error: ${name}`, { err });
+    await updateStatus?.(`Agent Tool ${name} execution error: ${errorMsg}`);
     return createToolResponse({ response: { error: errorMsg } }, name, id);
   }
 };
@@ -53,11 +54,11 @@ export class GeminiAgent {
 
   constructor(private readonly client: GeminiApiClient) {}
 
-  public async run(contents: Content[], opts: GeminiAgentOpts): Promise<GenerateContentResponse | Content[]> {
+  public async run(contents: Content[], opts: GeminiAgentOpts): Promise<GeminiAgentResponse> {
     const { ctx, updateStatus, callTool, generateConfig, generateModel } = opts;
     const agentContents = [...contents];
     let round = 0;
-    let response: GenerateContentResponse | Content[];
+    let agentResponse: GeminiAgentResponse = {};
     let functionCalls: FunctionCall[] | undefined;
     do {
       if (round >= this.maxRounds) {
@@ -65,10 +66,38 @@ export class GeminiAgent {
       }
       logger.debug(`[GeminiAgent] Round ${round++} started.`);
 
-      response = await this.client.generateContent(agentContents, generateConfig, generateModel);
+      const response = await this.client.generateContent(agentContents, generateConfig, generateModel);
 
       if (!response.candidates?.[0]?.content) {
         throw new AgentError('Model returned empty or invalid content.');
+      }
+
+      if (ctx) {
+        for (const part of response.candidates[0].content.parts!) {
+          if (part.text) {
+            const chunks = markdownToMarkdownV2Chunks(
+              part.text.replace(/<cot>[\s\S]*?<\/cot>|<tool_calls>[\s\S]*?<\/tool_calls>/gi, '').trim(),
+              300,
+            );
+            for (const chunk of chunks) {
+              await ctx.replyWithChatAction('typing').catch((err: unknown) => {
+                logger.warn(`Send chat action failed.`, { err });
+              });
+              await ctx
+                .send(chunk, {
+                  parse_mode: 'MarkdownV2',
+                  deleteAfterMs: ms['1d'],
+                })
+                .catch(async (err: unknown) => {
+                  logger.warn(`Send message failed.`, { err });
+                  await updateStatus?.(
+                    err instanceof Error ? err.message : typeof err === 'string' ? err : String(err),
+                  );
+                });
+              await delay(500);
+            }
+          }
+        }
       }
 
       agentContents.push({
@@ -83,6 +112,14 @@ export class GeminiAgent {
           return p;
         }),
       });
+
+      agentResponse = {
+        candidates: response.candidates,
+        modelVersion: response.modelVersion!,
+        text: response.text,
+        executableCode: response.executableCode,
+        codeExecutionResult: response.codeExecutionResult,
+      };
 
       functionCalls = response.functionCalls;
       if (!functionCalls?.length) {
@@ -99,21 +136,8 @@ export class GeminiAgent {
 
       logger.debug(`Model requested ${functionCalls.length} tool calls.`);
 
-      for (const part of response.candidates[0].content.parts!) {
-        if (part.text) {
-          const chunks = markdownToMarkdownV2Chunks(part.text.trim(), 300);
-          for (const chunk of chunks) {
-            await ctx.send(chunk, {
-              parse_mode: 'MarkdownV2',
-              deleteAfterMs: ms['1d'],
-            });
-            await delay(1_500);
-          }
-        }
-      }
-
       await updateStatus?.(
-        `<tool_calls>\n${functionCalls.map((c) => `🔧 Calling ${c.name}`).join('\n')}\n</tool_calls>`.trim(),
+        `<tool_calls>\n${functionCalls.map((c) => `🔧 Calling ${c.name}\nParameters: ${JSON.stringify(c.args).slice(0, 30)}...`).join('\n\n')}\n</tool_calls>`.trim(),
       );
 
       const toolResults = await Promise.all(
@@ -129,11 +153,9 @@ export class GeminiAgent {
         }),
       );
 
-      if (
-        functionCalls.some((call) => !!call.args?.['blocking'] || BLOCK_RESPONSE_TOOLS.includes(call.name as ToolName))
-      ) {
+      if (functionCalls.some((call) => !!call.args?.['blocking'] || FORCE_BLOCKING_TOOLS.includes(call.name ?? ''))) {
         logger.info(`Model calling blocking response tools.`);
-        response = agentContents.slice(-1);
+        agentResponse.candidates![0]!.content = agentContents.at(-1)!;
         break;
       }
 
@@ -145,6 +167,9 @@ export class GeminiAgent {
     } while (functionCalls.length > 0);
 
     logger.info(`[GeminiAgent] Task completed`, { rounds: round + 1 });
-    return response;
+
+    await updateStatus?.(`Response successful. *Reply by ${agentResponse.modelVersion}*`);
+
+    return agentResponse;
   }
 }

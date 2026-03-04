@@ -3,17 +3,18 @@ import { MENTIONED_ALIAS, Messages } from '@configs/messages.js';
 import { chatHistory } from '@data/chat-history.js';
 import { longTermMemory } from '@data/long-term-memory.js';
 import { promptStore } from '@data/prompt-store.js';
-import { FunctionCallingConfigMode, type Content, type GenerateContentResponse, type Part } from '@google/genai';
+import { FunctionCallingConfigMode, type Content, type Part } from '@google/genai';
 import type { Message } from '@grammyjs/types';
 import type { GeminiAgent } from '@llm/agent/gemini-agent.js';
 import type { McpClient } from '@llm/mcp/mcp-client.js';
+import type { GeminiAgentResponse } from '@llm/types/agent.js';
 import type { ToolCallerInjectedDeps, ToolName } from '@llm/types/tool.js';
 import type { FileHandler } from '@services/file-service.js';
 import { CONFIG } from '@shared/core/config.js';
 import { AgentError, AppError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
-import { markdownToMarkdownV2, markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
-import { delay, formatTime, ms } from '@shared/utils/helpers.js';
+import { markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
+import { formatTime, ms } from '@shared/utils/helpers.js';
 import { hasFile } from '@shared/utils/message.js';
 import { isCoreContentSimilar } from '@shared/utils/string-similarity.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
@@ -80,7 +81,7 @@ export class MentionHandler {
       await ctx.updateMessage(Messages.thinking);
 
       const geminiResponse = await this.delegateQuestionProcess(completeContents, ctx);
-      await this.resolveResponse(ctx, geminiResponse, completeContents);
+      this.resolveResponse(ctx, geminiResponse, completeContents);
     } catch (apiError) {
       logger.error('Error during Gemini API call or response processing.', {
         err: apiError,
@@ -95,10 +96,7 @@ export class MentionHandler {
     }
   }
 
-  private delegateQuestionProcess(
-    contents: Content[],
-    ctx: ResponseContext,
-  ): Promise<GenerateContentResponse | Content[]> {
+  private delegateQuestionProcess(contents: Content[], ctx: ResponseContext) {
     const { chat, user, message } = ctx;
 
     logger.info(`Processing over to ChatAgent`, {
@@ -108,9 +106,11 @@ export class MentionHandler {
     });
 
     const updateStatus = async (text: string) => {
-      await ctx.updateMessage(markdownToMarkdownV2(text), { parse_mode: 'MarkdownV2' }).catch((err: unknown) => {
-        logger.warn(`Update status message failed.`, { err });
-      });
+      await ctx
+        .updateMessage(markdownToMarkdownV2Chunks(text)[0]!, { parse_mode: 'MarkdownV2' })
+        .catch((err: unknown) => {
+          logger.warn(`Update status message failed.`, { err });
+        });
     };
 
     const systemPrompt = promptStore.format('assistant', {
@@ -136,47 +136,8 @@ export class MentionHandler {
     });
   }
 
-  private async resolveResponse(
-    ctx: ResponseContext,
-    response: GenerateContentResponse | Content[],
-    completeContents: Content[],
-  ) {
-    if (!Array.isArray(response)) {
-      await ctx.replyWithChatAction('typing').catch((err: unknown) => {
-        logger.warn(`Send chat action failed.`, { err });
-      });
-      const text = `${response.text?.trim()}\n\n *Reply by ${response.modelVersion}*`;
-      const chunks = markdownToMarkdownV2Chunks(text, 300);
-      if (chunks.length > 20) {
-        const page = await ctx.api.publishTelegraphPost(text.split('\n')[0]!.slice(0, 256), text);
-        const textToSend = markdownToMarkdownV2(`内容过长，[点击这里查看](${page.url})`);
-        await ctx.updateMessage(textToSend, {
-          link_preview_options: { url: page.url },
-          parse_mode: 'MarkdownV2',
-          deleteAfterMs: ms['1d'],
-        });
-      } else {
-        for (const [i, chunk] of chunks.entries()) {
-          if (i === 0) {
-            await ctx.updateMessage(chunk, {
-              parse_mode: 'MarkdownV2',
-              deleteAfterMs: ms['1d'],
-            });
-          } else {
-            await ctx.send(chunk, {
-              parse_mode: 'MarkdownV2',
-              deleteAfterMs: ms['1d'],
-            });
-          }
-          await delay(1_500);
-        }
-      }
-    }
-    if (Array.isArray(response)) {
-      completeContents.push(...response);
-    } else {
-      completeContents.push(response.candidates![0]!.content!);
-    }
+  private resolveResponse(ctx: ResponseContext, response: GeminiAgentResponse, completeContents: Content[]) {
+    completeContents.push(response.candidates![0]!.content!);
     chatHistory.update(ctx.chat.id, ctx.user.id, completeContents);
   }
 

@@ -2,7 +2,7 @@ import type { GenerateContentResponse } from '@google/genai';
 import { simplifyContents, simplifyResponse } from '@llm/lib/helper.js';
 import { EXCLUDED_HEADERS, FATAL_ERROR_MESSAGES, FATAL_STATUS_CODES } from '@proxy/config.js';
 import type { GenerateContentRequest, GoogleApiRequest } from '@proxy/types.js';
-import { GEMINI_MULTIMODAL_MODELS, GENERATE_CONTENT_METHOD } from '@shared/core/constants.js';
+import { GEMINI_MULTIMODAL_MODELS, GENERATE_CONTENT } from '@shared/core/constants.js';
 import { AuthError, DataError, HttpError, ParseError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import type { Recordable } from '@shared/types/common.js';
@@ -18,7 +18,7 @@ export const handleCliProxyRequest =
     const { params, body } = req;
     const { modelAndMethod } = params;
     const [originalModel, method] = modelAndMethod.split(':');
-    if (method !== GENERATE_CONTENT_METHOD) {
+    if (method !== GENERATE_CONTENT) {
       logger.warn(`Unsupported method: ${method}`);
       rep.code(400).type('application/json').send({ error: 'Bad Request' });
       return;

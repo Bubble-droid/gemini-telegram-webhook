@@ -142,6 +142,11 @@ export class ResponseContext {
     return this.api.editMessageText(this.chat.id, this.repliedMessageId, text, opts);
   }
 
+  public updateMessageDocument(document: File, opts?: BotApiOptions<'editMessageDocument', 3>) {
+    if (!this.repliedMessageId) return this.replyWithDocument(document, opts);
+    return this.api.editMessageDocument(this.chat.id, this.repliedMessageId, document, opts);
+  }
+
   public updateCallbackMessage(text: string, opts?: BotApiOptions<'editMessageText', 3>) {
     return this.api.editMessageText(this.chat.id, this.callbackQueryMessage!.message_id, text, opts);
   }

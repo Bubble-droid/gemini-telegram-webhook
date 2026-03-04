@@ -32,7 +32,7 @@ export const COMMANDS = [
     description: '测试',
     permissions: true,
     action: async ({ ctx }) => {
-      await ctx.reaction('👍');
+      await ctx.react('👍');
       const InlineKeyboardButtons: InlineKeyboardButton[][] = [
         COMMANDS.map((_c, i): InlineKeyboardButton => {
           return {

@@ -80,21 +80,16 @@ export class GeminiAgent {
               300,
             );
             for (const chunk of chunks) {
-              await ctx.replyWithChatAction('typing').catch((err: unknown) => {
-                logger.warn(`Send chat action failed.`, { err });
-              });
-              await ctx
-                .send(chunk, {
+              try {
+                await ctx.replyWithChatAction('typing');
+                await ctx.reply(chunk, {
                   parse_mode: 'MarkdownV2',
                   deleteAfterMs: ms['1d'],
-                })
-                .catch(async (err: unknown) => {
-                  logger.warn(`Send message failed.`, { err });
-                  await updateStatus?.(
-                    err instanceof Error ? err.message : typeof err === 'string' ? err : String(err),
-                  );
                 });
-              await delay(500);
+              } catch (err) {
+                await updateStatus?.(err instanceof Error ? err.message : typeof err === 'string' ? err : String(err));
+              }
+              await delay(1000);
             }
           }
         }
@@ -137,7 +132,7 @@ export class GeminiAgent {
       logger.debug(`Model requested ${functionCalls.length} tool calls.`);
 
       await updateStatus?.(
-        `<tool_calls>\n${functionCalls.map((c) => `🔧 Calling ${c.name}\nParameters: ${JSON.stringify(c.args).slice(0, 50)}...`).join('\n\n')}\n</tool_calls>`.trim(),
+        `<tool_calls>\n${functionCalls.map((c) => `🔧 Calling ${c.name}\nParameters: ${JSON.stringify(c.args).slice(0, 200)}...`).join('\n\n')}\n</tool_calls>`.trim(),
       );
 
       const toolResults = await Promise.all(

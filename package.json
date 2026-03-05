@@ -23,12 +23,12 @@
     "push:github": "git add . && git commit -m \"Update $(date +'%Y-%m-%d %H:%M:%S')\" && git push"
   },
   "dependencies": {
-    "@google/genai": "^1.43.0",
+    "@google/genai": "^1.44.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "fastify": "^5.7.4",
+    "fastify": "^5.8.1",
     "google-auth-library": "^10.6.1",
     "lowdb": "^7.0.1",
-    "marked": "^17.0.3",
+    "marked": "^17.0.4",
     "node-html-parser": "^7.1.0",
     "openai": "^6.25.0",
     "telegraph-api-client": "^1.2.0",

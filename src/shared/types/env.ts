@@ -19,8 +19,6 @@ export interface RawEnv {
   WEBHOOK_SECRET_TOKEN: string;
 
   TELEGRAM_BOT_TOKEN: string;
-  TELEGRAM_BOT_ID: number;
-  TELEGRAM_BOT_USERNAME: string;
   TELEGRAM_BOT_OWNER_ID: number;
   ALLOWED_USAGE_GROUPS: number[];
 

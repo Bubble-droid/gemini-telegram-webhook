@@ -1,4 +1,4 @@
-import { getFunctionTools } from '@configs/function-tools.js';
+import { CHAT_BOT_TOOLS } from '@configs/function-tools.js';
 import { chatHistory } from '@data/chat-history.js';
 import { longTermMemory } from '@data/long-term-memory.js';
 import { promptStore } from '@data/prompt-store.js';
@@ -80,7 +80,7 @@ export class ChitchatHandler {
       parts: messageParts,
     };
 
-    this.appendMessage(state, messageContent);
+    this.appendMessage(state, mappingGeminiContentsToOpenAiMessages([messageContent]));
 
     // 3. 计算注意力分
     const weight = this.calculateMessageWeight(message!);
@@ -99,10 +99,7 @@ export class ChitchatHandler {
 
       logger.info(`[ChitChat] Replying.`, logContext);
 
-      this.appendMessage(state, {
-        role: 'model',
-        parts: [{ text: response.content ?? JSON.stringify(response.tool_calls) }],
-      });
+      this.appendMessage(state, [response]);
       state.currentScore = 0;
       return true;
     } catch (err) {
@@ -119,7 +116,7 @@ export class ChitchatHandler {
 
   private async requestChat(state: ChitchatState, ctx: ResponseContext) {
     const systemPrompt = promptStore.format('chitchat', {
-      user: JSON.stringify(await ctx.api.getMe().catch(() => ({}))),
+      self: JSON.stringify(ctx.me),
       chat: JSON.stringify(ctx.chat),
       time: formatTime(Date.now()),
       groupMemories: longTermMemory.getMemories(ctx.chat.id),
@@ -131,7 +128,7 @@ export class ChitchatHandler {
         role: 'system',
         content: [{ type: 'text', text: systemPrompt }],
       },
-      ...mappingGeminiContentsToOpenAiMessages(state.groupHistory),
+      ...state.groupHistory,
     ];
 
     return this.workers.openAiAgent.run(messages, {
@@ -142,7 +139,7 @@ export class ChitchatHandler {
       params: {
         model: this.modelList.next(),
         temperature: 0.7,
-        tools: mappingGeminiToolsToOpenAi(getFunctionTools(this.mcpClient.getLoadedServers())),
+        tools: mappingGeminiToolsToOpenAi(CHAT_BOT_TOOLS(this.mcpClient.getLoadedServers())),
         tool_choice: 'auto',
       },
     });
@@ -226,8 +223,8 @@ export class ChitchatHandler {
   /**
    * 记录用户消息并裁剪历史记录，确保不会超出上限。
    */
-  private appendMessage(state: ChitchatState, messages: Content) {
-    state.groupHistory.push(messages);
+  private appendMessage(state: ChitchatState, messages: ChatCompletionMessageParam[]) {
+    state.groupHistory.push(...messages);
     if (state.groupHistory.length > HISTORY_LIMIT) {
       state.groupHistory.shift();
     }

@@ -114,6 +114,10 @@ export class UpdateHandler {
       );
     }
     const shorten = `❌ An error occurred, please try again later\n<blockquote expandable>${Escaper.html(shortenString(errorMessage))}</blockquote>`;
-    await ctx.reply(shorten, { parse_mode: 'HTML', deleteAfterMs: ms['3m'] });
+    await ctx.updateMessage(shorten, {
+      replyToMessageId: ctx.message?.message_id,
+      parse_mode: 'HTML',
+      deleteAfterMs: ms['3m'],
+    });
   }
 }

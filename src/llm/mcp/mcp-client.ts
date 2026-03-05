@@ -153,9 +153,11 @@ export class McpClient {
       });
 
       if (Array.isArray(toolResult.content)) {
-        (toolResult.content as { text: string }[]).forEach((c) => {
-          c.text =
-            c.text.length > 100_000 * 4 ? c.text.slice(0, 100_000 * 4) + '...(Result too long, truncated)' : c.text;
+        (toolResult.content as { text?: string }[]).forEach((c) => {
+          if (c.text) {
+            c.text =
+              c.text.length > 100_000 * 4 ? c.text.slice(0, 100_000 * 4) + '...(Result too long, truncated)' : c.text;
+          }
         });
       }
 

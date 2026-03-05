@@ -3,6 +3,7 @@ import { faqMatcher } from '@data/faq-matcher.js';
 import { promptStore } from '@data/prompt-store.js';
 import type { BotCommand, InlineKeyboardButton } from '@grammyjs/types';
 import { CONFIG } from '@shared/core/config.js';
+import { logger } from '@shared/core/logger.js';
 import { markdownToMarkdownV2 } from '@shared/markdown/telegram-converter.js';
 import type { MaybePromise } from '@shared/types/common.js';
 import { ms } from '@shared/utils/helpers.js';
@@ -22,7 +23,10 @@ export type CommandType = (typeof COMMANDS)[number]['command'];
 
 export const canPerformAction = async (ctx: ResponseContext) => {
   if (ctx.user.id === CONFIG.TELEGRAM_BOT_OWNER_ID) return true;
-  await ctx.reply(Messages.unauthorized, { deleteAfterMs: ms['3m'] });
+  await ctx.reply(Messages.unauthorized, {
+    replyToMessageId: ctx.message?.message_id,
+    deleteAfterMs: ms['3m'],
+  });
   return false;
 };
 
@@ -44,6 +48,7 @@ export const COMMANDS = [
       const candidate = COMMANDS.map((c, i) => `${i + 1}. ${c.command} - ${c.description}`).join('\n');
       const text = `<select>\n${candidate}\n</select>`;
       await ctx.reply(markdownToMarkdownV2(text), {
+        replyToMessageId: ctx.message?.message_id,
         reply_markup: { inline_keyboard: InlineKeyboardButtons },
         parse_mode: 'MarkdownV2',
       });
@@ -54,7 +59,8 @@ export const COMMANDS = [
     description: '开始使用',
     permissions: false,
     action: async ({ ctx }) => {
-      await ctx.reply(markdownToMarkdownV2(Messages.getStartText()), {
+      await ctx.reply(markdownToMarkdownV2(Messages.getStartText(ctx)), {
+        replyToMessageId: ctx.message?.message_id,
         parse_mode: 'MarkdownV2',
         deleteAfterMs: ms['3m'],
       });
@@ -66,6 +72,7 @@ export const COMMANDS = [
     permissions: false,
     action: async ({ ctx }) => {
       await ctx.reply(markdownToMarkdownV2(Messages.faqSimplified), {
+        replyToMessageId: ctx.message?.message_id,
         parse_mode: 'MarkdownV2',
         deleteAfterMs: ms['5m'],
       });
@@ -77,11 +84,9 @@ export const COMMANDS = [
     permissions: false,
     action: async ({ ctx }) => {
       const { chat, user } = ctx;
-      await ctx.reply(Messages.clearing);
+      await ctx.updateMessage(Messages.clearing, { replyToMessageId: ctx.message?.message_id });
       chatHistory.clear(chat.id, user.id);
-      await ctx.updateMessage(Messages.cleared, {
-        deleteAfterMs: ms['3m'],
-      });
+      await ctx.updateMessage(Messages.cleared, { replyToMessageId: ctx.message?.message_id, deleteAfterMs: ms['3m'] });
     },
   },
 
@@ -91,11 +96,11 @@ export const COMMANDS = [
     description: '删除消息',
     permissions: true,
     action: async ({ ctx }) => {
-      for (const id of [ctx.replyToMessage?.message_id, ctx.message?.message_id]) {
-        if (id) {
-          await ctx.delete(id);
-        }
-      }
+      await ctx
+        .delete([ctx.replyToMessage?.message_id, ctx.message?.message_id].filter(Boolean) as number[])
+        .catch((err: unknown) => {
+          logger.warn('Failed to delete message', { err });
+        });
     },
   },
   {
@@ -104,9 +109,7 @@ export const COMMANDS = [
     permissions: true,
     action: async ({ ctx }) => {
       await promptStore.reload();
-      await ctx.reply('All prompts reloaded', {
-        deleteAfterMs: ms['3m'],
-      });
+      await ctx.reply('All prompts reloaded', { replyToMessageId: ctx.message?.message_id, deleteAfterMs: ms['3m'] });
     },
   },
   {
@@ -115,9 +118,7 @@ export const COMMANDS = [
     permissions: true,
     action: async ({ ctx }) => {
       await faqMatcher.reload();
-      await ctx.reply('All FAQ reloaded', {
-        deleteAfterMs: ms['3m'],
-      });
+      await ctx.reply('All FAQ reloaded', { replyToMessageId: ctx.message?.message_id, deleteAfterMs: ms['3m'] });
     },
   },
 ] as const satisfies Command[];

@@ -6,6 +6,7 @@ import type {
   InputMediaDocument,
   Message,
   ReactionTypeEmoji,
+  UserFromGetMe,
 } from '@grammyjs/types';
 import { TELEGRAM_BASE_URL } from '@shared/core/constants.js';
 import { TelegramError } from '@shared/core/errors.js';
@@ -52,12 +53,24 @@ export class TelegramBotApi {
   private readonly token: string;
   private readonly telegraph: Telegraph;
   private readonly telegraphAccount: Account;
+  private botInfo: UserFromGetMe | null = null;
   private scheduler: IScheduler | undefined;
 
   constructor(token: string, telegraph: Telegraph, telegraphAccount: Account) {
     this.token = token;
     this.telegraph = telegraph;
     this.telegraphAccount = telegraphAccount;
+  }
+
+  public get me() {
+    if (!this.botInfo) {
+      throw new TelegramError('Bot info not set');
+    }
+    return this.botInfo;
+  }
+
+  public async refreshBotInfo() {
+    this.botInfo ??= await this.getMe();
   }
 
   public setScheduler(s: IScheduler) {

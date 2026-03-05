@@ -74,6 +74,7 @@ const start = async () => {
   const bot = new TelegramBotApi(CONFIG.TELEGRAM_BOT_TOKEN, telegraph, accountInfo);
   const taskScheduler = new TaskScheduler(bot);
   bot.setScheduler(taskScheduler);
+  await bot.refreshBotInfo();
 
   const geminiApiClient = new GeminiApiClient(CONFIG.PROXY_AUTH_TOKEN, GEMINI_PROXY_BASE_URL, {
     ...GEMINI_CLIENT_BASE_CONFIG,

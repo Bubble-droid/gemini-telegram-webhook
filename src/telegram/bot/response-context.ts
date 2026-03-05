@@ -2,9 +2,8 @@
 import { COMMANDS, type CommandType } from '@configs/commands.js';
 import { MENTIONED_ALIAS } from '@configs/messages.js';
 import type { ReactionTypeEmoji, Update } from '@grammyjs/types';
-import { CONFIG } from '@shared/core/config.js';
 import { TelegramError } from '@shared/core/errors.js';
-import type { ApiReturn, Integer } from '@shared/types/telegram.js';
+import type { Integer } from '@shared/types/telegram.js';
 import type { ExtractMethods } from '@shared/types/utils.js';
 import { hasFile, hasImage } from '@shared/utils/message.js';
 import type { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
@@ -13,16 +12,15 @@ type BotApiMethod = ExtractMethods<TelegramBotApi>;
 type BotApiOptions<M extends BotApiMethod, N extends number> = Parameters<TelegramBotApi[M]>[N];
 
 export class ResponseContext {
-  private readonly botName = CONFIG.TELEGRAM_BOT_USERNAME;
-  private repliedMessageId: number | null = null;
+  private updatingMessageId: number | null = null;
 
   constructor(
     public readonly update: Update,
     public readonly api: TelegramBotApi,
   ) {}
 
-  public get latestRepliedMessageId() {
-    return this.repliedMessageId;
+  public get me() {
+    return this.api.me;
   }
 
   public get callbackQuery() {
@@ -80,7 +78,8 @@ export class ResponseContext {
   }
 
   public get command(): { name: CommandType; args: readonly string[] } | null {
-    if (!this.hasCommandEntity() || !this.text?.includes(`@${this.botName}`) || !this.text.startsWith('/')) return null;
+    if (!this.hasCommandEntity() || !this.text?.includes(`@${this.me.username}`) || !this.text.startsWith('/'))
+      return null;
     const [rawCmd, ...args] = this.text.split(/\s+/);
     const name = rawCmd?.slice(1).split('@')[0];
     return COMMANDS.some((c) => c.command === name) ? { name: name as CommandType, args } : null;
@@ -100,72 +99,68 @@ export class ResponseContext {
 
   public get isBotMentioned(): boolean {
     return (
-      !!this.text?.includes(`@${this.botName}`) ||
+      !!this.text?.includes(`@${this.me.username}`) ||
       !!this.text?.startsWith(MENTIONED_ALIAS) ||
-      this.replyToMessage?.from?.username === this.botName
+      this.replyToMessage?.from?.username === this.me.username
     );
   }
 
-  public async reply(text: string, opts?: BotApiOptions<'sendMessage', 2>) {
-    const result = await this.api.sendMessage(this.chat.id, text, {
-      replyToMessageId: this.message?.message_id,
-      ...opts,
-    });
-    this.updateRepliedMessageId(result);
-    return result;
+  public reply(text: string, opts?: BotApiOptions<'sendMessage', 2>) {
+    return this.api.sendMessage(this.chat.id, text, opts);
   }
 
   public replyWithDocument(document: File, opts?: BotApiOptions<'sendDocument', 2>) {
-    return this.api.sendDocument(this.chat.id, document, {
-      replyToMessageId: this.message?.message_id,
-      ...opts,
-    });
+    return this.api.sendDocument(this.chat.id, document, opts);
   }
 
   public replyWithPhoto(photo: File, opts?: BotApiOptions<'sendPhoto', 2>) {
-    return this.api.sendPhoto(this.chat.id, photo, {
-      replyToMessageId: this.message?.message_id,
-      ...opts,
-    });
+    return this.api.sendPhoto(this.chat.id, photo, opts);
   }
 
   public replyWithChatAction(action: BotApiOptions<'sendChatAction', 1>, opts?: BotApiOptions<'sendChatAction', 2>) {
     return this.api.sendChatAction(this.chat.id, action, opts);
   }
 
-  public send(text: string, opts?: Omit<BotApiOptions<'sendMessage', 2>, 'replyToMessageId'>) {
-    return this.api.sendMessage(this.chat.id, text, opts);
+  public async updateMessage(text: string, opts: BotApiOptions<'sendMessage', 2> = {}) {
+    if (!this.updatingMessageId) {
+      const result = await this.reply(text, opts);
+      this.updatingMessageId = result.message_id;
+      return result;
+    }
+    const { replyToMessageId, ...rest } = opts;
+    return this.api.editMessageText(
+      this.chat.id,
+      this.updatingMessageId,
+      text,
+      rest as BotApiOptions<'editMessageText', 3>,
+    );
   }
 
-  public updateMessage(text: string, opts?: BotApiOptions<'editMessageText', 3>) {
-    if (!this.repliedMessageId) return this.reply(text, opts);
-    return this.api.editMessageText(this.chat.id, this.repliedMessageId, text, opts);
-  }
-
-  public updateMessageDocument(document: File, opts?: BotApiOptions<'editMessageDocument', 3>) {
-    if (!this.repliedMessageId) return this.replyWithDocument(document, opts);
-    return this.api.editMessageDocument(this.chat.id, this.repliedMessageId, document, opts);
+  public async updateMessageDocument(document: File, opts: BotApiOptions<'sendDocument', 2> = {}) {
+    if (!this.updatingMessageId) {
+      const result = await this.replyWithDocument(document, opts);
+      this.updatingMessageId = result.message_id;
+      return result;
+    }
+    const { replyToMessageId, ...rest } = opts;
+    return this.api.editMessageDocument(
+      this.chat.id,
+      this.updatingMessageId,
+      document,
+      rest as BotApiOptions<'editMessageDocument', 3>,
+    );
   }
 
   public updateCallbackMessage(text: string, opts?: BotApiOptions<'editMessageText', 3>) {
     return this.api.editMessageText(this.chat.id, this.callbackQueryMessage!.message_id, text, opts);
   }
 
-  public delete(messageId?: Integer) {
-    return this.api.deleteMessage(
-      this.chat.id,
-      messageId ?? this.callbackQueryMessage?.message_id ?? this.message?.message_id!,
-    );
+  public delete(messageIds: Integer[]) {
+    return this.api.deleteMessages(this.chat.id, messageIds);
   }
 
   public react(emoji: ReactionTypeEmoji['emoji'], messageId?: Integer) {
     return this.api.setMessageReaction(this.chat.id, messageId ?? this.message?.message_id!, emoji);
-  }
-
-  private updateRepliedMessageId(result: ApiReturn<'sendMessage' | 'sendDocument' | 'editMessageText'>) {
-    if (typeof result !== 'boolean') {
-      this.repliedMessageId ??= result.message_id;
-    }
   }
 
   private hasCommandEntity() {

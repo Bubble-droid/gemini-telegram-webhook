@@ -22,8 +22,6 @@ const REQUIRED_ENV_VARS = defineRequiredKeys<RawEnv>()([
   'WEBHOOK_RECEIVE_URL',
   'WEBHOOK_SECRET_TOKEN',
   'TELEGRAM_BOT_TOKEN',
-  'TELEGRAM_BOT_ID',
-  'TELEGRAM_BOT_USERNAME',
   'TELEGRAM_BOT_OWNER_ID',
   'ALLOWED_USAGE_GROUPS',
 ] as const);
@@ -86,8 +84,6 @@ class ConfigLoader {
       WEBHOOK_SECRET_TOKEN: this.getEnv('WEBHOOK_SECRET_TOKEN'),
 
       TELEGRAM_BOT_TOKEN: this.getEnv('TELEGRAM_BOT_TOKEN'),
-      TELEGRAM_BOT_ID: Number(this.getEnv('TELEGRAM_BOT_ID')),
-      TELEGRAM_BOT_USERNAME: this.getEnv('TELEGRAM_BOT_USERNAME'),
       TELEGRAM_BOT_OWNER_ID: Number(this.getEnv('TELEGRAM_BOT_OWNER_ID')),
       ALLOWED_USAGE_GROUPS: splitArray(this.getEnv('ALLOWED_USAGE_GROUPS'), 'number'),
 

@@ -59,16 +59,17 @@ export class NormalMessageHandler {
     for (const [i, chunk] of chunks.entries()) {
       if (i === 0) {
         await ctx.reply(chunk, {
+          replyToMessageId: ctx.message?.message_id,
           parse_mode: 'MarkdownV2',
           deleteAfterMs: ms['5m'],
         });
       } else {
-        await ctx.send(chunk, {
+        await ctx.reply(chunk, {
           parse_mode: 'MarkdownV2',
           deleteAfterMs: ms['5m'],
         });
       }
-      await delay(500);
+      await delay(1000);
     }
   }
 }

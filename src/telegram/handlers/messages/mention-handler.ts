@@ -1,4 +1,4 @@
-import { getFunctionTools } from '@configs/function-tools.js';
+import { RESEARCH_BOT_TOOLS } from '@configs/function-tools.js';
 import { MENTIONED_ALIAS, Messages } from '@configs/messages.js';
 import { chatHistory } from '@data/chat-history.js';
 import { longTermMemory } from '@data/long-term-memory.js';
@@ -10,7 +10,6 @@ import type { McpClient } from '@llm/mcp/mcp-client.js';
 import type { GeminiAgentResponse } from '@llm/types/agent.js';
 import type { ToolCallerInjectedDeps, ToolName } from '@llm/types/tool.js';
 import type { FileHandler } from '@services/file-service.js';
-import { CONFIG } from '@shared/core/config.js';
 import { AgentError, AppError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import { markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
@@ -21,12 +20,11 @@ import type { ResponseContext } from '@telegram/bot/response-context.js';
 import type { HandlerWorkers } from '@telegram/handlers/types.js';
 
 export class MentionHandler {
-  private fileHandler: FileHandler;
-  private agent: GeminiAgent;
-  private toolCaller: ToolCallerInjectedDeps;
-  private mcpClient: McpClient;
+  private readonly fileHandler: FileHandler;
+  private readonly agent: GeminiAgent;
+  private readonly toolCaller: ToolCallerInjectedDeps;
+  private readonly mcpClient: McpClient;
 
-  private readonly botName = CONFIG.TELEGRAM_BOT_USERNAME;
   private readonly processingLocks = new Set<string>();
 
   constructor(workers: HandlerWorkers) {
@@ -49,7 +47,7 @@ export class MentionHandler {
     try {
       await this.checkFile(ctx);
 
-      const chatContents = await this.buildChatContents(messages);
+      const chatContents = await this.buildChatContents(messages, ctx);
 
       if (!(await this.checkContents(chatContents, ctx))) return;
 
@@ -78,7 +76,7 @@ export class MentionHandler {
 
       const completeContents = [...historyContents, ...chatContents];
 
-      await ctx.updateMessage(Messages.thinking);
+      await ctx.updateMessage(Messages.thinking, { replyToMessageId: ctx.message?.message_id });
 
       const geminiResponse = await this.delegateQuestionProcess(completeContents, ctx);
       this.resolveResponse(ctx, geminiResponse, completeContents);
@@ -107,7 +105,10 @@ export class MentionHandler {
 
     const updateStatus = async (text: string) => {
       await ctx
-        .updateMessage(markdownToMarkdownV2Chunks(text)[0]!, { parse_mode: 'MarkdownV2' })
+        .updateMessage(markdownToMarkdownV2Chunks(text)[0]!, {
+          replyToMessageId: ctx.message?.message_id,
+          parse_mode: 'MarkdownV2',
+        })
         .catch((err: unknown) => {
           logger.warn(`Update status message failed.`, { err });
         });
@@ -115,6 +116,7 @@ export class MentionHandler {
 
     const systemPrompt = promptStore.format('assistant', {
       time: formatTime(Date.now()),
+      self: JSON.stringify(ctx.me),
       chat: JSON.stringify(chat),
       user: JSON.stringify(user),
       messageId: String(message?.message_id),
@@ -127,7 +129,7 @@ export class MentionHandler {
       generateConfig: {
         temperature: 0,
         systemInstruction: [{ text: systemPrompt }],
-        tools: [{ functionDeclarations: getFunctionTools(this.mcpClient.getLoadedServers()) }],
+        tools: [{ functionDeclarations: RESEARCH_BOT_TOOLS(this.mcpClient.getLoadedServers()) }],
         toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
       },
       callTool: (name, args) => {
@@ -141,16 +143,16 @@ export class MentionHandler {
     chatHistory.update(ctx.chat.id, ctx.user.id, completeContents);
   }
 
-  private async buildChatContents(messages: Message[]): Promise<Content[]> {
+  private async buildChatContents(messages: Message[], ctx: ResponseContext): Promise<Content[]> {
     const contents: Content[] = [];
     const replyToMessage = messages.find((m) => m.reply_to_message)?.reply_to_message;
     const quotedText = messages.find((m) => m.quote)?.quote?.text;
     const quoteTextPrefix = quotedText ? `❝ Quoted: "${quotedText}"\n\n` : undefined;
 
     if (replyToMessage) {
-      const replyToParts = await this.extractMessageParts([replyToMessage]);
+      const replyToParts = await this.extractMessageParts([replyToMessage], ctx);
       if (replyToParts.length > 0) {
-        const replyRole = replyToMessage.from?.username === this.botName ? 'model' : 'user';
+        const replyRole = replyToMessage.from?.username === ctx.me.username ? 'model' : 'user';
         contents.push({
           role: replyRole,
           parts: replyToParts,
@@ -158,7 +160,7 @@ export class MentionHandler {
       }
     }
 
-    const currentParts = await this.extractMessageParts(messages);
+    const currentParts = await this.extractMessageParts(messages, ctx);
 
     if (quoteTextPrefix) {
       const textPartIndex = currentParts.findIndex((p) => p.text);
@@ -179,14 +181,14 @@ export class MentionHandler {
     return contents;
   }
 
-  private async extractMessageParts(messages: Message[]): Promise<Part[]> {
+  private async extractMessageParts(messages: Message[], ctx: ResponseContext): Promise<Part[]> {
     const parts: Part[] = [];
 
     const fileParts = await this.fileHandler.batchProcessFiles(messages, hasFile);
 
     parts.push(...fileParts);
 
-    const mentionRegex = new RegExp(`@${this.botName}|^${MENTIONED_ALIAS}`, 'g');
+    const mentionRegex = new RegExp(`@${ctx.me.username}|^${MENTIONED_ALIAS}`, 'g');
     const combinedText = messages
       .flatMap((msg) => {
         const text = msg.text ?? msg.caption;
@@ -219,21 +221,20 @@ export class MentionHandler {
       return true;
     }
     logger.warn(`[MentionHandler] Ignored concurrent request from ${lockKey}`);
-    await ctx.reply(Messages.pendingRequest, {
-      deleteAfterMs: ms['3m'],
-    });
+    await ctx.reply(Messages.pendingRequest, { replyToMessageId: ctx.message?.message_id, deleteAfterMs: ms['3m'] });
     return false;
   }
 
   private async checkFile(ctx: ResponseContext) {
     if (!ctx.isFile) return;
-    await ctx.reply(Messages.uploading);
+    await ctx.updateMessage(Messages.uploading, { replyToMessageId: ctx.message?.message_id });
   }
 
   private async checkContents(contents: Content[], ctx: ResponseContext) {
     if (contents.at(-1)?.role === 'model' || contents.length === 0) {
       logger.warn(`Invalid contents ignored.`);
       await ctx.updateMessage(Messages.invalidContents, {
+        replyToMessageId: ctx.message?.message_id,
         deleteAfterMs: ms['3m'],
       });
 

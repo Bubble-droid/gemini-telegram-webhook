@@ -5,9 +5,10 @@ import type { GeminiAgent } from '@llm/agent/gemini-agent.js';
 import type { OpenAiAgent } from '@llm/agent/openai-agent.js';
 import { mergeSystemPrompt } from '@llm/lib/helper.js';
 import type { McpClient } from '@llm/mcp/mcp-client.js';
-import type { ToolCallerInjectedDeps } from '@llm/types/tool.js';
+import type { StandardizedFunctionResponse } from '@llm/types/agent.js';
+import type { InferToolArgs, ToolCallerInjectedDeps, ToolCallers } from '@llm/types/tool.js';
 import { logger } from '@shared/core/logger.js';
-import { markdownToMarkdownV2 } from '@shared/markdown/telegram-converter.js';
+import { markdownToMarkdownV2, markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
 import { addCitations } from '@shared/utils/citation-generate.js';
 import { makeFile, ms } from '@shared/utils/helpers.js';
 
@@ -21,14 +22,14 @@ interface ToolCallerDeps {
 
 export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps => {
   const { geminiApiAgent, mcpClient } = deps;
-  // const multimodalModelRotator = new ListRotator(shuffleArray(GEMINI_MULTIMODAL_MODELS));
-
-  return (ctx, updateStatus) => ({
-    file_search: async (args) => {
-      const { prompt, file_search_stores, system_prompt } = args;
-      if (!file_search_stores.length) {
-        logger.warn(`No file stores provided.`);
-        return { response: { error: 'No file stores provided.' } };
+  return (ctx, updateStatus) => {
+    const fileSearch = async (
+      args: InferToolArgs<'deep_research'>['rag_agent'],
+    ): Promise<StandardizedFunctionResponse> => {
+      const { objective, file_search_stores, system_prompt } = args;
+      if (file_search_stores.length === 0) {
+        logger.warn(`No file search stores provided.`);
+        return { response: { error: 'No file search stores provided.' } };
       }
       if (
         file_search_stores.includes('documents/gui-for-cores') &&
@@ -36,7 +37,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
       ) {
         file_search_stores.push('sourcecode/plugin-hub');
       }
-      const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
+      const contents: Content[] = [{ role: 'user', parts: [{ text: objective }] }];
       const result = await geminiApiAgent.run(contents, {
         updateStatus,
         generateConfig: {
@@ -47,57 +48,36 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
       });
       return {
         response: {
-          output: {
+          output: JSON.stringify({
             queryResults: addCitations(result),
-            groundingMetadata: JSON.stringify(result.candidates?.[0]?.groundingMetadata),
-          },
+            groundingMetadata: result.candidates?.[0]?.groundingMetadata,
+          }),
         },
       };
-    },
+    };
 
-    web_search: async (args) => {
-      const { prompt, system_prompt } = args;
-      const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
+    const webResearch = async (args: InferToolArgs<'web_research'>): Promise<StandardizedFunctionResponse> => {
+      const { objective, system_prompt } = args;
+      const contents: Content[] = [{ role: 'user', parts: [{ text: objective }] }];
       const result = await geminiApiAgent.run(contents, {
         updateStatus,
         generateConfig: {
           temperature: 0.7,
           systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
-          tools: [{ googleSearch: {} }],
+          tools: [{ googleSearch: {} }, { urlContext: {} }],
         },
       });
       return {
         response: {
-          output: {
-            queryResults: addCitations(result),
-            groundingMetadata: JSON.stringify(result.candidates?.[0]?.groundingMetadata),
-          },
+          output: JSON.stringify({
+            researchResults: addCitations(result),
+            groundingMetadata: result.candidates?.[0]?.groundingMetadata,
+          }),
         },
       };
-    },
+    };
 
-    web_fetch: async (args) => {
-      const { prompt, system_prompt } = args;
-      const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
-      const result = await geminiApiAgent.run(contents, {
-        updateStatus,
-        generateConfig: {
-          temperature: 0.4,
-          systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
-          tools: [{ urlContext: {} }],
-        },
-      });
-      return {
-        response: {
-          output: {
-            fetchResults: addCitations(result),
-            groundingMetadata: JSON.stringify(result.candidates?.[0]?.groundingMetadata),
-          },
-        },
-      };
-    },
-
-    delegate_to_agent: async (args) => {
+    const delegateToAgent = async (args: InferToolArgs<'delegate_to_agent'>): Promise<StandardizedFunctionResponse> => {
       const { agent_name, objective, system_prompt } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: objective }] }];
       const result = await geminiApiAgent.run(contents, {
@@ -113,34 +93,167 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
         },
       });
       return { response: { output: result.text! } };
-    },
+    };
 
-    analyze_youtube_video: async (args) => {
-      const { video_url, prompt, system_prompt } = args;
-      const contents: Content[] = [
-        {
-          role: 'user',
-          parts: [
-            {
-              fileData: {
-                fileUri: video_url,
+    const toolCallers: ToolCallers = {
+      deep_research: async (args) => {
+        const agentNames = Object.keys(args);
+        if (agentNames.length === 0) return { response: { error: 'No arguments provided.' } };
+
+        const statusRegistry = new Map(
+          agentNames.map((name) => [
+            name,
+            { objective: args[name as keyof typeof args].objective.slice(0, 200), symbol: '' },
+          ]),
+        );
+
+        const refreshUI = async () => {
+          const content = [...statusRegistry.entries()]
+            .map(([name, info]) => `🤖 Sub-Agent: ${name} ${info.symbol}\n👨‍💻 Task: ${info.objective}...`)
+            .join('\n\n');
+          await updateStatus?.(`<research>\n${content}\n</research>`);
+        };
+
+        await refreshUI();
+        const allTasks = agentNames.map(
+          async (name): Promise<{ agent_name: string; result?: StandardizedFunctionResponse; error?: string }> => {
+            let result: StandardizedFunctionResponse | undefined;
+            let symbol = '❌';
+
+            try {
+              switch (name) {
+                case 'rag_agent':
+                  result = await fileSearch(args[name]);
+                  break;
+                case 'web_agent':
+                  result = await webResearch(args[name]);
+                  break;
+                case 'github_agent':
+                  result = await delegateToAgent({ agent_name: 'github', ...args[name] });
+                  break;
+                case 'context7_agent':
+                  result = await delegateToAgent({ agent_name: 'context7', ...args[name] });
+                  break;
+                default:
+                  symbol = '[UNSUPPORTED]';
+                  statusRegistry.get(name)!.symbol = symbol;
+                  await refreshUI();
+                  return { agent_name: name, error: `Unknown agent: ${name}` };
+              }
+
+              if (result.response.output) symbol = '✅';
+            } catch (_err) {
+              // Keep symbol as '❌'
+            }
+            statusRegistry.get(name)!.symbol = symbol;
+            await refreshUI();
+
+            return result?.response.output
+              ? { agent_name: name, result }
+              : { agent_name: name, error: `Agent ${name} failed or returned no output` };
+          },
+        );
+
+        const allResults = await Promise.all(allTasks);
+        return { response: { output: allResults } };
+      },
+
+      web_research: webResearch,
+
+      delegate_to_agent: delegateToAgent,
+
+      analyze_youtube_video: async (args) => {
+        const { objective, video_url, system_prompt } = args;
+        const contents: Content[] = [
+          {
+            role: 'user',
+            parts: [
+              {
+                fileData: {
+                  fileUri: video_url,
+                },
               },
-            },
-            { text: prompt },
-          ],
-        },
-      ];
-      const result = await geminiApiAgent.run(contents, {
-        updateStatus,
-        generateConfig: {
-          temperature: 0.7,
-          systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
-        },
-      });
-      return { response: { output: result.text! } };
-    },
+              { text: objective },
+            ],
+          },
+        ];
+        const result = await geminiApiAgent.run(contents, {
+          updateStatus,
+          generateConfig: {
+            temperature: 0.7,
+            systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
+            tools: [{ googleSearch: {} }],
+          },
+        });
+        return { response: { output: result.text! } };
+      },
 
-    /*  generate_image: async (args) => {
+      code_execution: async (args) => {
+        const { objective, system_prompt } = args;
+        const contents: Content[] = [{ role: 'user', parts: [{ text: objective }] }];
+        const result = await geminiApiAgent.run(contents, {
+          updateStatus,
+          generateConfig: {
+            temperature: 0,
+            systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
+            tools: [{ codeExecution: {} }, { googleSearch: {} }],
+          },
+        });
+        return { response: { output: addCitations(result) } };
+      },
+
+      reply_file: async (args) => {
+        const { message_id, content, name, type, describe } = args;
+        const file = makeFile(content, name, type);
+        const result = await ctx.replyWithDocument(file, {
+          ...(describe && { caption: markdownToMarkdownV2Chunks(describe)[0] }),
+          parse_mode: 'MarkdownV2',
+          deleteAfterMs: ms['1d'],
+          replyToMessageId: message_id,
+        });
+        return { response: { output: JSON.stringify(result) } };
+      },
+
+      publish_post: async (args) => {
+        const { title, content } = args;
+        const page = await ctx.api.publishTelegraphPost(title, content);
+        return { response: { output: JSON.stringify(page) } };
+      },
+
+      react: async (args) => {
+        const { message_id, reaction } = args;
+        const result = await ctx.react(reaction, message_id);
+        return { response: { output: JSON.stringify(result) } };
+      },
+
+      seek_clarification: async (args) => {
+        const { question, answers } = args;
+        const InlineKeyboardButtons: InlineKeyboardButton[][] = [
+          answers.map((_a, i): InlineKeyboardButton => {
+            return {
+              text: String(i + 1),
+              callback_data: `answer_${ctx.user.id}_${i}`,
+            };
+          }),
+        ];
+
+        const candidate = answers.map((a, i) => `${i + 1}. ${a}`).join('\n');
+        const text = `${question}\n\n<select>\n${candidate}\n</select>`;
+        const result = await ctx.reply(markdownToMarkdownV2(text), {
+          replyToMessageId: ctx.message?.message_id,
+          reply_markup: { inline_keyboard: InlineKeyboardButtons },
+          parse_mode: 'MarkdownV2',
+          deleteAfterMs: ms['1d'],
+        });
+        return { response: { output: JSON.stringify(result) } };
+      },
+
+      save_memory: (args) => {
+        const { user_id, fact } = args;
+        return { response: { output: longTermMemory.addMemory(user_id ?? ctx.chat.id, fact) } };
+      },
+
+      /*  generate_image: async (args) => {
       const { message_id, prompt, aspect_ratio, image_size, system_prompt } = args;
       const model = multimodalModelRotator.next();
       const contents: Content[] = [
@@ -181,74 +294,8 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
         parts: [imageData],
       };
     }, */
+    };
 
-    code_execution: async (args) => {
-      const { prompt, system_prompt } = args;
-      const contents: Content[] = [{ role: 'user', parts: [{ text: prompt }] }];
-      const result = await geminiApiAgent.run(contents, {
-        updateStatus,
-        generateConfig: {
-          temperature: 0,
-          systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
-          tools: [{ codeExecution: {} }],
-        },
-      });
-      return { response: { output: addCitations(result) } };
-    },
-
-    reply_file: async (args) => {
-      const { message_id, content, name, type, describe } = args;
-      const file = makeFile(content, name, type);
-      const result = await ctx.replyWithDocument(file, {
-        ...(describe && { caption: markdownToMarkdownV2(describe) }),
-        parse_mode: 'MarkdownV2',
-        deleteAfterMs: ms['1d'],
-        replyToMessageId: message_id,
-      });
-      return { response: { output: JSON.stringify(result) } };
-    },
-
-    publish_post: async (args) => {
-      const { title, content } = args;
-      const page = await ctx.api.publishTelegraphPost(title, content);
-      return { response: { output: JSON.stringify(page) } };
-    },
-
-    reaction_to_message: async (args) => {
-      const { message_id, reaction } = args;
-      const result = await ctx.react(reaction, message_id);
-      return { response: { output: JSON.stringify(result) } };
-    },
-
-    seek_clarification: async (args) => {
-      const { question, answers } = args;
-      const InlineKeyboardButtons: InlineKeyboardButton[][] = [
-        answers.map((_a, i): InlineKeyboardButton => {
-          return {
-            text: String(i + 1),
-            callback_data: `answer_${ctx.user.id}_${i}`,
-          };
-        }),
-      ];
-
-      const candidate = answers.map((a, i) => `${i + 1}. ${a}`).join('\n');
-      const text = `${question}\n\n<select>\n${candidate}\n</select>`;
-      const result = await ctx.send(markdownToMarkdownV2(text), {
-        reply_markup: { inline_keyboard: InlineKeyboardButtons },
-        parse_mode: 'MarkdownV2',
-      });
-      return { response: { output: JSON.stringify(result) } };
-    },
-
-    save_memory: (args) => {
-      const { user_id, fact } = args;
-      return { response: { output: longTermMemory.addMemory(user_id ?? ctx.chat.id, fact) } };
-    },
-
-    discover_mcp_servers: async () => {
-      await mcpClient.discoverMcpServers();
-      const mcpServers = mcpClient.getLoadedServers();
-      return { response: { output: JSON.stringify(mcpServers) } };
-    },
-  });
+    return toolCallers;
+  };
 };

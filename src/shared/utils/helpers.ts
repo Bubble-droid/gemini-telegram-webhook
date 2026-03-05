@@ -77,11 +77,10 @@ export const rotateArray = <T>(arr: readonly T[], steps = 1, direction: 'left' |
  * 截断长字符串
  */
 export const shortenString = (input: string): string => {
-  const MAX = 4000;
-  const HEAD = 3000;
+  const MAX = 2000;
   const chars = [...input];
   if (chars.length <= MAX) return input;
-  return `${chars.slice(0, HEAD).join('')}...`;
+  return `${chars.slice(0, MAX).join('')}...`;
 };
 
 /**

@@ -29,7 +29,7 @@ export const mappingGeminiContentsToOpenAiMessages = (contents: Content[]): Chat
     return {
       role: chatRole as 'user',
       content: parts!.flatMap((p): ChatCompletionContentPart[] => {
-        if (p.inlineData) {
+        if (p.inlineData?.mimeType?.startsWith('image/')) {
           return [
             {
               type: 'image_url',

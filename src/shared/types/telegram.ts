@@ -1,5 +1,5 @@
-import type { Content } from '@google/genai';
 import type { ApiMethods, Opts } from '@grammyjs/types';
+import type { ChatCompletionMessageParam } from 'openai/resources.js';
 
 type Ret<F> = {
   [M in keyof ApiMethods<F>]: ReturnType<ApiMethods<F>[M]>;
@@ -25,5 +25,5 @@ export interface AutoDeleteParams {
 export interface ChitchatState {
   maxScore: number;
   currentScore: number;
-  groupHistory: Content[];
+  groupHistory: ChatCompletionMessageParam[];
 }

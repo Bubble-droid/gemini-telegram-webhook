@@ -1,13 +1,12 @@
 import type { InlineKeyboardButton, InlineKeyboardMarkup } from '@grammyjs/types';
-import { CONFIG } from '@shared/core/config.js';
 import type { Recordable } from '@shared/types/common.js';
+import type { ResponseContext } from '@telegram/bot/response-context.js';
 
 export const MENTIONED_ALIAS = `;Q`;
 
 export const Messages = {
-  getStartText: (): string => {
-    const { TELEGRAM_BOT_USERNAME: botName } = CONFIG;
-    return `
+  getStartText: (ctx: ResponseContext): string =>
+    `
 💡 推理模型：Google Gemini
 
 ✨ 你好！你可以通过以下方式与我互动，我能理解上下文并深度解析多媒体内容：
@@ -20,15 +19,14 @@ export const Messages = {
 * **操作方式**：在发送消息时**直接携带文件**，或**回复**一条包含文件的消息并附带你的问题。
 
 * **💬 发起新话题**
-* \`@${botName}\` + 你想问的问题
+* \`@${ctx.me.username}\` + 你想问的问题
 * \`${MENTIONED_ALIAS}\` + 你想问的问题
 
 * **🔗 引用他人消息提问**
-* 回复或引用**他人**的消息时，请务必加上 \`@${botName}\` 或 \`${MENTIONED_ALIAS}\`，我就会针对该消息（及其附件）进行解答。
+* 回复或引用**他人**的消息时，请务必加上 \`@${ctx.me.username}\` 或 \`${MENTIONED_ALIAS}\`，我就会针对该消息（及其附件）进行解答。
 
 👍 由 ClawCloud Run 和 Google Gemini 提供支持
-`.trim();
-  },
+`.trim(),
 
   getRateLimiting: (seconds: number): string => {
     return `⏳ 系统冷却中，请等待 ${seconds} 秒后再试...`;

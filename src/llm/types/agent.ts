@@ -1,4 +1,5 @@
 import type {
+  Content,
   FunctionDeclaration,
   FunctionResponse,
   GenerateContentConfig,
@@ -23,6 +24,7 @@ export interface CallBackFns {
 export interface GeminiAgentOpts {
   ctx?: ResponseContext;
   callTool?: ToolCall;
+  appendHistory?: (contents: Content[]) => void;
   updateStatus?: StatusUpdateCallback | undefined;
   generateConfig?: GenerateContentConfig | undefined;
   generateModel?: GenerateContentParameters['model'];

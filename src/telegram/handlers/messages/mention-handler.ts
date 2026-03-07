@@ -1,15 +1,10 @@
 import { RESEARCH_BOT_TOOLS } from '@configs/function-tools.js';
 import { MENTIONED_ALIAS, Messages } from '@configs/messages.js';
-import { chatHistory } from '@data/chat-history.js';
-import { longTermMemory } from '@data/long-term-memory.js';
-import { promptStore } from '@data/prompt-store.js';
 import { FunctionCallingConfigMode, type Content, type Part } from '@google/genai';
 import type { Message } from '@grammyjs/types';
 import type { GeminiAgent } from '@llm/agent/gemini-agent.js';
-import type { McpClient } from '@llm/mcp/mcp-client.js';
 import type { GeminiAgentResponse } from '@llm/types/agent.js';
-import type { ToolCallerInjectedDeps, ToolName } from '@llm/types/tool.js';
-import type { FileHandler } from '@services/file-service.js';
+import type { ToolName } from '@llm/types/tool.js';
 import { AgentError, AppError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import { markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
@@ -20,18 +15,11 @@ import type { ResponseContext } from '@telegram/bot/response-context.js';
 import type { HandlerWorkers } from '@telegram/handlers/types.js';
 
 export class MentionHandler {
-  private readonly fileHandler: FileHandler;
-  private readonly agent: GeminiAgent;
-  private readonly toolCaller: ToolCallerInjectedDeps;
-  private readonly mcpClient: McpClient;
-
   private readonly processingLocks = new Set<string>();
+  private readonly agent: GeminiAgent;
 
-  constructor(workers: HandlerWorkers) {
-    this.fileHandler = workers.fileHandler;
+  constructor(private readonly workers: HandlerWorkers) {
     this.agent = workers.geminiApiAgent;
-    this.toolCaller = workers.toolCaller;
-    this.mcpClient = workers.mcpClient;
   }
 
   public async handle(ctx: ResponseContext, messages: Message[]) {
@@ -51,7 +39,7 @@ export class MentionHandler {
 
       if (!(await this.checkContents(chatContents, ctx))) return;
 
-      const historyContents = chatHistory.get(chat.id, user.id);
+      const historyContents = await this.workers.chatHistory.get(chat.id, user.id);
 
       if (chatContents.at(0)?.role === 'model' && historyContents.at(-1)?.role === 'model') {
         const isConnectedSimilar = isCoreContentSimilar(
@@ -79,7 +67,7 @@ export class MentionHandler {
       await ctx.updateMessage(Messages.thinking, { replyToMessageId: ctx.message?.message_id });
 
       const geminiResponse = await this.delegateQuestionProcess(completeContents, ctx);
-      this.resolveResponse(ctx, geminiResponse, completeContents);
+      await this.resolveResponse(ctx, geminiResponse, completeContents);
     } catch (apiError) {
       logger.error('Error during Gemini API call or response processing.', {
         err: apiError,
@@ -94,7 +82,7 @@ export class MentionHandler {
     }
   }
 
-  private delegateQuestionProcess(contents: Content[], ctx: ResponseContext) {
+  private async delegateQuestionProcess(contents: Content[], ctx: ResponseContext) {
     const { chat, user, message } = ctx;
 
     logger.info(`Processing over to ChatAgent`, {
@@ -103,44 +91,50 @@ export class MentionHandler {
       messageId: message?.message_id,
     });
 
+    const appendHistory = (newContents: Content[]) => {
+      contents.push(...newContents);
+    };
+
     const updateStatus = async (text: string) => {
       await ctx
         .updateMessage(markdownToMarkdownV2Chunks(text)[0]!, {
           replyToMessageId: ctx.message?.message_id,
           parse_mode: 'MarkdownV2',
+          deleteAfterMs: ms['1d'],
         })
         .catch((err: unknown) => {
           logger.warn(`Update status message failed.`, { err });
         });
     };
 
-    const systemPrompt = promptStore.format('assistant', {
+    const systemPrompt = this.workers.promptStore.format('assistant', {
       time: formatTime(Date.now()),
       self: JSON.stringify(ctx.me),
       chat: JSON.stringify(chat),
       user: JSON.stringify(user),
       messageId: String(message?.message_id),
-      userMemories: longTermMemory.getMemories(user.id),
+      userMemories: await this.workers.longTermMemory.getMemories(user.id).catch(() => 'Not Found'),
     });
 
     return this.agent.run(contents, {
       ctx,
       updateStatus,
+      appendHistory,
       generateConfig: {
         temperature: 0,
         systemInstruction: [{ text: systemPrompt }],
-        tools: [{ functionDeclarations: RESEARCH_BOT_TOOLS(this.mcpClient.getLoadedServers()) }],
+        tools: [{ functionDeclarations: RESEARCH_BOT_TOOLS(this.workers.mcpClient.getLoadedServers()) }],
         toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
       },
       callTool: (name, args) => {
-        return this.toolCaller(ctx, updateStatus)[name as ToolName](args as never);
+        return this.workers.toolCaller(ctx, updateStatus)[name as ToolName](args as never);
       },
     });
   }
 
-  private resolveResponse(ctx: ResponseContext, response: GeminiAgentResponse, completeContents: Content[]) {
+  private async resolveResponse(ctx: ResponseContext, response: GeminiAgentResponse, completeContents: Content[]) {
     completeContents.push(response.candidates![0]!.content!);
-    chatHistory.update(ctx.chat.id, ctx.user.id, completeContents);
+    await this.workers.chatHistory.update(ctx.chat.id, ctx.user.id, completeContents);
   }
 
   private async buildChatContents(messages: Message[], ctx: ResponseContext): Promise<Content[]> {
@@ -184,7 +178,7 @@ export class MentionHandler {
   private async extractMessageParts(messages: Message[], ctx: ResponseContext): Promise<Part[]> {
     const parts: Part[] = [];
 
-    const fileParts = await this.fileHandler.batchProcessFiles(messages, hasFile);
+    const fileParts = await this.workers.fileHandler.batchProcessFiles(messages, hasFile);
 
     parts.push(...fileParts);
 
@@ -227,7 +221,7 @@ export class MentionHandler {
 
   private async checkFile(ctx: ResponseContext) {
     if (!ctx.isFile) return;
-    await ctx.updateMessage(Messages.uploading, { replyToMessageId: ctx.message?.message_id });
+    await ctx.updateMessage(Messages.uploading, { replyToMessageId: ctx.message?.message_id, deleteAfterMs: ms['3m'] });
   }
 
   private async checkContents(contents: Content[], ctx: ResponseContext) {

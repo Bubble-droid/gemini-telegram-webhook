@@ -8,6 +8,7 @@ import type {
   ReactionTypeEmoji,
   UserFromGetMe,
 } from '@grammyjs/types';
+import type { TaskScheduler } from '@services/task-scheduler.js';
 import { TELEGRAM_BASE_URL } from '@shared/core/constants.js';
 import { TelegramError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
@@ -41,26 +42,19 @@ type ExtractParamOptions<M extends ApiMethod, X extends keyof ApiParams<M> & str
 
 type MessageIdProperty = Pick<Message, 'message_id'>;
 
-interface IScheduler {
-  schedule: <M extends ApiMethod>(action: M, params: ApiParams<M>, delayMs: number) => void;
-}
-
 const isMessageIdProperty = (data: unknown): data is MessageIdProperty => {
   return typeof data === 'object' && data !== null && 'message_id' in data && typeof data.message_id === 'number';
 };
 
 export class TelegramBotApi {
-  private readonly token: string;
-  private readonly telegraph: Telegraph;
-  private readonly telegraphAccount: Account;
   private botInfo: UserFromGetMe | null = null;
-  private scheduler: IScheduler | undefined;
+  private scheduler: TaskScheduler | null = null;
 
-  constructor(token: string, telegraph: Telegraph, telegraphAccount: Account) {
-    this.token = token;
-    this.telegraph = telegraph;
-    this.telegraphAccount = telegraphAccount;
-  }
+  constructor(
+    private readonly token: string,
+    private readonly telegraph: Telegraph,
+    private readonly telegraphAccount: Account,
+  ) {}
 
   public get me() {
     if (!this.botInfo) {
@@ -69,12 +63,12 @@ export class TelegramBotApi {
     return this.botInfo;
   }
 
-  public async refreshBotInfo() {
-    this.botInfo ??= await this.getMe();
+  public setScheduler(s: TaskScheduler) {
+    this.scheduler = s;
   }
 
-  public setScheduler(s: IScheduler) {
-    this.scheduler = s;
+  public async refreshBotInfo() {
+    this.botInfo ??= await this.getMe();
   }
 
   public getUpdates(opts?: ApiParams<'getUpdates'>) {
@@ -400,11 +394,11 @@ export class TelegramBotApi {
    * Standardized handler for message API results.
    * Handles extraction of message IDs and delegates auto-deletion logic.
    */
-  private processMessageResult<T extends ApiMethod>(
+  private async processMessageResult<T extends ApiMethod>(
     result: ApiReturn<T>,
     chat_id: ChatId,
     deleteAfterMs?: number,
-  ): ApiReturn<T> {
+  ): Promise<ApiReturn<T>> {
     if (!this.scheduler) {
       logger.warn('Scheduler is not set.');
       return result;
@@ -424,7 +418,11 @@ export class TelegramBotApi {
     }
 
     if (messageIdsToDelete.length > 0) {
-      this.scheduler.schedule('deleteMessages', { chat_id, message_ids: messageIdsToDelete }, deleteAfterMs);
+      await this.scheduler
+        .schedule('deleteMessages', { chat_id, message_ids: messageIdsToDelete }, deleteAfterMs)
+        .catch((err: unknown) => {
+          logger.warn('Failed to schedule message deletion:', { err });
+        });
     }
 
     return result;

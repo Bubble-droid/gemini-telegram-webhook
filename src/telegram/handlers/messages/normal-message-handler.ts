@@ -1,8 +1,8 @@
 import { Messages } from '@configs/messages.js';
-import { faqMatcher } from '@data/faq-matcher.js';
 import { logger } from '@shared/core/logger.js';
 import { markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
 import { delay, ms } from '@shared/utils/helpers.js';
+import type { FaqMatcher } from '@storage/faq-matcher.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
 import type { ChitchatHandler } from './chitchat-handler.js';
 
@@ -15,13 +15,16 @@ const CUSTOM_KEYWORD_REPLY = [
 
 interface Handlers {
   chitchatHandler: ChitchatHandler;
+  faqMatcher: FaqMatcher;
 }
 
 export class NormalMessageHandler {
-  private chitchat: ChitchatHandler;
+  private readonly chitchat: ChitchatHandler;
+  private readonly faqMatcher: FaqMatcher;
 
   constructor(handlers: Handlers) {
     this.chitchat = handlers.chitchatHandler;
+    this.faqMatcher = handlers.faqMatcher;
   }
 
   public async handle(ctx: ResponseContext) {
@@ -41,7 +44,7 @@ export class NormalMessageHandler {
    */
   private async handleKeywordReply(ctx: ResponseContext) {
     if (!ctx.text?.length) return;
-    const result = faqMatcher.findFaqMatch(ctx.text);
+    const result = this.faqMatcher.findFaqMatch(ctx.text);
     let answer: string | undefined;
     if (result) {
       logger.info('FAQ 匹配成功', {
@@ -55,7 +58,7 @@ export class NormalMessageHandler {
     }
 
     if (!answer) return;
-    const chunks = markdownToMarkdownV2Chunks(answer.trim(), 400);
+    const chunks = markdownToMarkdownV2Chunks(answer.trim());
     for (const [i, chunk] of chunks.entries()) {
       if (i === 0) {
         await ctx.reply(chunk, {

@@ -1,27 +1,19 @@
-import { longTermMemory } from '@data/long-term-memory.js';
 import { FunctionCallingConfigMode, type Content } from '@google/genai';
 import type { InlineKeyboardButton } from '@grammyjs/types';
-import type { GeminiAgent } from '@llm/agent/gemini-agent.js';
-import type { OpenAiAgent } from '@llm/agent/openai-agent.js';
 import { mergeSystemPrompt } from '@llm/lib/helper.js';
-import type { McpClient } from '@llm/mcp/mcp-client.js';
 import type { StandardizedFunctionResponse } from '@llm/types/agent.js';
 import type { InferToolArgs, ToolCallerInjectedDeps, ToolCallers } from '@llm/types/tool.js';
 import { logger } from '@shared/core/logger.js';
 import { markdownToMarkdownV2, markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
 import { addCitations } from '@shared/utils/citation-generate.js';
 import { makeFile, ms } from '@shared/utils/helpers.js';
+import type { HandlerWorkers } from '@telegram/handlers/types.js';
 
-interface ToolCallerDeps {
-  geminiApiAgent: GeminiAgent;
-  geminiCliAgent: GeminiAgent;
-  gemmaAgent: GeminiAgent;
-  openAiAgent: OpenAiAgent;
-  mcpClient: McpClient;
-}
+export const createToolCaller = (
+  deps: Pick<HandlerWorkers, 'geminiApiAgent' | 'openAiAgent' | 'mcpClient' | 'longTermMemory'>,
+): ToolCallerInjectedDeps => {
+  const { geminiApiAgent, mcpClient, longTermMemory } = deps;
 
-export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps => {
-  const { geminiApiAgent, mcpClient } = deps;
   return (ctx, updateStatus) => {
     const fileSearch = async (
       args: InferToolArgs<'deep_research'>['rag_agent'],
@@ -57,14 +49,26 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
     };
 
     const webResearch = async (args: InferToolArgs<'web_research'>): Promise<StandardizedFunctionResponse> => {
-      const { objective, system_prompt } = args;
+      const { objective, system_prompt, search_config } = args;
       const contents: Content[] = [{ role: 'user', parts: [{ text: objective }] }];
       const result = await geminiApiAgent.run(contents, {
         updateStatus,
         generateConfig: {
           temperature: 0.7,
           systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
-          tools: [{ googleSearch: {} }, { urlContext: {} }],
+          tools: [
+            {
+              googleSearch: {
+                ...(search_config?.time_range_filter && {
+                  timeRangeFilter: {
+                    startTime: search_config.time_range_filter.start_time,
+                    endTime: search_config.time_range_filter.end_time,
+                  },
+                }),
+              },
+            },
+            { urlContext: {} },
+          ],
         },
       });
       return {
@@ -111,7 +115,7 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
           const content = [...statusRegistry.entries()]
             .map(([name, info]) => `🤖 Sub-Agent: ${name} ${info.symbol}\n👨‍💻 Task: ${info.objective}...`)
             .join('\n\n');
-          await updateStatus?.(`<research>\n${content}\n</research>`);
+          await updateStatus?.(`<researching>\n${content}\n</researching>`);
         };
 
         await refreshUI();
@@ -142,13 +146,13 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
               }
 
               if (result.response.output) symbol = '✅';
-            } catch (_err) {
-              // Keep symbol as '❌'
+            } catch (err) {
+              return { agent_name: name, error: err instanceof Error ? err.message : String(err) };
             }
             statusRegistry.get(name)!.symbol = symbol;
             await refreshUI();
 
-            return result?.response.output
+            return result.response.output
               ? { agent_name: name, result }
               : { agent_name: name, error: `Agent ${name} failed or returned no output` };
           },
@@ -248,52 +252,76 @@ export const createToolCaller = (deps: ToolCallerDeps): ToolCallerInjectedDeps =
         return { response: { output: JSON.stringify(result) } };
       },
 
-      save_memory: (args) => {
+      save_memory: async (args) => {
         const { user_id, fact } = args;
-        return { response: { output: longTermMemory.addMemory(user_id ?? ctx.chat.id, fact) } };
+        return { response: { output: await longTermMemory.addMemory(user_id ?? ctx.chat.id, fact) } };
       },
 
-      /*  generate_image: async (args) => {
-      const { message_id, prompt, aspect_ratio, image_size, system_prompt } = args;
-      const model = multimodalModelRotator.next();
-      const contents: Content[] = [
-        {
-          role: 'user',
-          parts: [{ text: prompt }],
-        },
-      ];
-      const result = await geminiCliAgent.run(contents, {
-        updateStatus,
-        generateConfig: {
-          temperature: 0.7,
-          systemInstruction: [{ text: mergeSystemPrompt(system_prompt) }],
-          responseModalities: ['TEXT', 'IMAGE'],
-          imageConfig: {
-            aspectRatio: aspect_ratio,
-            ...(model.startsWith('gemini-3') && image_size && { imageSize: image_size }),
+      /*   generate_image: async (args) => {
+        const { message_id, prompt, image_config } = args;
+        const messages: ChatCompletionUserMessageParam[] = [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: prompt,
+              },
+            ],
           },
-          ...(model.startsWith('gemini-3') && { tools: [{ googleSearch: {} }] }),
-        },
-        generateModel: 'gemini-2.5-flash-image',
-      });
-      const imageData = result.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
-      if (!imageData) {
-        return { response: { error: 'Failed to generate image, missing valid image data.' } };
-      }
-      const buffer = Buffer.from(imageData.inlineData!.data!, 'base64');
-      const photo = makeFile(buffer, `generated-by-${model}.png`, imageData.inlineData?.mimeType ?? 'image/png');
-      const res = await ctx.api.sendPhoto(ctx.chat.id, photo, {
-        deleteAfterMs: ms['1d'],
-        replyToMessageId: message_id,
-      });
-      if (!res.ok) {
-        return { response: { error: `Failed to send image. ${res.error}` } };
-      }
-      return {
-        response: { output: 'Image generated successfully.', ...(result.text && { result: result.text }) },
-        parts: [imageData],
-      };
-    }, */
+        ];
+        const result = (await openAiAgent.run(messages, {
+          updateStatus,
+          params: {
+            model: OPENROUTER_FREE_MODE,
+            modalities: ['image'],
+            ...(image_config && {
+              image_config,
+            }),
+          } as unknown as OpenAiClientParams,
+        })) as ChatCompletionMessage & {
+          images?: { type: 'image_url'; image_url?: { url?: `data:image/png;base64,${string}` } }[];
+        };
+
+        const dataUrlRegex = /^data:(?<type>[^;:]+)(?:;base64)?,(?<data>[\s\S]*)$/;
+        const images: { type: string; data: string }[] = [];
+        if (result.images) {
+          result.images.forEach((img) => {
+            const match = dataUrlRegex.exec(img.image_url?.url ?? '');
+            if (match?.groups) {
+              images.push({
+                type: match.groups['type']!,
+                data: match.groups['data']!,
+              });
+            }
+          });
+        }
+
+        if (images.length === 0) return { response: { error: 'Failed to generate image, missing valid image data.' } };
+
+        const results: Message.PhotoMessage[] = [];
+        for (const image of images) {
+          const buffer = Buffer.from(image.data, 'base64');
+          const photo = makeFile(buffer, `generated-by-llm-${Date.now()}.png`, image.type);
+          const result = await ctx.replyWithPhoto(photo, {
+            deleteAfterMs: ms['1d'],
+            replyToMessageId: message_id,
+          });
+          results.push(result);
+        }
+
+        return {
+          response: { output: 'Image generated and sent successfully.', results: JSON.stringify(results) },
+          parts: images.map(
+            (img): FunctionResponsePart => ({
+              inlineData: {
+                mimeType: img.type,
+                data: img.data,
+              },
+            }),
+          ),
+        };
+      }, */
     };
 
     return toolCallers;

@@ -195,7 +195,7 @@ class LoggerService implements AppLog {
     return {
       name: err.name,
       message: err.message,
-      // stack: err.stack ?? 'No stack trace available',
+      stack: err.stack ?? 'No stack trace available',
     };
   }
 

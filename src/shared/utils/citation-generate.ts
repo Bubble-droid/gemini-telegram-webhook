@@ -1,6 +1,6 @@
-import { pathResolver } from '@data/path-resolver.js';
 import type { GroundingChunk } from '@google/genai';
 import type { GeminiAgentResponse } from '@llm/types/agent.js';
+import { pathResolver } from '@storage/path-resolver.js';
 
 /**
  * 辅助函数：将 UTF-8 字节索引转换为 JavaScript 字符串索引

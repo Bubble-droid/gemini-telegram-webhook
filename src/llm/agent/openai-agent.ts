@@ -1,12 +1,13 @@
 import type { FunctionCall } from '@google/genai';
 import type { OpenAiClient } from '@llm/client/openai-client.js';
 import { parseToolCalls } from '@llm/lib/tool-call-parser.js';
-import type { OpenAiClientParams, StatusUpdateCallback, ToolCall } from '@llm/types/agent.js';
+import type { NormalizedResponse, OpenAiClientParams, StatusUpdateCallback, ToolCall } from '@llm/types/agent.js';
 import { AgentError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import { markdownToMarkdownV2Chunks } from '@shared/markdown/telegram-converter.js';
 import type { Recordable } from '@shared/types/common.js';
 import { delay, ms } from '@shared/utils/helpers.js';
+import type { ListRotator } from '@shared/utils/list-rotator.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
 import type {
   ChatCompletionMessage,
@@ -17,7 +18,9 @@ import type { ChatCompletion, ChatCompletionContentPart } from 'openai/resources
 import { FORCE_BLOCKING_TOOLS, MAX_AGENT_ROUNDS } from './gemini-agent.js';
 
 interface OpenAiAgentOpts {
+  modelList: ListRotator;
   ctx?: ResponseContext;
+  appendHistory?: (messages: ChatCompletionMessageParam[]) => void;
   callTool?: ToolCall;
   updateStatus?: StatusUpdateCallback | undefined;
   params?: OpenAiClientParams | undefined;
@@ -54,7 +57,7 @@ export class OpenAiAgent {
   constructor(private readonly client: OpenAiClient) {}
 
   public async run(messages: ChatCompletionMessageParam[], opts: OpenAiAgentOpts): Promise<ChatCompletionMessage> {
-    const { ctx, updateStatus, callTool, params } = opts;
+    const { modelList, ctx, updateStatus, callTool, params } = opts;
     const agentMsgs = [...messages];
     let round = 0;
     let response: ChatCompletion;
@@ -64,29 +67,78 @@ export class OpenAiAgent {
         throw new AgentError(`Agent exceeded maximum rounds (${this.maxRounds})`);
       }
       logger.debug(`OpenAI Agent Round ${round++} started.`);
-      logger.trace(`OpenAI Agent request messages:`, {
-        requestMessage: agentMsgs.map((m): ChatCompletionMessageParam => {
-          if (m.role === 'user' && Array.isArray(m.content)) {
-            return {
-              ...m,
-              content: m.content.map(simplifyMessageContent),
-            };
-          }
-          return m;
-        }),
-      });
-      response = await this.client.chatCompletion(agentMsgs, params);
-      const completionMessage = response.choices[0]?.message;
-      logger.trace(`OpenAI Agent completion response:`, { ...response });
 
-      if (!completionMessage?.content?.length && !completionMessage?.tool_calls?.length) {
+      let completionMessage:
+        | (ChatCompletionMessage & {
+            images?: { type: 'image_url'; image_url?: { url?: `data:image/png;base64,${string}` } }[];
+          })
+        | undefined;
+      let retries = 0;
+      while (retries <= modelList.size) {
+        const model = modelList.next();
+        logger.trace(`OpenAI Agent request:`, {
+          messages: agentMsgs.map((m): ChatCompletionMessageParam => {
+            if (m.role === 'user' && Array.isArray(m.content)) {
+              return {
+                ...m,
+                content: m.content.map(simplifyMessageContent),
+              };
+            }
+            return m;
+          }),
+          params: {
+            ...params,
+            model,
+            tools: params?.tools?.[0],
+          },
+        });
+
+        try {
+          response = await this.client.chatCompletion(agentMsgs, { ...params, model });
+          completionMessage = response.choices[0]?.message;
+          logger.trace(`OpenAI Agent completion response:`, {
+            ...response,
+            choices: response.choices.map(
+              (c) =>
+                ({
+                  ...c,
+                  message: {
+                    ...completionMessage,
+                    images: completionMessage?.images?.map((m) => ({
+                      ...m,
+                      image_url: `${m.image_url?.url?.split(',')[0]}[BASE64_DATA_MASKED]`,
+                    })),
+                  },
+                }) as ChatCompletion.Choice,
+            ),
+          } satisfies ChatCompletion);
+
+          if (
+            !completionMessage?.content?.length &&
+            !completionMessage?.tool_calls?.length &&
+            !completionMessage?.images?.length
+          ) {
+            throw new AgentError('OpenAI Agent response is empty');
+          }
+          break;
+        } catch (err) {
+          if (retries >= modelList.size) {
+            throw err instanceof AgentError ? err : new AgentError(err instanceof Error ? err.message : String(err));
+          }
+          logger.warn(`OpenAI Agent request failed with model ${model}, retrying...:`, { err });
+          await delay(ms.sec(15));
+          retries++;
+          continue;
+        }
+      }
+
+      if (!completionMessage) {
         throw new AgentError('OpenAI Agent response is empty');
       }
 
       if (ctx && completionMessage.content) {
         const chunks = markdownToMarkdownV2Chunks(
           completionMessage.content.replace(/<cot>[\s\S]*?<\/cot>|<tool_calls>[\s\S]*?<\/tool_calls>/gi, '').trim(),
-          300,
         );
         for (const chunk of chunks) {
           try {
@@ -131,7 +183,7 @@ export class OpenAiAgent {
       logger.debug(`Model requested ${toolCalls.length} tool calls.`);
 
       await updateStatus?.(
-        `<tool_calls>\n${toolCalls.map((c) => `🔧 Calling ${c.name}\nParameters: ${JSON.stringify(c.args).slice(0, 200)}...`).join('\n\n')}\n</tool_calls>`.trim(),
+        `${!ctx && (completionMessage.content || 'reasoning' in completionMessage) ? `<thought>\n${completionMessage.content ?? (completionMessage as unknown as { reasoning: string }).reasoning}\n</thought>\n\n` : ''}<tool_calls>\n${toolCalls.map((c) => `🔧 Calling ${c.name}\nParameters: ${JSON.stringify(c.args).slice(0, 200)}...`).join('\n\n')}\n</tool_calls>`.trim(),
       );
 
       const toolResults = await Promise.all(
@@ -140,10 +192,10 @@ export class OpenAiAgent {
             return createToolResponse(id ?? '', 'Tool name not provided');
           }
           logger.info(`OpenAI Agent Calling tool:`, { name, args });
-          let response: unknown;
+          let response: NormalizedResponse;
           try {
             const result = await callTool(name, args);
-            response = result.response;
+            response = { ...result.response };
           } catch (err) {
             const errMsg = err instanceof Error ? err.message : String(err);
             response = { error: errMsg };
@@ -168,16 +220,16 @@ export class OpenAiAgent {
         }),
       );
 
+      agentMsgs.push(...toolResults);
+
       if (toolCalls.some((call) => !!call.args?.['blocking'] || FORCE_BLOCKING_TOOLS.includes(call.name ?? ''))) {
         logger.info(`Model calling blocking response tools.`);
         break;
       }
 
-      agentMsgs.push(...toolResults);
-
-      await delay(ms.sec(3));
+      await delay(ms.sec(15));
     } while (toolCalls.length > 0);
 
-    return response.choices[0]!.message;
+    return response!.choices[0]!.message;
   }
 }

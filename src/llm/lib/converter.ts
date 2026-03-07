@@ -1,11 +1,6 @@
 import type { Content } from '@google/genai';
 import type { GeneralFunctionSchema } from '@llm/types/agent.js';
-import type {
-  ChatCompletionContentPart,
-  ChatCompletionMessage,
-  ChatCompletionMessageParam,
-  FunctionParameters,
-} from 'openai/resources.js';
+import type { ChatCompletionContentPart, ChatCompletionMessageParam, FunctionParameters } from 'openai/resources.js';
 import type { FunctionTool } from 'openai/resources/beta.js';
 
 export const mappingGeminiToolsToOpenAi = (functions: GeneralFunctionSchema[]): FunctionTool[] => {
@@ -50,15 +45,4 @@ export const mappingGeminiContentsToOpenAiMessages = (contents: Content[]): Chat
       }),
     };
   });
-};
-
-export const convertChatCompletionMessageToGeminiContent = (message: ChatCompletionMessage): Content => {
-  return {
-    role: 'model',
-    parts: [
-      {
-        text: message.content!,
-      },
-    ],
-  };
 };

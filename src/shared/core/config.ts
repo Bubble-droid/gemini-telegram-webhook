@@ -12,8 +12,6 @@ const defineRequiredKeys =
 
 const REQUIRED_ENV_VARS = defineRequiredKeys<RawEnv>()([
   'GEMINI_API_KEYS',
-  'GEMINI_CREDENTIALS',
-  'GOOGLE_CLOUD_PROJECT',
   'PROXY_AUTH_TOKEN',
   'OPENAI_API_KEY',
   'GITHUB_ACCESS_TOKEN',
@@ -24,12 +22,16 @@ const REQUIRED_ENV_VARS = defineRequiredKeys<RawEnv>()([
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_BOT_OWNER_ID',
   'ALLOWED_USAGE_GROUPS',
+  'UPSTASH_REDIS_REST_URL',
+  'UPSTASH_REDIS_REST_TOKEN',
 ] as const);
 
 const DEFAULT_ENV = {
   SERVER_LISTEN_HOST: '127.0.0.1',
   SERVER_LISTEN_PORT: DEFAULT_SERVER_LISTEN_PORT,
   SERVER_LOG_LEVEL: 'info',
+  GEMINI_CREDENTIALS: undefined,
+  GOOGLE_CLOUD_PROJECT: undefined,
 } as const satisfies ExtractAndMakeRequired<RawEnv>;
 
 const splitArray = <T extends 'string' | 'number'>(val: string | undefined, type: T): Split<T> => {
@@ -86,6 +88,9 @@ class ConfigLoader {
       TELEGRAM_BOT_TOKEN: this.getEnv('TELEGRAM_BOT_TOKEN'),
       TELEGRAM_BOT_OWNER_ID: Number(this.getEnv('TELEGRAM_BOT_OWNER_ID')),
       ALLOWED_USAGE_GROUPS: splitArray(this.getEnv('ALLOWED_USAGE_GROUPS'), 'number'),
+
+      UPSTASH_REDIS_REST_URL: this.getEnv('UPSTASH_REDIS_REST_URL'),
+      UPSTASH_REDIS_REST_TOKEN: this.getEnv('UPSTASH_REDIS_REST_TOKEN'),
 
       SERVER_LISTEN_HOST: this.env.SERVER_LISTEN_HOST ?? DEFAULT_ENV.SERVER_LISTEN_HOST,
       SERVER_LISTEN_PORT: this.env.SERVER_LISTEN_PORT

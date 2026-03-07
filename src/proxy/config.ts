@@ -9,4 +9,5 @@ export const FATAL_ERROR_MESSAGES = [
   'NOT_FOUND',
   'ACCESS TOKEN',
   'PERMISSION_DENIED',
+  `generate_content_free_tier_input_token_count, limit: 250000`,
 ];

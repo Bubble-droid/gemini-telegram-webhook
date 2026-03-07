@@ -1,8 +1,10 @@
 import type { FaqItem } from '@configs/faq-data.js';
 import { DATA_DIR, FAQ_DATA_FILE } from '@shared/core/constants.js';
 import { logger } from '@shared/core/logger.js';
-import path from 'node:path';
+import * as path from 'node:path';
 import { loadData } from './data-load.js';
+
+const FAQ_DATA_PATH = path.join(DATA_DIR, FAQ_DATA_FILE);
 
 /**
  * 预编译后的 FAQ 条目结构
@@ -19,9 +21,7 @@ interface MatchResult {
   matches: string[];
 }
 
-const FAQ_DATA_PATH = path.join(DATA_DIR, FAQ_DATA_FILE);
-
-class FaqMatcher {
+export class FaqMatcher {
   // 使用 Set 存储编译后的条目，虽然迭代速度与数组相当，但在动态添加/删除规则时具有 O(1) 优势
   private readonly compiledFaqs = new Set<CompiledFaqItem>();
 
@@ -65,37 +65,25 @@ class FaqMatcher {
     return null;
   }
 
-  public async reload() {
-    logger.info('Reloading all FAQ data...');
-    this.compiledFaqs.clear();
-    await this.loadFaqData();
-  }
-
   /**
    * 初始化并预编译 FAQ 数据
    * @private
    */
-  private async loadFaqData() {
-    try {
-      const faqData = await loadData<FaqItem[]>(FAQ_DATA_PATH, 'json');
-
-      for (const item of faqData) {
-        // 构建编译后的对象
-        const compiledItem: CompiledFaqItem = {
-          original: item,
-          keywordGroups: item.keywordGroups.map((group) => group.map((pattern) => new RegExp(pattern, 'ims'))),
-          excludeGroups: item.excludeKeywords
-            ? item.excludeKeywords.map((group) => group.map((pattern) => new RegExp(pattern, 'ims')))
-            : null,
-        };
-        // Set.add 保证了引用唯一性
-        this.compiledFaqs.add(compiledItem);
-      }
-
-      logger.info(`FAQ 数据加载完成，共预编译 ${this.compiledFaqs.size} 条规则。`);
-    } catch (err) {
-      logger.error('FAQ 数据预编译失败，请检查 JSON 格式或正则表达式语法。', { err });
+  public async initFaqData() {
+    const faqData = await loadData<FaqItem[]>(FAQ_DATA_PATH, 'json');
+    for (const item of faqData) {
+      // 构建编译后的对象
+      const compiledItem: CompiledFaqItem = {
+        original: item,
+        keywordGroups: item.keywordGroups.map((group) => group.map((pattern) => new RegExp(pattern, 'ims'))),
+        excludeGroups: item.excludeKeywords
+          ? item.excludeKeywords.map((group) => group.map((pattern) => new RegExp(pattern, 'ims')))
+          : null,
+      };
+      // Set.add 保证了引用唯一性
+      this.compiledFaqs.add(compiledItem);
     }
+    logger.info(`FAQ 数据加载完成，共预编译 ${this.compiledFaqs.size} 条规则。`);
   }
 
   /**
@@ -123,5 +111,3 @@ class FaqMatcher {
     return [...uniqueMatches];
   };
 }
-
-export const faqMatcher = new FaqMatcher();

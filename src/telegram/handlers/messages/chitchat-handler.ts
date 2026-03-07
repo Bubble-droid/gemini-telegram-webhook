@@ -1,14 +1,9 @@
 import { CHAT_BOT_TOOLS } from '@configs/function-tools.js';
-import { chatHistory } from '@data/chat-history.js';
-import { longTermMemory } from '@data/long-term-memory.js';
-import { promptStore } from '@data/prompt-store.js';
-import { type Content, type Part } from '@google/genai';
+import { type Part } from '@google/genai';
 import type { Chat, Message, MessageOrigin, User } from '@grammyjs/types';
-import { mappingGeminiContentsToOpenAiMessages, mappingGeminiToolsToOpenAi } from '@llm/lib/converter.js';
-import type { McpClient } from '@llm/mcp/mcp-client.js';
-import type { ToolCallerInjectedDeps, ToolName } from '@llm/types/tool.js';
-import type { FileHandler } from '@services/file-service.js';
-import { OPENAI_MODELS } from '@shared/core/constants.js';
+import { mappingGeminiToolsToOpenAi } from '@llm/lib/converter.js';
+import type { ToolName } from '@llm/types/tool.js';
+import { OPENROUTER_FREE_MODELS } from '@shared/core/constants.js';
 import { AppError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import type { Recordable } from '@shared/types/common.js';
@@ -18,7 +13,11 @@ import { ListRotator } from '@shared/utils/list-rotator.js';
 import { hasImage } from '@shared/utils/message.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
 import type { HandlerWorkers } from '@telegram/handlers/types.js';
-import type { ChatCompletionMessageParam } from 'openai/resources.js';
+import type {
+  ChatCompletionContentPartText,
+  ChatCompletionMessageParam,
+  ChatCompletionUserMessageParam,
+} from 'openai/resources.js';
 
 // 绝对沉默期：上次回复后，至少要累积这么多“注意力分”才开始从 0 计算概率
 // 相当于人类说完话后的“贤者时间”
@@ -28,20 +27,13 @@ const MIN_ATTENTION_SCORE = 4;
 // 相当于“实在忍不住了”
 const MAX_ATTENTION_SCORE = 15;
 
-const HISTORY_LIMIT = 12;
+const HISTORY_LIMIT = 10;
 
 export class ChitchatHandler {
-  private readonly modelList = new ListRotator(shuffleArray(OPENAI_MODELS));
   private readonly locks = new Map<number, Promise<void>>();
-  private readonly fileHandler: FileHandler;
-  private readonly mcpClient: McpClient;
-  private readonly toolCaller: ToolCallerInjectedDeps;
+  private readonly modelList = new ListRotator(shuffleArray(OPENROUTER_FREE_MODELS));
 
-  constructor(private readonly workers: HandlerWorkers) {
-    this.fileHandler = workers.fileHandler;
-    this.mcpClient = workers.mcpClient;
-    this.toolCaller = workers.toolCaller;
-  }
+  constructor(private readonly workers: HandlerWorkers) {}
 
   /**
    * 处理消息组
@@ -57,30 +49,35 @@ export class ChitchatHandler {
    * 提取原本的 handle 逻辑到单独的私有方法
    */
   private async handleMessage(ctx: ResponseContext): Promise<boolean> {
-    const { chat, message, text } = ctx;
-    const state = this.getChatState(chat.id);
+    const { chat, message } = ctx;
+    const state = await this.getChatState(chat.id);
 
     const messageParts: Part[] = [];
 
-    const imageParts = await this.fileHandler.batchProcessFiles([message!], hasImage);
-
-    if (imageParts.length === 0 && !text?.length) {
+    if (!ctx.text?.length) {
       logger.trace(`[ChitChat] No message content.`, { chatId: chat.id });
       return false;
     }
-
-    messageParts.push(...imageParts);
 
     const contextMarkdown = formatContextToMarkdown(message!);
 
     messageParts.push({ text: contextMarkdown });
 
-    const messageContent: Content = {
+    const messages: ChatCompletionUserMessageParam = {
       role: 'user',
-      parts: messageParts,
+      content: [{ type: 'text', text: contextMarkdown }],
     };
 
-    this.appendMessage(state, mappingGeminiContentsToOpenAiMessages([messageContent]));
+    const lastContent = state.groupHistory.at(-1)?.content as ChatCompletionContentPartText[] | undefined;
+
+    if (lastContent?.[0]?.text.includes(`👤 **Sender**: ${formatUserIdentity(ctx.user)}`)) {
+      lastContent.push({
+        type: 'text',
+        text: ctx.text,
+      });
+    } else {
+      this.appendMessage(state, [messages]);
+    }
 
     // 3. 计算注意力分
     const weight = this.calculateMessageWeight(message!);
@@ -110,18 +107,21 @@ export class ChitchatHandler {
       state.currentScore = state.currentScore / 2;
       return false;
     } finally {
-      this.saveState(chat.id, state);
+      await this.saveState(chat.id, state);
     }
   }
 
   private async requestChat(state: ChitchatState, ctx: ResponseContext) {
-    const systemPrompt = promptStore.format('chitchat', {
+    const systemPrompt = this.workers.promptStore.format('chitchat', {
       self: JSON.stringify(ctx.me),
       chat: JSON.stringify(ctx.chat),
       time: formatTime(Date.now()),
-      groupMemories: longTermMemory.getMemories(ctx.chat.id),
-      // functions: JSON.stringify(getFunctionTools(this.mcpClient.getLoadedServers()), null, 2),
+      groupMemories: await this.workers.longTermMemory.getMemories(ctx.chat.id).catch(() => 'Not Found'),
     });
+
+    const appendHistory = (messages: ChatCompletionMessageParam[]) => {
+      state.groupHistory.push(...messages);
+    };
 
     const messages: ChatCompletionMessageParam[] = [
       {
@@ -132,14 +132,16 @@ export class ChitchatHandler {
     ];
 
     return this.workers.openAiAgent.run(messages, {
+      modelList: this.modelList,
       ctx,
+      appendHistory,
       callTool: (name, args) => {
-        return this.toolCaller(ctx)[name as ToolName](args as never);
+        return this.workers.toolCaller(ctx)[name as ToolName](args as never);
       },
       params: {
-        model: this.modelList.next(),
+        model: 'gpt',
         temperature: 0.7,
-        tools: mappingGeminiToolsToOpenAi(CHAT_BOT_TOOLS(this.mcpClient.getLoadedServers())),
+        tools: mappingGeminiToolsToOpenAi(CHAT_BOT_TOOLS(this.workers.mcpClient.getLoadedServers())),
         tool_choice: 'auto',
       },
     });
@@ -192,8 +194,8 @@ export class ChitchatHandler {
   /**
    * 获取或初始化聊天状态
    */
-  private getChatState(chatId: number): ChitchatState {
-    const savedState = chatHistory.getChitChatState(chatId);
+  private async getChatState(chatId: number) {
+    const savedState = await this.workers.chatHistory.getGroupState(chatId);
 
     if (savedState) {
       return savedState;
@@ -207,7 +209,7 @@ export class ChitchatHandler {
     };
 
     // 立即持久化初始状态
-    chatHistory.saveChitChatState(chatId, newState);
+    await this.workers.chatHistory.saveGroupState(chatId, newState);
     logger.debug(`[ChitChat] Initialized new state for chat ${chatId}`, { currentScore: newState.currentScore });
 
     return newState;
@@ -216,8 +218,8 @@ export class ChitchatHandler {
   /**
    * 保存状态到 DB 的辅助方法
    */
-  private saveState(chatId: number, state: ChitchatState) {
-    chatHistory.saveChitChatState(chatId, state);
+  private async saveState(chatId: number, state: ChitchatState) {
+    await this.workers.chatHistory.saveGroupState(chatId, state);
   }
 
   /**

@@ -3,8 +3,8 @@ import type { LogLevel } from 'fastify';
 export interface RawEnv {
   GEMINI_API_KEYS: string[];
 
-  GEMINI_CREDENTIALS: string;
-  GOOGLE_CLOUD_PROJECT: string;
+  GEMINI_CREDENTIALS?: string;
+  GOOGLE_CLOUD_PROJECT?: string;
 
   PROXY_AUTH_TOKEN: string;
 
@@ -21,6 +21,9 @@ export interface RawEnv {
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_BOT_OWNER_ID: number;
   ALLOWED_USAGE_GROUPS: number[];
+
+  UPSTASH_REDIS_REST_URL: string;
+  UPSTASH_REDIS_REST_TOKEN: string;
 
   SERVER_LISTEN_HOST?: string;
   SERVER_LISTEN_PORT?: number;

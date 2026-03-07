@@ -57,6 +57,128 @@ const BLOCKING_RESPONSE_PROPERTY = {
   } as const satisfies JSONSchema,
 };
 
+const WEB_RESEARCH_TOOL = {
+  name: 'web_research',
+  description: `
+Executes a Google Search to discover relevant URLs and then proactively retrieves and processes the full textual content of promising web pages (HTTP/HTTPS).
+This tool provides **current events, real-time data, external documentation, and broad internet knowledge.**
+
+**Usage Strategy:**
+-   **Comprehensive Web Inquiry**: Use this tool for any task requiring information from the broader internet, combining both discovery and content extraction.
+-   **Autonomous Context Expansion**: If the conversation context, user input, or prior research reveals a need for external web content, use this tool immediately to search and fetch.
+-   **Verification**: Use to verify uncertain or generalized information by checking primary web sources.
+`.trim(),
+  parametersJsonSchema: {
+    type: 'object',
+    properties: {
+      ...SYSTEM_PROMPT_PROPERTY,
+      ...OBJECTIVE_PROPERTY,
+      search_config: {
+        type: 'object',
+        description:
+          'Optional configuration for the web search, such as restricting results to specific domains or languages.',
+        properties: {
+          time_range_filter: {
+            type: 'object',
+            description: `
+Filter search results to a specific time range. If set a start time, they must set an end time (and vice versa).
+Represents a time interval, encoded as a Timestamp start (inclusive) and a Timestamp end (exclusive).
+The start must be less than or equal to the end. When the start equals the end, the interval is empty (matches no time). When both start and end are unspecified, the interval matches any time.
+`.trim(),
+            properties: {
+              start_time: {
+                type: 'string',
+                description: `
+Optional. Inclusive start of the interval.
+If specified, a Timestamp matching this interval will have to be the same or after the start.
+Uses RFC 3339, where generated output will always be Z-normalized and use 0, 3, 6 or 9 fractional digits. Offsets other than "Z" are also accepted. Examples: "2014-10-02T15:01:23Z", "2014-10-02T15:01:23.045123456Z" or "2014-10-02T15:01:23+05:30".
+`,
+              },
+              end_time: {
+                type: 'string',
+                description: `
+Optional. Exclusive end of the interval.
+If specified, a Timestamp matching this interval will have to be before the end.
+Uses RFC 3339, where generated output will always be Z-normalized and use 0, 3, 6 or 9 fractional digits. Offsets other than "Z" are also accepted. Examples: "2014-10-02T15:01:23Z", "2014-10-02T15:01:23.045123456Z" or "2014-10-02T15:01:23+05:30".
+`,
+              },
+            },
+            required: ['start_time', 'end_time'],
+            additionalProperties: false,
+          },
+        },
+        required: ['time_range_filter'],
+        additionalProperties: false,
+      },
+    },
+    required: ['objective'],
+  },
+} as const satisfies GeneralFunctionSchema;
+
+const DELEGATE_AGENT_TOOL = (mcpServers: LoadedMcpServer[]) =>
+  ({
+    name: 'delegate_to_agent',
+    description: `
+Delegates tasks to specialized Model Context Protocol (MCP) servers, which act as dedicated sub-agents for specific external data sources or APIs.
+
+**[CRITICAL CONSTRAINT: TOKEN SAFETY & PAGINATION]**
+When delegating tasks that involve lists (e.g., fetching data from a custom API), you **MUST** explicitly instruct the sub-agent (via \`system_prompt\` or \`objective\`) to:
+1.  **Strictly Limit Response Size**: ALWAYS set \`per_page\`, \`limit\`, or \`max_results\` to conservative values (recommended: **10-20 items** max).
+2.  **Paginate, Don't Dump**: NEVER attempt to fetch an entire dataset in a single turn. Instruct the agent to fetch Page 1, analyze it, and *only then* fetch Page 2 if necessary.
+3.  **Avoid Token Overflow**: Massive JSON responses will crash the conversation. Prioritize filtering (e.g., by status or date) over fetching all data.
+
+Available agents:
+${mcpServers.map(({ name, description }) => `- **${name}**: ${description}`).join('\n')}
+`.trim(),
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        ...SYSTEM_PROMPT_PROPERTY,
+        ...OBJECTIVE_PROPERTY,
+        agent_name: {
+          type: 'string',
+          description:
+            'The unique identifier of the specialized sub-agent (MCP server) to handle the task. Must be one of the available agents listed in the description.',
+        },
+      },
+      required: ['agent_name', 'objective'],
+      additionalProperties: false,
+    },
+  }) as const satisfies GeneralFunctionSchema;
+
+const VIDEO_TOOLS = [
+  {
+    name: 'analyze_youtube_video',
+    description: `
+If the user provides a link to a full YouTube video, this tool can be used to analyze it.
+Processes YouTube videos directly via multimodal vision capabilities (no text transcripts).
+Use this tool to "watch" a video and extract visual details, audio nuances, and temporal events that text-only tools miss.
+
+**Capabilities:**
+1. **Visual Reasoning**: Can describe actions, objects, and scene changes (e.g., "Describe the chart shown at 02:15").
+2. **Audio-Visual Synthesis**: Combines spoken words with on-screen context (e.g., "What did the speaker say while holding the red prototype?").
+3. **Temporal Precision**: Can locate specific events using MM:SS timestamps.
+
+**Usage Strategy:**
+- **Summarization**: "Summarize the key takeaways and create a quiz."
+- **Deep Dive**: "Explain the technical demo shown between 05:00 and 07:00."
+- **Fact Extraction**: "List all the books mentioned in the video with their authors."
+`.trim(),
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        ...SYSTEM_PROMPT_PROPERTY,
+        ...OBJECTIVE_PROPERTY,
+        video_url: {
+          type: 'string',
+          description: 'The full, public YouTube URL. Private or unlisted videos are NOT supported.',
+        },
+      },
+      required: ['video_url', 'objective'],
+    },
+  },
+] as const satisfies GeneralFunctionSchema[];
+
 /**
  * Orchestrates parallel, multi-dimensional research by delegating specific tasks to a team of expert sub-agents.
  * This tool ensures comprehensive and efficient information gathering from various sources simultaneously.
@@ -140,10 +262,7 @@ Specialized in executing broad Google Searches and fetching full web page conten
 **Characteristics**: Broad discovery, real-time data, but often unstructured and potentially noisy.
 **Capabilities**: Google Search, Web Page Content Retrieval.
 `.trim(),
-        properties: {
-          ...SYSTEM_PROMPT_PROPERTY,
-          ...OBJECTIVE_PROPERTY,
-        },
+        properties: WEB_RESEARCH_TOOL.parametersJsonSchema.properties,
         required: ['objective'],
         additionalProperties: false,
       },
@@ -152,91 +271,6 @@ Specialized in executing broad Google Searches and fetching full web page conten
     additionalProperties: false,
   },
 } as const satisfies GeneralFunctionSchema;
-
-const WEB_RESEARCH_TOOL = {
-  name: 'web_research',
-  description: `
-Executes a Google Search to discover relevant URLs and then proactively retrieves and processes the full textual content of promising web pages (HTTP/HTTPS).
-This tool provides **current events, real-time data, external documentation, and broad internet knowledge.**
-
-**Usage Strategy:**
--   **Comprehensive Web Inquiry**: Use this tool for any task requiring information from the broader internet, combining both discovery and content extraction.
--   **Autonomous Context Expansion**: If the conversation context, user input, or prior research reveals a need for external web content, use this tool immediately to search and fetch.
--   **Verification**: Use to verify uncertain or generalized information by checking primary web sources.
-`.trim(),
-  parametersJsonSchema: {
-    type: 'object',
-    properties: {
-      ...SYSTEM_PROMPT_PROPERTY,
-      ...OBJECTIVE_PROPERTY,
-    },
-    required: ['objective'],
-  },
-} as const satisfies GeneralFunctionSchema;
-
-const DELEGATE_AGENT_TOOL = (mcpServers: LoadedMcpServer[]) =>
-  ({
-    name: 'delegate_to_agent',
-    description: `
-Delegates tasks to specialized Model Context Protocol (MCP) servers, which act as dedicated sub-agents for specific external data sources or APIs.
-
-**[CRITICAL CONSTRAINT: TOKEN SAFETY & PAGINATION]**
-When delegating tasks that involve lists (e.g., fetching data from a custom API), you **MUST** explicitly instruct the sub-agent (via \`system_prompt\` or \`objective\`) to:
-1.  **Strictly Limit Response Size**: ALWAYS set \`per_page\`, \`limit\`, or \`max_results\` to conservative values (recommended: **10-20 items** max).
-2.  **Paginate, Don't Dump**: NEVER attempt to fetch an entire dataset in a single turn. Instruct the agent to fetch Page 1, analyze it, and *only then* fetch Page 2 if necessary.
-3.  **Avoid Token Overflow**: Massive JSON responses will crash the conversation. Prioritize filtering (e.g., by status or date) over fetching all data.
-
-Available agents:
-${mcpServers.map(({ name, description }) => `- **${name}**: ${description}`).join('\n')}
-`.trim(),
-    parametersJsonSchema: {
-      type: 'object',
-      properties: {
-        ...SYSTEM_PROMPT_PROPERTY,
-        ...OBJECTIVE_PROPERTY,
-        agent_name: {
-          type: 'string',
-          description:
-            'The unique identifier of the specialized sub-agent (MCP server) to handle the task. Must be one of the available agents listed in the description.',
-        },
-      },
-      required: ['agent_name', 'objective'],
-      additionalProperties: false,
-    },
-  }) as const satisfies GeneralFunctionSchema;
-
-const VIDEO_TOOLS = [
-  {
-    name: 'analyze_youtube_video',
-    description: `
-If the user provides a link to a full YouTube video, this tool can be used to analyze it.
-Processes YouTube videos directly via multimodal vision capabilities (no text transcripts).
-Use this tool to "watch" a video and extract visual details, audio nuances, and temporal events that text-only tools miss.
-
-**Capabilities:**
-1. **Visual Reasoning**: Can describe actions, objects, and scene changes (e.g., "Describe the chart shown at 02:15").
-2. **Audio-Visual Synthesis**: Combines spoken words with on-screen context (e.g., "What did the speaker say while holding the red prototype?").
-3. **Temporal Precision**: Can locate specific events using MM:SS timestamps.
-
-**Usage Strategy:**
-- **Summarization**: "Summarize the key takeaways and create a quiz."
-- **Deep Dive**: "Explain the technical demo shown between 05:00 and 07:00."
-- **Fact Extraction**: "List all the books mentioned in the video with their authors."
-`.trim(),
-    parametersJsonSchema: {
-      type: 'object',
-      properties: {
-        ...SYSTEM_PROMPT_PROPERTY,
-        ...OBJECTIVE_PROPERTY,
-        video_url: {
-          type: 'string',
-          description: 'The full, public YouTube URL. Private or unlisted videos are NOT supported.',
-        },
-      },
-      required: ['video_url', 'objective'],
-    },
-  },
-] as const satisfies GeneralFunctionSchema[];
 
 /**
  * Tools for performing computations or logic execution.
@@ -375,7 +409,7 @@ Applies an expressive emoji reaction to a specific message to enhance conversati
 - **Variety**: Use the FULL range of allowed emojis to match the specific nuance. Don't default to just '👍'.
 - **Constraint**: Strict Rate Limit: Maximum 1 reaction per turn. Do NOT react to every single message; reserve it for significant moments.
 
-**Scenarios:**
+**Scenarios example:**
 - **Resolved/Success**: \`👍\`, \`👌\`
 - **Looking into it**: \`👀\`, \`👨‍💻\`
 - **Funny/Witty**: \`🤣\`, \`😁\`
@@ -473,23 +507,10 @@ Persists information to your long-term memory for future conversations.
   },
 ] as const satisfies GeneralFunctionSchema[];
 
-export const RESEARCH_BOT_TOOLS = (mcpServers: LoadedMcpServer[]) =>
-  [DEEP_RESEARCH_TOOL, ...CHAT_BOT_TOOLS(mcpServers), SEEK_CLARIFICATION_TOOL] satisfies GeneralFunctionSchema[];
-
-export const CHAT_BOT_TOOLS = (mcpServers: LoadedMcpServer[]) =>
-  [
-    WEB_RESEARCH_TOOL,
-    DELEGATE_AGENT_TOOL(mcpServers),
-    ...VIDEO_TOOLS,
-    ...COMPUTATION_TOOLS,
-    ...INTERACTIVE_TOOLS,
-    ...STORE_TOOLS,
-  ] satisfies GeneralFunctionSchema[];
-
 /**
  * Tools for multimodal content generation and visual reasoning.
  */
-/* export const IMAGE_TOOLS = [
+/* const IMAGE_TOOLS = [
   {
     name: 'generate_image',
     description: `
@@ -515,7 +536,7 @@ This tool is designed for professional asset production, utilizing advanced "Thi
     parametersJsonSchema: {
       type: 'object',
       properties: {
-        ...SYSTEM_PROMPT_PROPERTY,
+        ...BLOCKING_RESPONSE_PROPERTY,
         message_id: {
           type: 'number',
           description: 'The numeric ID of the user message that this image is responding to.',
@@ -528,19 +549,41 @@ The comprehensive, narrative description of the image to be generated.
 (e.g., "A photorealistic wide-angle shot of a futuristic data center with neon blue cooling pipes, soft ambient lighting, 4K resolution.")
 `.trim(),
         },
-        aspect_ratio: {
-          type: 'string',
-          description: 'The target aspect ratio for the visual asset.',
-          enum: ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9'],
-        },
-        image_size: {
-          type: 'string',
-          description: 'The desired resolution. Higher resolutions (2K/4K) require more reasoning time.',
-          enum: ['1K', '2K', '4K'],
+        image_config: {
+          type: 'object',
+          properties: {
+            aspect_ratio: {
+              type: 'string',
+              description: 'The target aspect ratio for the visual asset.',
+              format: 'enum',
+              enum: ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
+            },
+            image_size: {
+              type: 'string',
+              description: 'The desired resolution. Higher resolutions (2K/4K) require more reasoning time.',
+              format: 'enum',
+              enum: ['1K', '2K', '4K'],
+            },
+          },
+          required: ['aspect_ratio', 'image_size'],
+          additionalProperties: false,
         },
       },
-      required: ['message_id', 'prompt', 'aspect_ratio'],
-
+      required: ['prompt'],
+      additionalProperties: false,
     },
   },
 ] as const satisfies GeneralFunctionSchema[]; */
+
+export const RESEARCH_BOT_TOOLS = (mcpServers: LoadedMcpServer[]) =>
+  [DEEP_RESEARCH_TOOL, ...CHAT_BOT_TOOLS(mcpServers), SEEK_CLARIFICATION_TOOL] satisfies GeneralFunctionSchema[];
+
+export const CHAT_BOT_TOOLS = (mcpServers: LoadedMcpServer[]) =>
+  [
+    WEB_RESEARCH_TOOL,
+    DELEGATE_AGENT_TOOL(mcpServers),
+    ...VIDEO_TOOLS,
+    ...COMPUTATION_TOOLS,
+    ...INTERACTIVE_TOOLS,
+    ...STORE_TOOLS,
+  ] satisfies GeneralFunctionSchema[];

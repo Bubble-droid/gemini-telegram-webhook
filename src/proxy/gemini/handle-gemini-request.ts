@@ -167,7 +167,7 @@ export const handleGeminiProxyRequest =
             err instanceof HttpError && err.details ? err.details : err instanceof Error ? err.message : String(err);
 
           const isFatalStatus = FATAL_STATUS_CODES.includes(errStatus);
-          const isFatalMessage = FATAL_ERROR_MESSAGES.some((msg) => errText.toUpperCase().includes(msg));
+          const isFatalMessage = FATAL_ERROR_MESSAGES.some((msg) => errText.includes(msg));
 
           if (isFatalStatus || isFatalMessage) {
             logger.error(`[Gemini Proxy] Fatal error encountered. Aborting retries.`, {

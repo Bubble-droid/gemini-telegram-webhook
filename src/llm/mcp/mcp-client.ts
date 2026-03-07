@@ -1,4 +1,3 @@
-import { loadData } from '@data/data-load.js';
 import type { GeneralFunctionSchema, StandardizedFunctionResponse } from '@llm/types/agent.js';
 import type { LoadedMcpServer, McpServer, McpServerConfig } from '@llm/types/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -13,6 +12,7 @@ import { logger } from '@shared/core/logger.js';
 import type { Recordable } from '@shared/types/common.js';
 import type { JSONSchema } from '@shared/types/schema.js';
 import { ms } from '@shared/utils/helpers.js';
+import { loadData } from '@storage/data-load.js';
 
 /**
  * Internal state interface for a single MCP server instance.
@@ -156,7 +156,9 @@ export class McpClient {
         (toolResult.content as { text?: string }[]).forEach((c) => {
           if (c.text) {
             c.text =
-              c.text.length > 100_000 * 4 ? c.text.slice(0, 100_000 * 4) + '...(Result too long, truncated)' : c.text;
+              c.text.length > 50_000 * 4
+                ? c.text.slice(0, 20_000 * 4) + '...(Tool result too long, truncated)'
+                : c.text;
           }
         });
       }

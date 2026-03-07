@@ -2,9 +2,6 @@ import buildApp from '@app.js';
 import { CALLBACKS } from '@configs/callbacks.js';
 import { canPerformAction, COMMANDS } from '@configs/commands.js';
 import { Messages } from '@configs/messages.js';
-import { faqMatcher } from '@data/faq-matcher.js';
-import { pathResolver } from '@data/path-resolver.js';
-import { promptStore } from '@data/prompt-store.js';
 import type { BotCommand } from '@grammyjs/types';
 import { GeminiAgent } from '@llm/agent/gemini-agent.js';
 import { OpenAiAgent } from '@llm/agent/openai-agent.js';
@@ -12,7 +9,6 @@ import { GeminiApiClient } from '@llm/client/gemini-api-client.js';
 import { OpenAiClient } from '@llm/client/openai-client.js';
 import { McpClient } from '@llm/mcp/mcp-client.js';
 import { createToolCaller } from '@llm/tool/tool-caller.js';
-import { registerCliProxyRoute } from '@routes/cli.route.js';
 import { registerGeminiProxyRoute } from '@routes/gemini.route.js';
 import { registerWebhookRoute } from '@routes/webhook.route.js';
 import { FileHandler } from '@services/file-service.js';
@@ -20,24 +16,29 @@ import { MessageCollector } from '@services/message-collector.js';
 import { TaskScheduler } from '@services/task-scheduler.js';
 import { CONFIG } from '@shared/core/config.js';
 import {
-  CLI_PROXY_BASE_URL,
   DATA_DIR,
   GEMINI_CLIENT_BASE_CONFIG,
   GEMINI_PROXY_BASE_URL,
-  GEMINI_SAFETY_SETTINGS,
   MCP_SERVERS_FILE,
   OPENAI_BASE_URL,
 } from '@shared/core/constants.js';
 import { TelegraphError } from '@shared/core/errors.js';
 import { logger } from '@shared/core/logger.js';
 import { decodeToString, ms } from '@shared/utils/helpers.js';
+import { ChatHistoryStore } from '@storage/chat-history-store.js';
+import { FaqMatcher } from '@storage/faq-matcher.js';
+import { LongTermMemoryStore } from '@storage/long-term-memory-store.js';
+import { pathResolver } from '@storage/path-resolver.js';
+import { PromptStore } from '@storage/prompt-store.js';
 import { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
 import { TelegramPoller } from '@telegram/bot/telegram-poller.js';
 import { ChitchatHandler } from '@telegram/handlers/messages/chitchat-handler.js';
 import { MentionHandler } from '@telegram/handlers/messages/mention-handler.js';
 import { NormalMessageHandler } from '@telegram/handlers/messages/normal-message-handler.js';
+import type { HandlerWorkers } from '@telegram/handlers/types.js';
 import { UpdateHandler } from '@telegram/handlers/update-handler.js';
-import path from 'node:path';
+import { Redis } from '@upstash/redis';
+import * as path from 'node:path';
 import { Telegraph, type Account } from 'telegraph-api-client';
 
 const MCP_SERVERS_PATH = path.join(DATA_DIR, MCP_SERVERS_FILE);
@@ -54,6 +55,24 @@ const start = async () => {
 
   logger.init({ logLevel });
 
+  const redisClient = new Redis({
+    url: CONFIG.UPSTASH_REDIS_REST_URL,
+    token: CONFIG.UPSTASH_REDIS_REST_TOKEN,
+    keepAlive: true,
+  });
+
+  const chatHistory = new ChatHistoryStore(redisClient);
+
+  const faqMatcher = new FaqMatcher();
+  await faqMatcher.initFaqData();
+
+  const promptStore = new PromptStore();
+  await promptStore.initPrompts();
+
+  await pathResolver.loadFileIdMap();
+
+  const longTermMemory = new LongTermMemoryStore(redisClient);
+
   const mcpClient = new McpClient(MCP_SERVERS_PATH);
   await mcpClient.discoverMcpServers();
 
@@ -66,57 +85,44 @@ const start = async () => {
     throw new TelegraphError(`Invalid account JSON format. ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
   if (!accountInfo.access_token) {
-    throw new TelegraphError(
-      'Authentication required: No access_token set. Call createAccount or provide token in constructor.',
-    );
+    throw new TelegraphError('Authentication required: No access_token set.');
   }
 
   const bot = new TelegramBotApi(CONFIG.TELEGRAM_BOT_TOKEN, telegraph, accountInfo);
-  const taskScheduler = new TaskScheduler(bot);
+  const taskScheduler = new TaskScheduler(bot, redisClient);
   bot.setScheduler(taskScheduler);
+  await taskScheduler.refreshSchedule();
   await bot.refreshBotInfo();
 
   const geminiApiClient = new GeminiApiClient(CONFIG.PROXY_AUTH_TOKEN, GEMINI_PROXY_BASE_URL, {
     ...GEMINI_CLIENT_BASE_CONFIG,
     enableEnhancedCivicAnswers: true,
   });
-  const geminiCliClient = new GeminiApiClient(CONFIG.PROXY_AUTH_TOKEN, CLI_PROXY_BASE_URL, {
-    ...GEMINI_CLIENT_BASE_CONFIG,
-    safetySettings: GEMINI_SAFETY_SETTINGS,
-  });
-  const gemmaClient = new GeminiApiClient(CONFIG.PROXY_AUTH_TOKEN, GEMINI_PROXY_BASE_URL, GEMINI_CLIENT_BASE_CONFIG);
 
   const geminiApiAgent = new GeminiAgent(geminiApiClient);
-  const geminiCliAgent = new GeminiAgent(geminiCliClient);
-  const gemmaAgent = new GeminiAgent(gemmaClient);
 
   const openAiClient = new OpenAiClient(CONFIG.OPENAI_API_KEY, OPENAI_BASE_URL);
-
   const openAiAgent = new OpenAiAgent(openAiClient);
 
-  const toolCaller = createToolCaller({ geminiApiAgent, geminiCliAgent, gemmaAgent, openAiAgent, mcpClient });
+  const toolCaller = createToolCaller({ geminiApiAgent, openAiAgent, mcpClient, longTermMemory });
 
   const fileHandler = new FileHandler(bot);
   const messageCollector = new MessageCollector();
-  const mentionHandler = new MentionHandler({
+
+  const handlerWorkers: HandlerWorkers = {
     fileHandler,
     geminiApiAgent,
-    geminiCliAgent,
-    gemmaAgent,
     openAiAgent,
     toolCaller,
     mcpClient,
-  });
-  const chitchatHandler = new ChitchatHandler({
-    fileHandler,
-    geminiApiAgent,
-    geminiCliAgent,
-    gemmaAgent,
-    openAiAgent,
-    toolCaller,
-    mcpClient,
-  });
-  const normalMessageHandler = new NormalMessageHandler({ chitchatHandler });
+    chatHistory,
+    promptStore,
+    longTermMemory,
+  };
+
+  const mentionHandler = new MentionHandler(handlerWorkers);
+  const chitchatHandler = new ChitchatHandler(handlerWorkers);
+  const normalMessageHandler = new NormalMessageHandler({ chitchatHandler, faqMatcher });
 
   const updateHandler = new UpdateHandler(bot);
 
@@ -135,7 +141,7 @@ const start = async () => {
           return;
         }
       }
-      await c.action({ ctx });
+      await c.action({ ctx, chatHistory });
     });
   });
 
@@ -174,11 +180,6 @@ const start = async () => {
   const server = buildApp();
 
   registerGeminiProxyRoute(server);
-  registerCliProxyRoute(server);
-
-  await pathResolver.loadFileIdMap();
-  await promptStore.reload();
-  await faqMatcher.reload();
 
   await bot.deleteWebhook(true);
   if (BOT_UPDATE_MODE === 'webhook') {

@@ -2,7 +2,7 @@ import { DATA_DIR, FILE_ID_FILE, GITHUB_BASE_URL } from '@shared/core/constants.
 import { logger } from '@shared/core/logger.js';
 import type { Recordable } from '@shared/types/common.js';
 import { invertObject } from '@shared/utils/helpers.js';
-import path from 'node:path';
+import * as path from 'node:path';
 import { URL } from 'node:url';
 import { loadData } from './data-load.js';
 

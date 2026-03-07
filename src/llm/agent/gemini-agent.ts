@@ -55,7 +55,7 @@ export class GeminiAgent {
   constructor(private readonly client: GeminiApiClient) {}
 
   public async run(contents: Content[], opts: GeminiAgentOpts): Promise<GeminiAgentResponse> {
-    const { ctx, updateStatus, callTool, generateConfig, generateModel } = opts;
+    const { ctx, appendHistory, updateStatus, callTool, generateConfig, generateModel } = opts;
     const agentContents = [...contents];
     let round = 0;
     let agentResponse: GeminiAgentResponse = {};
@@ -73,19 +73,26 @@ export class GeminiAgent {
       }
 
       if (ctx) {
-        for (const part of response.candidates[0].content.parts!) {
+        for (const [partIdx, part] of response.candidates[0].content.parts!.entries()) {
           if (part.text) {
             const chunks = markdownToMarkdownV2Chunks(
               part.text.replace(/<cot>[\s\S]*?<\/cot>|<tool_calls>[\s\S]*?<\/tool_calls>/gi, '').trim(),
-              300,
             );
-            for (const chunk of chunks) {
+            for (const [chunkIdx, chunk] of chunks.entries()) {
               try {
                 await ctx.replyWithChatAction('typing');
-                await ctx.reply(chunk, {
-                  parse_mode: 'MarkdownV2',
-                  deleteAfterMs: ms['1d'],
-                });
+                if (partIdx === 0 && chunkIdx === 0) {
+                  await ctx.reply(chunk, {
+                    replyToMessageId: ctx.message?.message_id,
+                    parse_mode: 'MarkdownV2',
+                    deleteAfterMs: ms['1d'],
+                  });
+                } else {
+                  await ctx.reply(chunk, {
+                    parse_mode: 'MarkdownV2',
+                    deleteAfterMs: ms['1d'],
+                  });
+                }
               } catch (err) {
                 await updateStatus?.(err instanceof Error ? err.message : typeof err === 'string' ? err : String(err));
               }
@@ -132,7 +139,7 @@ export class GeminiAgent {
       logger.debug(`Model requested ${functionCalls.length} tool calls.`);
 
       await updateStatus?.(
-        `<tool_calls>\n${functionCalls.map((c) => `🔧 Calling ${c.name}\nParameters: ${JSON.stringify(c.args).slice(0, 200)}...`).join('\n\n')}\n</tool_calls>`.trim(),
+        `${!ctx && response.text ? `<thought>\n${response.text}\n</thought>\n\n` : ''}<tool_calls>\n${functionCalls.map((c) => `🔧 Calling ${c.name}\nParameters: ${JSON.stringify(c.args).slice(0, 200)}...`).join('\n\n')}\n</tool_calls>`.trim(),
       );
 
       const toolResults = await Promise.all(
@@ -148,13 +155,22 @@ export class GeminiAgent {
         }),
       );
 
-      if (functionCalls.some((call) => !!call.args?.['blocking'] || FORCE_BLOCKING_TOOLS.includes(call.name ?? ''))) {
+      agentContents.push({ role: 'user', parts: toolResults });
+
+      if (
+        functionCalls.some((call) => !!call.args?.['blocking'] || FORCE_BLOCKING_TOOLS.includes(call.name ?? '')) &&
+        !toolResults.some((r) => r.functionResponse?.response?.['error'])
+      ) {
         logger.info(`Model calling blocking response tools.`);
-        agentResponse.candidates![0]!.content = agentContents.at(-1)!;
+        if (toolResults.some((r) => r.functionResponse?.parts)) {
+          appendHistory?.([agentContents.at(-2)!]);
+          agentResponse.candidates![0]!.content = agentContents.at(-1)!;
+        } else {
+          agentResponse.candidates![0]!.content = agentContents.at(-2)!;
+        }
+
         break;
       }
-
-      agentContents.push({ role: 'user', parts: toolResults });
 
       await delay(ms.sec(3));
 

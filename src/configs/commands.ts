@@ -1,17 +1,16 @@
-import { chatHistory } from '@data/chat-history.js';
-import { faqMatcher } from '@data/faq-matcher.js';
-import { promptStore } from '@data/prompt-store.js';
 import type { BotCommand, InlineKeyboardButton } from '@grammyjs/types';
 import { CONFIG } from '@shared/core/config.js';
 import { logger } from '@shared/core/logger.js';
 import { markdownToMarkdownV2 } from '@shared/markdown/telegram-converter.js';
 import type { MaybePromise } from '@shared/types/common.js';
 import { ms } from '@shared/utils/helpers.js';
+import type { ChatHistoryStore } from '@storage/chat-history-store.js';
 import type { ResponseContext } from '@telegram/bot/response-context.js';
 import { Messages } from './messages.js';
 
 interface CommandActionArgs {
   ctx: ResponseContext;
+  chatHistory: ChatHistoryStore;
 }
 
 interface Command extends BotCommand {
@@ -31,29 +30,6 @@ export const canPerformAction = async (ctx: ResponseContext) => {
 };
 
 export const COMMANDS = [
-  {
-    command: 'test',
-    description: '测试',
-    permissions: true,
-    action: async ({ ctx }) => {
-      await ctx.react('👍');
-      const InlineKeyboardButtons: InlineKeyboardButton[][] = [
-        COMMANDS.map((_c, i): InlineKeyboardButton => {
-          return {
-            text: String(i + 1),
-            callback_data: `select_${i}`,
-          };
-        }),
-      ];
-      const candidate = COMMANDS.map((c, i) => `${i + 1}. ${c.command} - ${c.description}`).join('\n');
-      const text = `<select>\n${candidate}\n</select>`;
-      await ctx.reply(markdownToMarkdownV2(text), {
-        replyToMessageId: ctx.message?.message_id,
-        reply_markup: { inline_keyboard: InlineKeyboardButtons },
-        parse_mode: 'MarkdownV2',
-      });
-    },
-  },
   {
     command: 'start',
     description: '开始使用',
@@ -82,10 +58,10 @@ export const COMMANDS = [
     command: 'clear',
     description: '清理对话历史',
     permissions: false,
-    action: async ({ ctx }) => {
+    action: async ({ ctx, chatHistory }) => {
       const { chat, user } = ctx;
       await ctx.updateMessage(Messages.clearing, { replyToMessageId: ctx.message?.message_id });
-      chatHistory.clear(chat.id, user.id);
+      await chatHistory.clear(chat.id, user.id);
       await ctx.updateMessage(Messages.cleared, { replyToMessageId: ctx.message?.message_id, deleteAfterMs: ms['3m'] });
     },
   },
@@ -103,22 +79,28 @@ export const COMMANDS = [
         });
     },
   },
+
   {
-    command: 'reload_prompts',
-    description: '重载所有系统指令',
+    command: 'test',
+    description: '测试',
     permissions: true,
     action: async ({ ctx }) => {
-      await promptStore.reload();
-      await ctx.reply('All prompts reloaded', { replyToMessageId: ctx.message?.message_id, deleteAfterMs: ms['3m'] });
-    },
-  },
-  {
-    command: 'reload_faqs',
-    description: '重载所有 FAQ 数据',
-    permissions: true,
-    action: async ({ ctx }) => {
-      await faqMatcher.reload();
-      await ctx.reply('All FAQ reloaded', { replyToMessageId: ctx.message?.message_id, deleteAfterMs: ms['3m'] });
+      await ctx.react('👍');
+      const InlineKeyboardButtons: InlineKeyboardButton[][] = [
+        COMMANDS.map((_c, i): InlineKeyboardButton => {
+          return {
+            text: String(i + 1),
+            callback_data: `select_${i}`,
+          };
+        }),
+      ];
+      const candidate = COMMANDS.map((c, i) => `${i + 1}. ${c.command} - ${c.description}`).join('\n');
+      const text = `<select>\n${candidate}\n</select>`;
+      await ctx.reply(markdownToMarkdownV2(text), {
+        replyToMessageId: ctx.message?.message_id,
+        reply_markup: { inline_keyboard: InlineKeyboardButtons },
+        parse_mode: 'MarkdownV2',
+      });
     },
   },
 ] as const satisfies Command[];

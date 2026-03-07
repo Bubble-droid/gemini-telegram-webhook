@@ -1,125 +1,76 @@
-import { loadLowdb } from '@data/data-load.js';
-import { DATA_DIR, SCHEDULED_TASK_FILE } from '@shared/core/constants.js';
 import { logger } from '@shared/core/logger.js';
 import type { Recordable } from '@shared/types/common.js';
 import type { ApiMethod, ApiParams } from '@shared/types/telegram.js';
 import { deepClone, formatTime, generateUuid } from '@shared/utils/helpers.js';
 import type { TelegramBotApi } from '@telegram/bot/telegram-bot-api.js';
-import type { LowSync } from 'lowdb';
-import path from 'node:path';
+import type { Redis } from '@upstash/redis';
 
-/**
- * LowDB 存储结构定义
- */
 interface TaskItem {
-  id: string; // 使用 UUID
+  id: string;
   action: ApiMethod;
-  params: unknown; // 存储实际的 JSON 对象
-  signature: string; // 用于去重的唯一签名 (Canonical JSON String)
+  params: unknown;
+  signature: string;
   dueAt: number;
 }
 
-interface DatabaseSchema {
-  tasks: TaskItem[];
-}
-
-const TASK_FILE_PATH = path.join(DATA_DIR, SCHEDULED_TASK_FILE);
-const DEFAULT_TASK_DATA = { tasks: [] };
-
-const isRecord = (val: unknown): val is Recordable => {
-  return typeof val === 'object' && val !== null && !Array.isArray(val);
-};
-
-/**
- * 递归地对对象键进行排序，确保 JSON.stringify 输出一致性
- * 解决 {a:1, b:2} !== {b:2, a:1} 导致无法去重的问题
- */
-const canonicalizeParams = (obj: unknown): unknown => {
-  // 1. 处理非对象或空值
-  if (!isRecord(obj)) {
-    if (Array.isArray(obj)) {
-      return obj.map(canonicalizeParams);
-    }
-    return obj;
-  }
-
-  // 2. 处理对象：提取条目 -> 排序键 -> 递归处理值 -> 还原为对象
-  const sortedEntries = Object.entries(obj)
-    .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
-    .map(([key, value]) => [key, canonicalizeParams(value)]);
-
-  return Object.fromEntries(sortedEntries);
-};
+const TASK_QUEUE_KEY = 'scheduler:queue';
+const TASK_HASH_KEY = 'scheduler:data';
 
 export class TaskScheduler {
-  private db: LowSync<DatabaseSchema>;
-  private bot: TelegramBotApi;
   private nextTaskTimer: NodeJS.Timeout | null = null;
   private currentTimerTargetTime: number | null = null;
+  private isProcessing = false;
 
-  constructor(bot: TelegramBotApi) {
-    this.db = loadLowdb<DatabaseSchema>(TASK_FILE_PATH, DEFAULT_TASK_DATA);
-    this.bot = bot;
-    this.refreshSchedule();
-    logger.info('[TaskScheduler] LowDB initialized, task queue loaded.');
+  constructor(
+    private readonly bot: TelegramBotApi,
+    private readonly redisClient: Redis,
+  ) {
+    logger.info('[TaskScheduler] Upstash Redis initialized, task queue synchronized.');
   }
 
-  /**
-   * 公共核心接口：添加任务
-   */
-  public schedule<M extends ApiMethod>(action: M, params: ApiParams<M>, delayMs: number) {
+  public async schedule<M extends ApiMethod>(action: M, params: ApiParams<M>, delayMs: number): Promise<void> {
     const dueAt = Date.now() + delayMs;
-
-    // 1. 规范化参数对象（排序 Key），保证字符串唯一性
     const canonicalParams = canonicalizeParams(params);
-    const signature = JSON.stringify(canonicalParams);
+    const signature = JSON.stringify({ action, params: canonicalParams });
 
-    // 2. 执行 Upsert 逻辑 (模拟 SQL ON CONFLICT DO UPDATE)
-    const tasks = this.db.data.tasks;
-    const existingIndex = tasks.findIndex((t) => t.action === action && t.signature === signature);
+    const taskData: TaskItem = {
+      id: generateUuid(),
+      action,
+      params: canonicalParams,
+      signature,
+      dueAt,
+    };
 
-    if (existingIndex !== -1 && tasks[existingIndex]) {
-      // 更新现有任务的执行时间
-      tasks[existingIndex].dueAt = dueAt;
-    } else {
-      // 插入新任务
-      tasks.push({
-        id: generateUuid(),
-        action,
-        params: canonicalParams,
-        signature,
-        dueAt,
-      });
-    }
+    // Upsert to Redis using a pipeline for atomicity
+    const pipeline = this.redisClient.pipeline();
+    pipeline.hset(TASK_HASH_KEY, { [signature]: JSON.stringify(taskData) });
+    pipeline.zadd(TASK_QUEUE_KEY, { score: dueAt, member: signature });
+    await pipeline.exec();
 
-    this.db.write();
-    this.refreshSchedule();
-
-    logger.debug(`[TaskScheduler] Task scheduled: ${action}, Due: ${formatTime(dueAt)}`, { params });
+    await this.refreshSchedule();
+    logger.debug(`[TaskScheduler] Task scheduled: ${action}, Due: ${formatTime(dueAt)}`);
   }
 
-  // ================= 业务封装方法 =================
-
-  public deleteMessage(params: ApiParams<'deleteMessage'>, delayMs: number) {
-    this.schedule('deleteMessage', params, delayMs);
+  public async deleteMessage(params: ApiParams<'deleteMessage'>, delayMs: number): Promise<void> {
+    await this.schedule('deleteMessage', params, delayMs);
   }
 
-  public deleteMessages(params: ApiParams<'deleteMessages'>, delayMs: number) {
+  public async deleteMessages(params: ApiParams<'deleteMessages'>, delayMs: number): Promise<void> {
     const paramsCopy = deepClone(params);
     paramsCopy.message_ids = [...new Set(paramsCopy.message_ids)];
     if (paramsCopy.message_ids.length === 0) return;
-
     paramsCopy.message_ids.sort((a, b) => a - b);
-
-    this.schedule('deleteMessages', paramsCopy, delayMs);
+    await this.schedule('deleteMessages', paramsCopy, delayMs);
   }
 
-  private refreshSchedule() {
-    try {
-      // 获取最早需要执行的任务 (模拟 ORDER BY due_at ASC LIMIT 1)
-      const nextTask = this.getNextTask();
+  public async refreshSchedule(): Promise<void> {
+    if (this.isProcessing) return;
 
-      if (!nextTask) {
+    try {
+      // Fetch the single earliest task in the sorted set
+      const members = await this.redisClient.zrange<string[]>(TASK_QUEUE_KEY, 0, 0);
+
+      if (members.length === 0) {
         if (this.nextTaskTimer) {
           clearTimeout(this.nextTaskTimer);
           this.nextTaskTimer = null;
@@ -128,8 +79,13 @@ export class TaskScheduler {
         return;
       }
 
-      // 如果当前定时器已经对准了这个时间，则无需重置
-      if (this.nextTaskTimer && this.currentTimerTargetTime === nextTask.dueAt) {
+      const nextSignature = members[0]!;
+      const scoreStr = await this.redisClient.zscore(TASK_QUEUE_KEY, nextSignature);
+      if (!scoreStr) return;
+
+      const dueAt = scoreStr;
+
+      if (this.nextTaskTimer && this.currentTimerTargetTime === dueAt) {
         return;
       }
 
@@ -138,76 +94,76 @@ export class TaskScheduler {
       }
 
       const now = Date.now();
-      const delay = Math.max(0, nextTask.dueAt - now);
-      this.currentTimerTargetTime = nextTask.dueAt;
+      const delay = Math.max(0, dueAt - now);
+      this.currentTimerTargetTime = dueAt;
 
-      const MAX_DELAY = 2147483647; // 32-bit signed int max
+      const MAX_DELAY = 2147483647;
       const safeDelay = Math.min(delay, MAX_DELAY);
 
       this.nextTaskTimer = setTimeout(() => {
         void this.processDueTasks();
       }, safeDelay);
-
-      if (delay > MAX_DELAY) {
-        logger.warn(`[TaskScheduler] Task ID:${nextTask.id} delay exceeds limit, deferred.`);
-      }
     } catch (err) {
       logger.warn('[TaskScheduler] Refresh schedule failed', { err });
     }
   }
 
-  private async processDueTasks() {
+  private async processDueTasks(): Promise<void> {
+    this.isProcessing = true;
     this.nextTaskTimer = null;
     this.currentTimerTargetTime = null;
 
     const now = Date.now();
 
-    // 获取所有到期任务 (模拟 WHERE due_at <= ?)
-    // 注意：这里需要复制数组，因为后续我们会修改 db.data.tasks
-    const allTasks = this.db.data.tasks;
-    const dueTasks = allTasks.filter((t) => t.dueAt <= now).sort((a, b) => a.dueAt - b.dueAt);
+    try {
+      // Get all tasks where score (dueAt) <= now
+      const dueSignatures = await this.redisClient.zrange<string[]>(TASK_QUEUE_KEY, 0, now, { byScore: true });
 
-    for (const task of dueTasks) {
-      const { id, action, params } = task;
-      try {
-        await this.executeTask(action, params);
-      } catch (err) {
-        logger.warn(`[TaskScheduler] Task execution failed ID:${id}`, { action, err });
-      } finally {
-        // 模拟 DELETE FROM tasks WHERE id = ?
-        this.deleteTask(id);
+      if (dueSignatures.length > 0) {
+        // Fetch full task payloads from the Hash
+        const pipeline = this.redisClient.pipeline();
+        dueSignatures.forEach((sig) => pipeline.hget<string>(TASK_HASH_KEY, sig));
+        const rawTasks = await pipeline.exec<TaskItem[]>();
+
+        for (let i = 0; i < dueSignatures.length; i++) {
+          const rawTask = rawTasks[i];
+          const signature = dueSignatures[i]!;
+
+          if (!rawTask) continue;
+          try {
+            logger.info(`[TaskScheduler] Executing: ${rawTask.action}`);
+            await this.bot.requestJson(rawTask.action, rawTask.params as ApiParams<ApiMethod>);
+          } catch (err) {
+            logger.warn(`[TaskScheduler] Task execution failed ID:${rawTask.id}`, { action: rawTask.action, err });
+          } finally {
+            // Delete processed tasks atomically
+            const deletePipeline = this.redisClient.pipeline();
+            deletePipeline.zrem(TASK_QUEUE_KEY, signature);
+            deletePipeline.hdel(TASK_HASH_KEY, signature);
+            await deletePipeline.exec();
+          }
+        }
       }
-    }
-
-    // 写入更改并刷新调度
-    this.db.write();
-    this.refreshSchedule();
-  }
-
-  private async executeTask(action: ApiMethod, params: unknown) {
-    logger.info(`[TaskScheduler] Executing: ${action}`, { params });
-    await this.bot.requestJson(action, params as ApiParams<ApiMethod>);
-  }
-
-  /**
-   * 辅助：获取队列中最早的任务
-   */
-  private getNextTask(): TaskItem | undefined {
-    if (this.db.data.tasks.length === 0) return undefined;
-
-    // O(N) 查找最小值，对于任务队列通常足够快
-    return this.db.data.tasks.reduce((prev, curr) => {
-      return prev.dueAt < curr.dueAt ? prev : curr;
-    });
-  }
-
-  /**
-   * 辅助：根据 ID 删除任务
-   */
-  private deleteTask(id: string): void {
-    const index = this.db.data.tasks.findIndex((t) => t.id === id);
-    if (index !== -1) {
-      this.db.data.tasks.splice(index, 1);
+    } finally {
+      this.isProcessing = false;
+      await this.refreshSchedule();
     }
   }
 }
+
+const isRecord = (val: unknown): val is Recordable => {
+  return typeof val === 'object' && val !== null && !Array.isArray(val);
+};
+
+const canonicalizeParams = (obj: unknown): unknown => {
+  if (!isRecord(obj)) {
+    if (Array.isArray(obj)) return obj.map(canonicalizeParams);
+    return obj;
+  }
+
+  const sortedEntries = Object.entries(obj)
+    .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+    .map(([key, value]) => [key, canonicalizeParams(value)]);
+
+  return Object.fromEntries(sortedEntries);
+};

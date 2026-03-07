@@ -11,12 +11,9 @@ import path from 'node:path';
 
 export const DATA_DIR = process.env['NODE_ENV'] === 'development' ? path.join(process.cwd(), 'data') : '/data';
 
-export const CHAT_HISTORY_FILE = 'chat-history.json';
 export const FAQ_DATA_FILE = 'faq-data.json';
-export const LONG_TERM_MEMORY_FILE = 'memories.json';
 
 export const FILE_ID_FILE = 'file-id-map.json';
-export const SCHEDULED_TASK_FILE = 'tasks.json';
 
 export const MCP_SERVERS_FILE = 'mcp-servers.json';
 
@@ -44,21 +41,34 @@ export const CLI_PROXY_BASE_URL = `${LOCAL_PROXY_ADDRESS}/cli`;
 export const SERVER_BODY_LIMIT = 100 * 1024 * 1024;
 
 export const GEMINI_TEXT_MODELS = [
-  'gemini-3-pro-preview',
+  /* 'gemini-3-pro-preview',
+  'gemini-2.5-pro', */
+  'gemini-3.1-flash-lite-preview',
   'gemini-3-flash-preview',
-  'gemini-2.5-pro',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
 ];
 
 export const GEMINI_MULTIMODAL_MODELS = ['gemini-3-pro-image-preview', 'gemini-2.5-flash-image'];
 
-export const GEMMA_MODEL = 'gemma-3-27b-it';
-
-export const OPENAI_MODELS = [
-  'qwen/qwen3-vl-235b-a22b-thinking',
-  'qwen/qwen3-vl-30b-a3b-thinking',
+export const OPENROUTER_FREE_MODELS = [
+  'stepfun/step-3.5-flash:free',
+  'arcee-ai/trinity-large-preview:free',
+  'nvidia/nemotron-3-nano-30b-a3b:free',
+  'arcee-ai/trinity-mini:free',
   'nvidia/nemotron-nano-12b-v2-vl:free',
+  'qwen/qwen3-vl-30b-a3b-thinking',
+  'qwen/qwen3-vl-235b-a22b-thinking',
+  'qwen/qwen3-next-80b-a3b-instruct:free',
+  'nvidia/nemotron-nano-9b-v2:free',
+  'openai/gpt-oss-120b:free',
+  'openai/gpt-oss-20b:free',
+  'z-ai/glm-4.5-air:free',
+  'qwen/qwen3-coder:free',
+  'qwen/qwen3-4b:free',
+  'mistralai/mistral-small-3.1-24b-instruct:free',
+  'google/gemma-3-27b-it:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
 ];
 
 export const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';

@@ -68,13 +68,16 @@ export class ChitchatHandler {
       content: [{ type: 'text', text: contextMarkdown }],
     };
 
-    const lastContent = state.groupHistory.at(-1)?.content as ChatCompletionContentPartText[] | undefined;
-
-    if (lastContent?.[0]?.text.includes(`👤 **Sender**: ${formatUserIdentity(ctx.user)}`)) {
-      lastContent.push({
-        type: 'text',
-        text: ctx.text,
-      });
+    if (state.groupHistory.at(-1)?.role === 'user') {
+      const lastContent = state.groupHistory.at(-1)?.content as ChatCompletionContentPartText[] | undefined;
+      if (lastContent?.[0]?.text.includes(`👤 **Sender**: ${formatUserIdentity(ctx.user)}`)) {
+        lastContent.push({
+          type: 'text',
+          text: ctx.text,
+        });
+      } else {
+        this.appendMessage(state, [messages]);
+      }
     } else {
       this.appendMessage(state, [messages]);
     }

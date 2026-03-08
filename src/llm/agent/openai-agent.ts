@@ -76,6 +76,10 @@ export class OpenAiAgent {
       let retries = 0;
       while (retries <= modelList.size) {
         const model = modelList.next();
+        logger.info(`OpenAI Agent using model: ${model}`, {
+          round,
+          retried: retries,
+        });
         logger.trace(`OpenAI Agent request:`, {
           messages: agentMsgs.map((m): ChatCompletionMessageParam => {
             if (m.role === 'user' && Array.isArray(m.content)) {
@@ -118,16 +122,18 @@ export class OpenAiAgent {
             !completionMessage?.tool_calls?.length &&
             !completionMessage?.images?.length
           ) {
-            throw new AgentError('OpenAI Agent response is empty');
+            throw new AgentError(
+              JSON.stringify({ message: 'OpenAI Agent response is empty', model, round, retried: retries }),
+            );
           }
           break;
         } catch (err) {
           if (retries >= modelList.size) {
             throw err instanceof AgentError ? err : new AgentError(err instanceof Error ? err.message : String(err));
           }
-          logger.warn(`OpenAI Agent request failed with model ${model}, retrying...:`, { err });
+          logger.warn(`OpenAI Agent request failed with model ${model}, retrying(${retries++})...:`, { err });
           await delay(ms.sec(15));
-          retries++;
+
           continue;
         }
       }

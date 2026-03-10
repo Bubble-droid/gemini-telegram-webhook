@@ -15,7 +15,7 @@ export const createToolCaller = (
   const { geminiApiAgent, mcpClient, longTermMemory } = deps;
 
   return (ctx, updateStatus) => {
-    const fileSearch = async (
+    const knowledgeSearch = async (
       args: InferToolArgs<'deep_research'>['rag_agent'],
     ): Promise<StandardizedFunctionResponse> => {
       const { objective, file_search_stores, system_prompt } = args;
@@ -127,16 +127,13 @@ export const createToolCaller = (
             try {
               switch (name) {
                 case 'rag_agent':
-                  result = await fileSearch(args[name]);
+                  result = await knowledgeSearch(args[name]);
                   break;
                 case 'web_agent':
                   result = await webResearch(args[name]);
                   break;
                 case 'github_agent':
                   result = await delegateToAgent({ agent_name: 'github', ...args[name] });
-                  break;
-                case 'context7_agent':
-                  result = await delegateToAgent({ agent_name: 'context7', ...args[name] });
                   break;
                 default:
                   symbol = '[UNSUPPORTED]';

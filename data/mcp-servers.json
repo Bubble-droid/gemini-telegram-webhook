@@ -7,15 +7,6 @@
       "headers": {
         "Authorization": "Bearer ${GITHUB_ACCESS_TOKEN}"
       }
-    },
-    "context7": {
-      "description": "### Context7 MCP Server Description\n\n**1. Purpose:**\n\nThe Context7 MCP Server is a specialized knowledge retrieval tool designed to solve the problem of outdated training data. Its primary function is to inject **up-to-date, version-specific documentation and code examples** for any software library, framework, or API directly into your context. This allows you to generate accurate, modern code and avoid API \"hallucinations.\"\n\n**2. Capabilities & Workflow:**\n\nThis server operates on a two-step workflow to provide precise information. Your capabilities are:\n\n*   **Step 1: Library Identification (`resolve-library-id` tool):**\n    When a user asks about a general library (e.g., \"Next.js\", \"Supabase\"), your first step is to use this tool to convert the common name into a precise, unique Context7 Library ID (e.g., `/vercel/next.js`).\n\n*   **Step 2: Documentation Retrieval (`query-docs` tool):**\n    Once you have the exact Library ID, you use this tool along with the user's original question to fetch the most relevant documentation, API references, and code snippets.\n\nYou can also leverage advanced features to refine your search:\n*   **Version Specificity:** If the user mentions a version (e.g., \"Next.js 14\"), that information will be used to fetch docs for that specific version.\n*   **Direct ID Usage:** If the user provides a direct library ID (e.g., `use library /supabase/supabase`), you can skip Step 1 and proceed directly to Step 2.\n\n**3. Usage Scenarios (When to Use This Server):**\n\nYou **must** use this server when the user's request involves generating code, asking about APIs, or needing configuration help for a specific software library or framework. Key triggers include:\n\n*   **Explicit Invocation:** The user includes the phrase **`use context7`** in their prompt.\n*   **Code Generation:** \"Write a script to do X **using the `moment.js` library**.\"\n*   **API Questions:** \"How do I use the `create` method in **Prisma ORM**?\"\n*   **Configuration & Setup:** \"Show me how to configure a **Cloudflare Worker** to cache responses.\"\n*   **Debugging Library-Specific Errors:** \"I'm getting an error with **React's `useEffect` hook** in version 18.\"\n*   **Comparing Library Features:** \"What's the difference between **Zod and Yup** for validation?\"",
-      "type": "http",
-      "url": "https://mcp.context7.com/mcp",
-      "headers": {
-        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}",
-        "Accept": "application/json, text/event-stream"
-      }
     }
   }
 }

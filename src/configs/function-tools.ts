@@ -57,6 +57,39 @@ const BLOCKING_RESPONSE_PROPERTY = {
   } as const satisfies JSONSchema,
 };
 
+const KNOWLEDGE_BASE_RETRIEVAL_TOOL = {
+  name: 'knowledge_retrieval',
+  description: `
+Performs a high-speed semantic search within the RAG knowledge base.
+This tool provides **static, structured, and highly relevant internal documentation and configuration details.**
+
+**Usage Strategy in Parallel Research:**
+1.  **High-Efficiency First Pass**: Leverage this tool for rapid retrieval of foundational knowledge, internal project specifics, and known configurations.
+2.  **Multi-Store Search**: Always search across multiple relevant stores simultaneously to ensure comprehensive coverage within the internal knowledge base (e.g., for a "SingBox" query, search both 'sing-box' and 'gui-for-cores' stores).
+3.  **Specificity**: Use technical terms in your prompt to improve match accuracy.
+`.trim(),
+  parametersJsonSchema: {
+    type: 'object',
+    properties: {
+      ...SYSTEM_PROMPT_PROPERTY,
+      ...OBJECTIVE_PROPERTY,
+      file_search_stores: {
+        type: 'array',
+        description:
+          'The specific internal knowledge bases to search against. Select ALL stores that might contain relevant info.',
+        items: {
+          type: 'string',
+          format: 'enum',
+          enum: getFileSearchStoreDisplayNames(),
+        },
+        minItems: 2,
+      },
+    },
+    required: ['objective', 'file_search_stores'],
+    additionalProperties: false,
+  },
+} as const satisfies GeneralFunctionSchema;
+
 const WEB_RESEARCH_TOOL = {
   name: 'web_research',
   description: `
@@ -190,8 +223,8 @@ Orchestrates parallel, multi-dimensional research by delegating specific tasks t
 This tool ensures comprehensive and efficient information gathering from various sources simultaneously.
 
 **Usage Strategy:**
-1.  **Concurrent Delegation**: For any complex research task, invoke this tool to dispatch tailored objectives to multiple specialized sub-agents (RAG, GitHub, Context7, Web) concurrently.
-2.  **Expert Specialization**: Each sub-agent (rag_agent, github_agent, context7_agent, web_agent) is an expert in its domain. Assign objectives that leverage their unique strengths.
+1.  **Concurrent Delegation**: For any complex research task, invoke this tool to dispatch tailored objectives to multiple specialized sub-agents (RAG, GitHub, Web) concurrently.
+2.  **Expert Specialization**: Each sub-agent (rag_agent, github_agent, web_agent) is an expert in its domain. Assign objectives that leverage their unique strengths.
 3.  **Synthesis**: The main Assistant will analyze and synthesize the results from all experts to formulate a comprehensive and accurate final response, applying the "Corroborated Truth" protocol.
 `.trim(),
   parametersJsonSchema: {
@@ -205,21 +238,7 @@ Specialized in performing high-speed semantic search within internal, static RAG
 Provides **structured, highly relevant internal documentation, configuration details, and known solutions.**
 **Characteristics**: High hit rate, high retrieval efficiency, but knowledge may be outdated.
 `.trim(),
-        properties: {
-          ...SYSTEM_PROMPT_PROPERTY,
-          ...OBJECTIVE_PROPERTY,
-          file_search_stores: {
-            type: 'array',
-            description:
-              'The specific internal knowledge bases to search against. Select ALL stores that might contain relevant info.',
-            items: {
-              type: 'string',
-              format: 'enum',
-              enum: getFileSearchStoreDisplayNames(),
-            },
-            minItems: 2,
-          },
-        },
+        properties: KNOWLEDGE_BASE_RETRIEVAL_TOOL.parametersJsonSchema.properties,
         required: ['objective', 'file_search_stores'],
         additionalProperties: false,
       },
@@ -231,21 +250,6 @@ Specialized in searching GitHub repositories, issues, code, and releases.
 Provides the **latest factual information, real-time code changes, and community discussions.**
 **Characteristics**: Ensures latest facts, but with a potentially lower hit rate and efficiency due to dynamic codebases.
 **Capabilities**: Repository & Code Interaction, Issue & Pull Request Management, CI/CD & Workflow Automation, Code Security & Analysis, Collaboration & Project Management.
-`.trim(),
-        properties: {
-          ...SYSTEM_PROMPT_PROPERTY,
-          ...OBJECTIVE_PROPERTY,
-        },
-        required: ['objective'],
-        additionalProperties: false,
-      },
-      context7_agent: {
-        type: 'object',
-        description: `
-**Expert: Context7 Cached Knowledge Specialist**
-Specialized in retrieving **up-to-date, version-specific documentation and code examples** for software libraries, frameworks, or APIs from Context7's cached knowledge base.
-**Characteristics**: Medium hit rate, medium retrieval efficiency, provides modern code/API information.
-**Capabilities**: Library Identification, Documentation Retrieval (with version specificity).
 `.trim(),
         properties: {
           ...SYSTEM_PROMPT_PROPERTY,
@@ -267,7 +271,7 @@ Specialized in executing broad Google Searches and fetching full web page conten
         additionalProperties: false,
       },
     },
-    required: ['rag_agent', 'github_agent', 'context7_agent', 'web_agent'],
+    required: ['rag_agent', 'github_agent', 'web_agent'],
     additionalProperties: false,
   },
 } as const satisfies GeneralFunctionSchema;

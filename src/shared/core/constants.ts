@@ -54,13 +54,10 @@ export const GEMINI_MULTIMODAL_MODELS = ['gemini-3-pro-image-preview', 'gemini-2
 export const OPENROUTER_FREE_MODELS = [
   'stepfun/step-3.5-flash:free',
   'arcee-ai/trinity-large-preview:free',
-  'nvidia/nemotron-3-nano-30b-a3b:free',
   'arcee-ai/trinity-mini:free',
-  'nvidia/nemotron-nano-12b-v2-vl:free',
   'qwen/qwen3-vl-30b-a3b-thinking',
   'qwen/qwen3-vl-235b-a22b-thinking',
   'qwen/qwen3-next-80b-a3b-instruct:free',
-  'nvidia/nemotron-nano-9b-v2:free',
   'openai/gpt-oss-120b:free',
   'openai/gpt-oss-20b:free',
   'z-ai/glm-4.5-air:free',
